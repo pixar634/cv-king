@@ -1,87 +1,107 @@
-# CV Tailor
+# 👑 CV King
 
-A local app that rewrites your CV for each job description, renders it in your design, checks it
-the way an ATS reads it, writes the cover letter, finds fresh jobs, and tracks every application.
+### Stop sending one CV to fifty jobs. Send fifty A-grade CVs, each one built for the job and aimed at where your career is going.
 
-**Start it:** double-click `start.bat`. It opens http://127.0.0.1:8765. Keep its window open while you
-work; closing it stops the app. Everything runs on this laptop: your CV, the JDs and the tracker never
-leave it, except the brief sent to the AI you choose.
+You know the drill: you find a role you'd be great at, spend an evening rewording your CV, guess at the keywords, export a PDF, and hear nothing back. The applicant tracking system read it before any human did, and it didn't see what the job asked for.
 
-## The three screens
+**CV King fixes that in one paste.** Drop in a job link and you get back a CV rewritten for that exact role, checked line by line the way an ATS reads it, scored before and after, with a cover letter ready to send. It's written **only from your real experience**, so every line still holds up in the interview.
 
-**Tailor.** One box: paste a job link (press Enter) or the full description (Ctrl+Enter). `/` focuses it.
-- A link is read for you: company, role, location, job ID, posted date and the description, straight from
-  the ATS's API where the site uses Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Recruitee or
-  Personio (about a second), otherwise from the page. LinkedIn and Naukri links are refused; paste the text.
-- **Tailor** writes the CV (1 to 3 minutes). Market and career track are picked from the job's location and
-  title unless you change them on the card.
-- Then **What changed** shows the headline, summary and every bullet against your original; *Changes* above
-  the preview highlights them on the CV (hover a line to see the original).
-- Switch **design** (FlowCV serif, Engineer, Modern sans, Classic) or **length** (1 or 2 pages) above the
-  preview: it re-renders in seconds from the same content, with no AI run. *Edit* lets you change words by hand.
-- **Gaps**: requirements your profile doesn't show. Tick only the true ones; they're added and it re-tailors.
-- **Cover letter**: a first draft with every CV, plus five voices to try (Plainspoken, Storyteller, Formal,
-  Warm, Proof points). Drafts stay in this browser; *Keep* saves one next to the PDF.
-- **Download** saves `Company_Position_Soumava_Paul.pdf`. **Mark applied** moves it to Applied.
+> 🖤 A dark, sharp interface inspired by CRED's NeoPOP design system. Built to feel fast, focused and a little premium, because job hunting is stressful enough.
 
-**Discover.** *Scan sources* reads every source in parallel (under a minute for career pages), shows only
-postings inside the window (default 14 days), and ranks them against your profile. Lead-level and above
-only (Senior titles can be switched on), and jobs that need Java, .NET or C# are skipped (edit the list in
-Settings). Tick the jobs you like and press **Tailor N jobs**: they're written in parallel, 2 at a time.
+---
 
-**Pipeline.** Tailoring (live progress for each job), Tailored, Applied and Interviews, with closed ones folded
-away. Change a status from its card; click a card to open it. *Export to Excel* writes the whole list.
+## ✨ Why it works
 
-**Career.** Your history as a map (built from your profile), and five or six routes for the next five years,
-researched on the web when you press *Map my routes* (2 to 5 minutes): Forward Deployed / Applied AI, Engineering
-Manager, Product, Staff IC, Solutions, early-stage. Click any step for what employers screen for, what you already
-have, what to build, certifications, projects to take on, the pay range with its source (no source, no number),
-and jobs for it from your scans or a live web search. Set a **goal** (e.g. VP level by a year, with a target pay):
-routes that reach it point at it. Log your **salary** by year: code draws your growth, where your pace leads, and the
-yearly growth your goal needs. The **growth log** takes what you've done, are doing, learned or want; the next map
-reads all of it, and skills you mark for CVs join your profile.
+- 🎯 **Tailored, never invented.** Every CV is built from your master profile. Code checks every number and every skill against it and flags anything new in red.
+- 🤖 **Beats the ATS honestly.** You see your keyword match *before*, *after*, and the *ceiling* your profile can truthfully reach, so you know whether a job is worth your evening.
+- 🧭 **Aimed at your career goal.** Choose the track (IC Lead, Engineering Manager, Product, Staff, Delivery, Forward Deployed, Solutions, AI Engineer) and the CV leads with what that path values.
+- 🌍 **Right for the market.** India, UK, EU, UAE, Singapore, Australia/NZ, US/Canada and Remote each get their own conventions, header line and page length.
+- 🔒 **Private by design.** It runs on your laptop. Your CV, the job descriptions and your tracker never leave it, apart from the brief sent to the AI you choose.
 
-**Claude / Gemini** (top right) picks the writer for everything: CVs, letters, link reading, career maps. Web
-searches always run on Claude. Gemini needs a one-time `gemini` sign-in in a terminal.
+---
 
-**Settings** (the gear): defaults for every new CV, how many jobs tailor at once, your availability line,
-regions and areas, what Discover hides (Senior titles, years asked, skills such as Java/.NET), company offices,
-job sources (careers pages, job-board searches, web searches), People to watch, and confirmed skills.
+## 🚀 Features
 
-## What it will never do
+### ✂️ Tailor: one paste, one perfect CV
+- 🔗 **Paste a link or the full description.** Press Enter for a link, Ctrl+Enter for pasted text, `/` to jump to the box.
+- ⚡ **Reads job boards for you** in about a second through their public APIs: Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Recruitee and Personio. Any other page is read directly.
+- 🏷️ **Pulls out the details:** company, role, location, job ID, posted date and the full description.
+- ⏱️ **Writes the CV in 1 to 3 minutes**, picking the market and career track from the job's location and title (you can override both).
+- 📊 **Keyword match score** with a before / after / ceiling meter, computed by code so the same JD always gets the same score.
+- 🔍 **What changed:** headline, summary and every bullet shown against your original, with a count of what was rewritten, merged, kept and left out.
+- 🖍️ **Highlight changes on the CV itself**; hover a line to see the original.
+- 🎨 **Four designs** (FlowCV serif, Engineer, Modern sans, Classic) and **1 or 2 pages**, re-rendered in seconds with no AI run.
+- ✍️ **Edit any section by hand** right next to the live PDF. The same checks run on your edits.
+- 🧩 **Gap finder:** requirements your profile doesn't show yet. Tick the ones that are true, they join your profile and the CV re-tailors.
+- 💌 **Cover letters in five voices:** Plainspoken, Storyteller, Formal, Warm and Proof points. Keep the one you like.
+- 📝 **A 300-character note to the recruiter**, ready to paste.
+- ✅ **ATS read-back:** the finished PDF is read back the way an ATS reads it, with a pass/fail checklist.
+- 💡 **What a recruiter will notice** about your fit for the role.
+- 📥 **One-click download** as `Company_Position_Your_Name.pdf`, then **Mark applied**.
 
-- **Invent anything.** Every CV and letter is built only from `data/base_cv.json`. Code checks every
-  number and every skill in the output against it and flags anything new in red. Titles, companies and
-  dates are printed by code, not written by the AI.
-- **Overstate your title.** Headlines always say Lead (your current title) and never claim Manager, Staff,
-  Architect or Founder. The career track changes what the CV leads with, not what it claims.
-- **Mention a weakness** in a cover letter. Gaps are for your interview prep.
+### 🔭 Discover: fresh jobs, ranked for you
+- 🛰️ **Scans all your sources in parallel** (careers pages, job-board searches, web searches) in under a minute.
+- 🗓️ **Only fresh postings**, inside a window you choose (24 hours to 30 days).
+- 🏆 **Ranked against your profile** by the same match score tailoring reaches.
+- 🎚️ **Smart filters:** seniority (Lead and above, Senior optional), maximum years asked, and skills to skip (for example Java, .NET or C#).
+- 📍 **Region and neighbourhood filters**, plus company office locations so "Bengaluru" becomes "HSR Layout".
+- 👀 **People to watch:** each scan looks for recent public hiring posts from hiring managers you follow.
+- 📦 **Batch tailoring:** tick the jobs you like and tailor them all, a few at a time, in the background.
 
-## The numbers
+### 📋 Pipeline: every application, one board
+- 🗂️ **Kanban board:** Tailoring (with live progress), Tailored, Applied and Interviews, with closed ones folded away.
+- 🔄 **Change status from the card**, or click any card to reopen its CV.
+- 📈 **Export to Excel** with one click.
 
-- **Keyword match** is computed by code (same JD and CV, same score), from `knowledge/skills.yaml`.
-  *Before* is your original FlowCV PDF; *after* is the tailored PDF read back as an ATS would;
-  *ceiling* is the most your profile can truthfully reach. A low ceiling means the job asks for
-  things your profile doesn't show; tailoring can't fix that, only true additions can.
-- **Total experience** (7+ years) is computed from your employment dates, internship excluded.
+### 🧭 Career: where your next five years can go
+- 🗺️ **Your history as an interactive map**, built from your profile.
+- 🛣️ **Five or six routes for the next five years**, researched on the web: Forward Deployed / Applied AI, Engineering Manager, Product, Staff IC, Solutions and early-stage.
+- 🔎 **Every step explained:** what employers screen for, what you already have, what to build, certifications, projects to take on, and the pay range with its source (no source, no number).
+- 💼 **Jobs for any step**, from your scans or a live web search, tailored with one click.
+- 🎯 **Set a goal** (for example VP level by a year, at a target pay) and see which routes reach it.
+- 💰 **Salary tracker:** log your pay by year to see your growth, where your pace leads, and the yearly growth your goal needs.
+- 🌱 **Growth log:** record what you've done, learned or want next. The next map reads all of it, and skills you mark for CVs join your profile.
 
-## Writers
+### ⚙️ Writers and settings
+- 🧠 **Claude or Gemini**, switched from the top bar. Choose Claude Opus (best writing) or Claude Sonnet (faster).
+- 💳 **Runs on your subscription**, through the Claude and Gemini CLIs signed in on your laptop, so there's no API bill.
+- 🛠️ **Defaults for every new CV:** market, career track, design, length, writer, jobs tailored at once, and your availability line.
 
-Pick in the top bar. Both use the CLIs signed in on this laptop, so a run costs your subscription
-usage, not an API bill.
-- **Claude Opus** (default; best writing) or **Claude Sonnet** (faster).
-- **Gemini**: run `gemini` once in a terminal and choose *Sign in with Google* with your subscription
-  account, then it's available here.
+---
 
-## Files
+## 🛡️ What it will never do
+
+- 🚫 **Invent anything.** Titles, companies and dates are printed by code, not written by the AI.
+- 🚫 **Overstate your title.** The career track changes what your CV leads with, never what it claims.
+- 🚫 **Mention a weakness in a cover letter.** Gaps are for your interview prep.
+
+---
+
+## 🏁 Get started
+
+1. 🐍 Install **Python 3.12** and make sure it's on your PATH.
+2. 🔑 Sign in to the **Claude CLI** (and optionally run `gemini` once and choose *Sign in with Google*).
+3. 📄 Add your master profile at `data/base_cv.json`. It's your only source of facts, and it stays out of git.
+4. ▶️ Double-click **`start.bat`**. The first run sets everything up, then opens http://127.0.0.1:8765.
+5. ✂️ Paste your first job link and press **Tailor my CV**.
+
+Keep the `start.bat` window open while you work; closing it stops the app.
+
+---
+
+## 📁 What's where
 
 | Path | What |
 |---|---|
-| `data/base_cv.json` | Your master profile: the only source of facts. Edit it to add true things. |
-| `data/sources.json` | Your job sources and people list |
+| `app/` | The FastAPI server, tailoring engine and web UI |
+| `app/static/css/` | The design system: `tokens.css` → `base.css` → `components.css` → `views.css` |
 | `knowledge/playbook.md` | The writing brief: how ATS and recruiters read a CV, and the rules |
-| `knowledge/markets.yaml` | India, UK, EU, UAE, Singapore, Australia/NZ, US/Canada, Remote |
-| `knowledge/tracks.yaml` | IC Lead, Engineering Manager, Product Manager, Delivery Lead, Staff |
+| `knowledge/markets.yaml` | Market conventions for each region |
+| `knowledge/tracks.yaml` | Career tracks and what each one leads with |
 | `knowledge/voices.yaml` | The five cover-letter voices and the banned clichés |
-| `output/<date>_<company>_<role>/` | Per application: the PDF, cover letter, JD, report, logo |
-| `output/applications.json` | The tracker |
+| `data/` *(local only)* | Your profile, sources, goal and salary |
+| `output/` *(local only)* | Per application: PDF, cover letter, JD, report, logo, plus the tracker |
+
+---
+
+<p align="center"><b>👑 Your experience is A-grade. Make sure every CV shows it.</b></p>

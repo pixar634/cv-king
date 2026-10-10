@@ -6,7 +6,9 @@
   const RFlib = window.ReactFlow;
   const { Background, Controls, Handle, Position, MarkerType } = RFlib;
   const Flow = RFlib.ReactFlow || RFlib.default;
-  const COLORS = ["#8ab4ff", "#7ee2b8", "#f2c46d", "#c9a7ff", "#ff9fb2", "#7fd4ff"];
+  // NeoPOP accents: neoPaccha, poliPurple, success, rss, pinkPong, info.
+  const COLORS = ["#e5fe40", "#b49aff", "#4fe3a3", "#ffab7c", "#ff7b9a", "#89a5e3"];
+  const LINE = "#3d3d3d", LINE_NOW = "#8a8a8a";
 
   function CareerNode({ data }) {
     return h("div", { className: `cn cn-${data.kind}${data.selected ? " sel" : ""}`, style: data.color ? { "--c": data.color } : null },
@@ -26,15 +28,15 @@
     roles.forEach((x, i) => {
       nodes.push({ id: x.id, type: "career", position: { x: i * 260, y: 0 }, draggable: false,
         data: { kind: x.current ? "hist cn-current" : "hist", title: x.title, sub: x.org, when: x.when, item: x, type: "history" } });
-      if (i) edges.push({ id: `h${i}`, source: roles[i - 1].id, target: x.id, style: { stroke: "#3a4766", strokeWidth: 1.5 } });
+      if (i) edges.push({ id: `h${i}`, source: roles[i - 1].id, target: x.id, style: { stroke: LINE, strokeWidth: 1.5 } });
     });
     const nowX = roles.length * 260 + 40;
     projects.forEach((p, i) => {
       nodes.push({ id: p.id, type: "career", position: { x: nowX - 300, y: 150 + i * 120 }, draggable: false,
         data: { kind: "project", title: p.title, sub: p.org, when: p.when, item: p, type: "history" } });
-      edges.push({ id: `p${i}`, source: p.id, target: "now", style: { stroke: "#3a4766", strokeDasharray: "4 4" } });
+      edges.push({ id: `p${i}`, source: p.id, target: "now", style: { stroke: LINE, strokeDasharray: "4 4" } });
     });
-    if (roles.length) edges.push({ id: "tonow", source: roles[roles.length - 1].id, target: "now", style: { stroke: "#5a6a8c", strokeWidth: 1.5 } });
+    if (roles.length) edges.push({ id: "tonow", source: roles[roles.length - 1].id, target: "now", style: { stroke: LINE_NOW, strokeWidth: 1.5 } });
     nodes.push({ id: "now", type: "career", position: { x: nowX, y: 0 }, draggable: false,
       data: { kind: "now", title: "You, now", sub: `${years} years of experience`, when: new Date().toLocaleDateString([], { month: "short", year: "numeric" }), type: "now" } });
     const paths = (map && map.paths) || [];
@@ -78,7 +80,7 @@
         fitViewOptions: { padding: 0.08, maxZoom: 1, nodes: nodes.filter((n) => ["now", "step", "goal"].includes(n.data.type)).map((n) => ({ id: n.id })) },
         nodesDraggable: false, nodesConnectable: false, elementsSelectable: true,
         onNodeClick: (_, n) => { onClick(n.data, n.id); window.Career.select(n.id); },
-      }, h(Background, { color: "#1e2a40", gap: 22 }), h(Controls, { showInteractive: false })));
+      }, h(Background, { color: "#262626", gap: 22 }), h(Controls, { showInteractive: false })));
     },
     select(id) { if (last) window.Career.render(last.el, last.history, last.map, last.years, last.onClick, id, last.goal); },
   };

@@ -1,0 +1,94 @@
+/* Design tokens. Values follow CRED's NeoPOP primitives (@cred/neopop-web): a #0d0d0d base,
+   white at fixed opacities for text, sharp corners, 3px "plunk" edges skewed at 45deg,
+   and saturated accents spent sparingly. Every other stylesheet reads from here. */
+
+@font-face {
+  font-family: "Jakarta"; font-weight: 200 800; font-style: normal; font-display: swap;
+  src: url("/static/fonts/PlusJakartaSans-Variable.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Jakarta"; font-weight: 200 800; font-style: normal; font-display: swap;
+  src: url("/static/fonts/PlusJakartaSans-Variable-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F,
+    U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Playfair"; font-weight: 400 900; font-style: normal; font-display: swap;
+  src: url("/static/fonts/PlayfairDisplay-Variable.woff2") format("woff2");
+}
+
+:root {
+  color-scheme: dark;
+
+  /* ---- palette (NeoPOP) ---- */
+  --black: #0d0d0d;
+  --pop-black-400: #121212;
+  --pop-black-300: #161616;
+  --pop-black-250: #1f1f1f;
+  --pop-black-200: #3d3d3d;
+  --pop-black-100: #8a8a8a;
+  --white: #ffffff;
+  --pop-white-100: #d2d2d2;
+  --pop-white-200: #e0e0e0;
+
+  --neo-paccha-500: #e5fe40;   /* the accent */
+  --neo-paccha-600: #a0b22d;
+  --neo-paccha-700: #727f20;
+  --poli-purple-300: #b49aff;
+  --poli-purple-500: #6a35ff;
+  --success-300: #4fe3a3;
+  --success-500: #06c270;
+  --warning-300: #f5ac6a;
+  --warning-500: #f08d32;
+  --error-300: #f47564;
+  --error-500: #ee4d37;
+  --info-200: #89a5e3;
+  --rss-400: #ffab7c;
+  --pink-pong-400: #ff7b9a;
+  --mannna-500: #ffcb45;
+
+  /* ---- surfaces ---- */
+  --bg: var(--black);
+  --surface: var(--pop-black-400);
+  --surface-2: var(--pop-black-300);
+  --surface-3: var(--pop-black-250);
+  --line: rgba(255, 255, 255, .1);      /* NeoPOP card stroke */
+  --line-2: rgba(255, 255, 255, .2);
+  --line-3: rgba(255, 255, 255, .4);
+
+  /* ---- text: NeoPOP font opacities ---- */
+  --text: rgba(255, 255, 255, .92);     /* heading */
+  --text-2: rgba(255, 255, 255, .7);    /* sub-heading, body copy */
+  --text-3: rgba(255, 255, 255, .5);    /* meta */
+  --text-4: rgba(255, 255, 255, .3);    /* placeholder, disabled */
+
+  /* ---- roles ---- */
+  --accent: var(--neo-paccha-500);
+  --accent-ink: var(--black);
+  --ok: var(--success-300);
+  --warn: var(--warning-300);
+  --bad: var(--error-300);
+  --info: var(--info-200);
+  --merge: var(--poli-purple-300);
+
+  /* ---- plunk (3D edge) ---- */
+  --edge: 3px;
+
+  /* ---- type ---- */
+  --font-sans: "Jakarta", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: "Playfair", Georgia, "Times New Roman", serif;
+  --caps-tracking: .14em;
+
+  /* ---- space (4px grid) ---- */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 20px; --s-6: 24px; --s-8: 32px; --s-10: 40px; --s-12: 48px;
+
+  /* ---- size ---- */
+  --h-sm: 30px; --h-md: 40px; --h-lg: 50px;   /* NeoPOP button heights */
+  --topbar: 60px;
+
+  /* ---- motion ---- */
+  --dur: .12s;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+}
