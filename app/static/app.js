@@ -927,6 +927,7 @@ const IV = { list: [], sel: store.get("cv.iv", ""), data: null, token: 0, tab: "
 const ivMarksKey = (id) => `cv.ivmarks.${id}`;
 const LEVEL_TONE = { basic: "tag--ok", intermediate: "tag--info", advanced: "tag--merge" };
 const LEVEL_ORDER = ["basic", "intermediate", "advanced"];
+const SAY_KINDS = ["behavioural", "culture", "managerial", "scenario", "concept"];   // questions answered by talking
 const pad2 = (n) => String(n).padStart(2, "0");
 const ivApp = () => IV.list.find((x) => x.id === IV.sel) || {};
 // Bring the practice frame up under the top bar when a round or a problem starts, so it's never below the fold.
@@ -1193,19 +1194,43 @@ function ivShow(dir) {
       <h3 class="flow-q__text" data-scramble>${esc(q.q)}</h3>
       ${q.why ? `<p class="type-meta" data-flow-in><b class="text-2">Why they ask:</b> ${esc(q.why)}</p>` : ""}
       <div class="flow-q__answer" id="ivAnswer" hidden>
-        ${q.answer.length ? `<div><div class="hud-mono" style="margin-bottom:10px">Model answer</div><ol class="bullets">${li(q.answer)}</ol></div>` : ""}
+        ${q.say ? ivSayBlock(q.say) : SAY_KINDS.includes(q.kind) ? `<div class="flow-q__say-ask" id="ivSayBox"><button class="btn btn--sm btn--primary" id="ivSay">Write what I'd say</button>
+          <span class="type-meta">A spoken answer, in your words and from your real experience, for every talking question in this round. About a minute.</span></div>` : ""}
+        ${q.answer.length ? `<div><div class="hud-mono iv-points" style="margin-bottom:10px">${q.say ? "Points to hit" : "Model answer"}</div><ol class="bullets">${li(q.answer)}</ol></div>` : ""}
         ${q.code ? `<pre class="code"><code>${esc(q.code)}</code></pre>` : ""}
         ${q.follow_ups.length ? `<div><div class="hud-mono" style="margin-bottom:8px">Follow-ups</div><ul class="bullets">${li(q.follow_ups)}</ul></div>` : ""}
         ${q.pitfalls.length ? `<div><div class="hud-mono" style="margin-bottom:8px">Pitfalls</div><ul class="bullets bullets--warn">${li(q.pitfalls)}</ul></div>` : ""}
         ${q.source ? `<div><a class="btn btn--link" href="${esc(q.source)}" target="_blank" rel="noopener">Where this comes from</a></div>` : ""}
       </div></div>`, dir);
   $(".hud__controls").hidden = false;
+  const sayBtn = $("#ivSay"); if (sayBtn) sayBtn.onclick = () => ivWriteSay(D);
   $("#ivQNo").textContent = `Q ${pad2(D.at + 1)} / ${pad2(D.items.length)}`;
   $("#ivReveal").innerHTML = `Reveal answer <span class="kbd">Space</span>`;
   $("#ivNext").innerHTML = D.order.length === D.items.length && D.at === D.order.length - 1 ? `Finish round ${ICON.arrow}` : `Next ${ICON.arrow}`;
   $("#ivLevel").textContent = `Difficulty ${["▮▯▯", "▮▮▯", "▮▮▮"][D.target]}`;
   $$(".hud__controls [data-mark]").forEach((b) => b.classList.toggle("on", mark === b.dataset.mark));
   ivSegs();
+}
+
+const ivSayBlock = (text) => `<div class="flow-q__say"><div class="hud-mono">What you could say</div><p>${esc(text)}</p></div>`;
+
+// Older preps have no spoken answers: write them for the whole round, then show this one's.
+async function ivWriteSay(D) {
+  const box = $("#ivSayBox"), token = IV.token;
+  box.innerHTML = `<div style="flex:1"><div class="progress"></div><div class="progress__text">Writing what you could say for this round</div></div>`;
+  try {
+    const { job } = await api(`/api/apps/${IV.sel}/interview/say`, { body: { round: D.round.id } });
+    const d = await pollJob(job, (l) => { const t = $(".progress__text", box); if (t) t.textContent = l.msg; });
+    if (token !== IV.token) return;
+    IV.data = d;
+    const round = d.rounds.find((r) => r.id === D.round.id);
+    D.round = round;
+    D.items.forEach((it) => (it[0] = round.questions[it[1]]));
+    const q = D.items[D.order[D.at]]?.[0];
+    if (IV.deck !== D || !box.isConnected) return;
+    if (q?.say) { box.outerHTML = ivSayBlock(q.say); FX.flowReveal($("#ivAnswer .flow-q__say")); const h = $("#ivAnswer .iv-points"); if (h) h.textContent = "Points to hit"; }
+    else box.innerHTML = `<span class="type-meta">This one is better answered with the points below.</span>`;
+  } catch (e) { box.innerHTML = `<span class="type-meta" style="color:var(--bad)">${esc(e.message)}</span>`; }
 }
 
 function ivSegs() {

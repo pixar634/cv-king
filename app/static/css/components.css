@@ -440,6 +440,9 @@
 .flow-q__text { max-width: 64ch; font-weight: 800; font-size: 23px; line-height: 1.4; letter-spacing: -.005em; color: var(--white); }
 .flow-q__answer { display: flex; flex-direction: column; gap: var(--s-4); padding: 18px 20px; background: rgba(13, 13, 13, .7); border: 1px solid var(--line); border-left: 3px solid var(--accent); }
 .flow-q__answer .bullets { font-size: 14px; color: var(--text); }
+.flow-q__say { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; background: color-mix(in srgb, var(--accent) 5%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); }
+.flow-q__say p { white-space: pre-wrap; font-size: 15.5px; line-height: 1.75; color: var(--text); }
+.flow-q__say-ask { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; }
 .flow-round { display: flex; flex-direction: column; justify-content: center; gap: 18px; min-height: 340px; }
 
 .flow-prep { display: flex; align-items: flex-start; gap: var(--s-8); padding: var(--s-3) 0; }

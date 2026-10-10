@@ -88,6 +88,7 @@ Each question:
   "code": "a reference solution for code questions, in the JD's main language; empty otherwise",
   "follow_ups": ["2 or 3 likely follow-up questions"],
   "pitfalls": ["1 to 3 mistakes that sink candidates on this question"],
+  "say": "for questions answered by talking (behavioural, culture, managerial, scenario, motivation, walking through the CV): what the candidate could actually say, see SPOKEN ANSWERS; empty for code, design and purely technical questions",
   "source": "URL when the question comes from the research or a reported question; empty otherwise"}}
 
 Rules:
@@ -97,6 +98,7 @@ Rules:
   profile it can come from. Behavioural and culture answers follow situation, action, result.
 - Code (coding roles only): correct, idiomatic and runnable, under 40 lines, with time and space complexity.
 - Plain text in every string; only "code" may contain code.
+{say_rules}
 
 Return JSON only:
 {{"overview": "2 or 3 sentences: what this interview will test most, where the candidate is strongest, and what to prepare hardest",
@@ -116,6 +118,29 @@ JOB DESCRIPTION:
 
 TAILORED CV (what the candidate sent):
 {plan}
+
+PROFILE (every fact is true; nothing else is):
+{profile}"""
+
+SAY_KINDS = ("behavioural", "culture", "managerial", "scenario", "concept")
+SAY_RULES = """SPOKEN ANSWERS ("say"): the words the candidate could say out loud, first person, natural spoken English,
+100 to 220 words, flowing in the order the points above give. It sounds like a person talking, not a list read out:
+no headings, no bullet points, no opener like "Great question". Anything about the candidate (employers, systems,
+numbers, results, dates) comes only from the PROFILE, copied exactly; never invent a story, a number or an outcome.
+Where the question asks for experience the profile doesn't show, answer honestly and bridge to the nearest real
+experience. Behavioural and culture answers follow situation, action, result. Write "say" only for questions
+answered by talking about the candidate, their judgement or their experience; leave it empty for code, system
+design and purely technical knowledge questions."""
+
+SAY = """You are coaching a candidate for the "{role}" interview at {company}. For each question below, write what
+the candidate could actually say out loud.
+
+{say_rules}
+
+Return JSON only: {{"answers": [{{"i": the question's index, "say": "the spoken answer, or empty"}}]}}
+
+QUESTIONS (with the points a strong answer covers):
+{questions}
 
 PROFILE (every fact is true; nothing else is):
 {profile}"""
@@ -225,7 +250,8 @@ def _question(q: dict, coding: bool) -> dict | None:
     return {"q": str(q["q"]).strip(), "level": level if level in LEVELS else "intermediate", "kind": kind,
             "why": str(q.get("why") or "").strip(), "answer": _lst(q.get("answer"), 10),
             "code": str(q.get("code") or "").strip() if coding else "",
-            "follow_ups": _lst(q.get("follow_ups"), 4), "pitfalls": _lst(q.get("pitfalls"), 4), "source": _url(q.get("source"))}
+            "follow_ups": _lst(q.get("follow_ups"), 4), "pitfalls": _lst(q.get("pitfalls"), 4), "source": _url(q.get("source")),
+            "say": str(q.get("say") or "").strip() if kind in SAY_KINDS else ""}
 
 
 def generate(app_id: str, options: dict, engine_id: str = "claude:opus", progress=lambda m: None) -> dict:
@@ -243,7 +269,7 @@ def generate(app_id: str, options: dict, engine_id: str = "claude:opus", progres
     brief = QUESTIONS.format(
         role=role, company=company, seniority=meta.get("seniority") or "the level the JD implies", per_round=per_round,
         years=experience_years_label(profile), headline=report.get("headline", ""), gaps=gaps,
-        focus=(options.get("focus") or "").strip() or "nothing specific",
+        focus=(options.get("focus") or "").strip() or "nothing specific", say_rules=SAY_RULES,
         research=json.dumps(research, indent=1, ensure_ascii=False),
         jd=jd[:12000], plan=json.dumps(plan, indent=1, ensure_ascii=False)[:12000],
         profile=json.dumps(brief_view(profile), ensure_ascii=False)[:20000])
@@ -271,6 +297,32 @@ def generate(app_id: str, options: dict, engine_id: str = "claude:opus", progres
     (folder / FILE).write_text(json.dumps(out, indent=2, ensure_ascii=False), "utf-8")
     (folder / "interview.md").write_text(markdown(out), "utf-8")
     return out
+
+
+def write_say(app_id: str, round_id: str, engine_id: str = "claude:opus", progress=lambda m: None) -> dict:
+    """Fill in the spoken answers for one round's talking questions (preps written before answers had them)."""
+    d = load(app_id)
+    rd = next((r for r in (d or {}).get("rounds", []) if r["id"] == round_id), None)
+    if not rd:
+        raise RuntimeError("No such round. Prepare the interview first.")
+    todo = [(i, q) for i, q in enumerate(rd["questions"]) if q["kind"] in SAY_KINDS and not q.get("say")]
+    if todo:
+        progress(f"Writing what you could say for {len(todo)} questions in {rd['name']} (about a minute)")
+        brief = SAY.format(role=d["role"], company=d["company"], say_rules=SAY_RULES,
+                           questions=json.dumps([{"i": i, "q": q["q"], "kind": q["kind"], "points": q["answer"]} for i, q in todo], indent=1, ensure_ascii=False),
+                           profile=json.dumps(brief_view(load_profile()), ensure_ascii=False)[:20000])
+        raw = parse_json_reply(get_engine(engine_id).run(brief, timeout=600))
+        for a in raw.get("answers") or []:
+            try:
+                i = int(a.get("i"))
+            except (TypeError, ValueError):
+                continue
+            if 0 <= i < len(rd["questions"]) and rd["questions"][i]["kind"] in SAY_KINDS:
+                rd["questions"][i]["say"] = str(a.get("say") or "").strip()
+        folder = _folder(app_id)
+        (folder / FILE).write_text(json.dumps(d, indent=2, ensure_ascii=False), "utf-8")
+        (folder / "interview.md").write_text(markdown(d), "utf-8")
+    return d
 
 
 # ---------- the adaptive coding test ----------
@@ -358,6 +410,8 @@ def markdown(d: dict) -> str:
             lines += [f"_{rd['format']}_ {rd.get('decides', '')}", ""]
         for i, q in enumerate(rd["questions"], 1):
             lines += [f"### {i}. {q['q']}", "", f"_{q['level'].capitalize()}, {q['kind']}._ {q['why']}", ""]
+            if q.get("say"):
+                lines += ["**What you could say:**", "", f"> {q['say']}", "", "**Points to hit:**", ""]
             lines += [f"- {a}" for a in q["answer"]]
             if q["code"]:
                 lines += ["", "```", q["code"], "```"]

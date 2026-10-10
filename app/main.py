@@ -275,6 +275,21 @@ def interview_start(app_id: str, body: dict = Body(default={})):
     return {"job": jid}
 
 
+@app.post("/api/apps/{app_id}/interview/say")
+def interview_say(app_id: str, body: dict = Body(...)):
+    """Spoken answers for one round's talking questions."""
+    from . import interview
+    _app_dir(app_id)
+    key = f"{app_id}:say:{body.get('round', '')}"
+    job = JOBS.get(INTERVIEW_JOBS.get(key, ""))
+    if job and job["status"] == "running":
+        return {"job": job["id"]}
+    engine = _prefs(load_profile())["defaults"].get("engine", "claude:opus")
+    jid = start_job("interview-say", lambda a, r, e, progress: interview.write_say(a, r, e, progress), app_id, body.get("round", ""), engine)
+    INTERVIEW_JOBS[key] = jid
+    return {"job": jid}
+
+
 CODE_JOBS: dict[str, str] = {}   # app id -> the coding-test job running for it
 
 
