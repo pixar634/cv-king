@@ -15,6 +15,16 @@ SYSTEM = ("You are an expert CV writer working for one candidate. Follow the bri
 INSTRUCTION = "Follow the brief provided on stdin and reply with the JSON object only."
 
 
+# Never available to a connector run, even by mistake: sending, forwarding, deleting, relabelling and reading mail.
+GMAIL_BLOCKED = ["mcp__claude_ai_Gmail__" + t for t in (
+    "send_message", "forward", "reply", "update_draft", "delete_draft", "trash_message", "trash_thread",
+    "untrash_message", "untrash_thread", "mark_message_spam", "mark_thread_spam", "unmark_message_spam",
+    "unmark_thread_spam", "label_message", "label_thread", "unlabel_message", "unlabel_thread",
+    "update_message_labels", "create_label", "update_label", "delete_label", "apply_sensitive_message_label",
+    "apply_sensitive_thread_label", "search_threads", "get_thread", "get_message", "list_drafts", "get_draft",
+    "list_labels")]
+
+
 class EngineError(RuntimeError):
     pass
 
@@ -47,16 +57,26 @@ class ClaudeCLI:
         return shutil.which("claude") is not None
 
     def run(self, brief: str, timeout: int = 420, tools: list[str] | None = None) -> str:
-        """`tools` is only ever ["WebSearch"] (job discovery); writing runs get no tools at all."""
+        """`tools` is ["WebSearch"] for research runs, or exactly one Gmail connector tool (create_draft) for
+        saving a cold email; writing runs get no tools at all."""
         exe = shutil.which("claude")
         if not exe:
             raise EngineError("The claude CLI is not on PATH.")
-        allowed = ",".join(tools or [])
+        tools = tools or []
+        connector = [t for t in tools if t.startswith("mcp__")]
+        builtin = ",".join(t for t in tools if not t.startswith("mcp__"))
         cmd = [exe, "-p", INSTRUCTION, "--output-format", "json", "--model", self.model,
-               "--tools", allowed, "--system-prompt", SYSTEM, "--no-session-persistence",
-               "--safe-mode", "--permission-prompts", "none", "--effort", "medium" if tools else "high"]
-        if tools:
-            cmd += ["--allowedTools", allowed]
+               "--tools", builtin, "--system-prompt", SYSTEM, "--no-session-persistence",
+               "--permission-prompts", "none", "--effort", "medium" if tools else "high"]
+        if connector:
+            # Safe mode hides every connector, so a connector run goes without it and is fenced instead: only the
+            # named tool is pre-approved (with prompts off, anything else is refused), and Gmail's sending,
+            # deleting and reading tools are blocked outright as a second guard.
+            cmd += ["--allowedTools", ",".join(connector), "--disallowedTools", ",".join(t for t in GMAIL_BLOCKED if t not in connector)]
+        else:
+            cmd.append("--safe-mode")
+            if tools:
+                cmd += ["--allowedTools", builtin]
         proc = _run(cmd, brief, timeout)
         try:
             env = json.loads(proc.stdout)

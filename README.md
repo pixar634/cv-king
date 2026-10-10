@@ -67,6 +67,12 @@ You know the drill: you find a role you'd be great at, spend an evening rewordin
 - ⌨️ **Keyboard flow**: → next, ← back, Space reveal, G got it, R review again, Ctrl+Enter submit.
 - 📥 **Download the notes** as Markdown to read on the way.
 
+### ✉️ Cold mail: get a reply, not a silence
+- 🎯 **Pick an application and say who you're writing to**: hiring manager, recruiter, an engineer on the team, or a founder, plus any context you share.
+- ✍️ **A short email and its follow-up** (90 to 150 words, then 40 to 70), built from your tailored CV, your real numbers and what the company actually builds. The same checks as your CV flag anything your profile doesn't support.
+- 📝 **Edit in place**, then **save to Gmail drafts** through the Gmail connector in Claude. The app never sends: you attach the CV and send from Gmail.
+- ⏰ **Follow-up reminders**: mark an email sent and the follow-up is ready when it's due.
+
 ### 🧭 Career: where your next five years can go
 - 🗺️ **Your history as an interactive map**, built from your profile.
 - 🛣️ **Five or six routes for the next five years**, researched on the web: Forward Deployed / Applied AI, Engineering Manager, Product, Staff IC, Solutions and early-stage.
@@ -116,6 +122,7 @@ Keep the `start.bat` window open while you work; closing it stops the app.
 | `app/` | The FastAPI server, tailoring engine and web UI |
 | `app/static/css/` | The design system: `tokens.css` → `base.css` → `components.css` → `views.css` |
 | `app/static/fx.js` | All motion in one place: Motion for components and text, GSAP for page transitions and the interview flow |
+| `app/coldmail.py` | Cold emails and their follow-ups, saved to Gmail drafts (never sent) |
 | `app/interview.py` | Company research, the three-round interview plan and the adaptive coding test |
 | `app/static/runner.js` | The coding-test sandbox: a network-free worker running JavaScript and Python (Pyodide) |
 | `knowledge/playbook.md` | The writing brief: how ATS and recruiters read a CV, and the rules |

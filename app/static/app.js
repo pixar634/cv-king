@@ -99,7 +99,7 @@ function wireNav() {
   $("#nav").onclick = (e) => { const b = e.target.closest("button"); if (b) showView(b.dataset.view); };
 }
 
-const VIEWS = ["tailor", "discover", "pipeline", "interview", "career"];
+const VIEWS = ["tailor", "discover", "pipeline", "interview", "outreach", "career"];
 function showView(v) {
   const from = $(".view.on")?.id.slice(2);
   $$("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.view === v));
@@ -110,6 +110,7 @@ function showView(v) {
     if (v === "pipeline") loadPipeline();
     if (v === "career") loadCareer();
     if (v === "interview") loadInterview();
+    if (v === "outreach") loadColdMail();
     renderDock();
   };
   if (from === v) return swap();
@@ -912,6 +913,7 @@ function renderPipeline() {
         <a class="btn btn--sm btn--ghost" href="/apps/${esc(r.id)}/pdf?download=1" data-stop title="${esc(r.pdf)}">PDF</a>
         ${r.status === "Generated" ? `<button class="btn btn--sm btn--ghost" data-applied="${esc(r.id)}" data-stop>Mark applied</button>` : ""}
         <button class="btn btn--sm btn--ghost" data-prep="${esc(r.id)}" data-stop title="Interview questions for this job">Interview</button>
+        <button class="btn btn--sm btn--ghost" data-cold="${esc(r.id)}" data-stop title="Write a cold email for this job">Cold mail</button>
       </div></div>`;
   const flightCard = (b) => `<div class="card app-card ${b.status === "error" ? "err" : ""}" data-flight="${esc(b.id)}">
       <div class="item"><span class="logo logo--sm">${initial(b.company || b.role)}</span><span class="item__body"><span class="item__title">${esc(b.company || "Reading the posting")}</span><span class="item__meta">${esc(b.role || "")}</span></span><span class="tag ${b.status === "error" ? "tag--bad" : "tag--accent"}">${b.status === "error" ? "Failed" : "Writing"}</span></div>
@@ -928,6 +930,7 @@ function renderPipeline() {
   $("#stageNav").innerHTML = navHtml; $("#stageHead").innerHTML = headHtml; $("#board").innerHTML = boardHtml;
   $$("[data-open]").forEach((el) => (el.onclick = (e) => { if (!e.target.closest("select, [data-stop]")) openApp(el.dataset.open); }));
   $$("[data-prep]").forEach((b) => (b.onclick = () => openInterview(b.dataset.prep)));
+  $$("[data-cold]").forEach((b) => (b.onclick = () => openColdMail(b.dataset.cold)));
   $$("[data-applied]").forEach((b) => (b.onclick = async () => {
     const r = await api(`/api/apps/${b.dataset.applied}/track`, { body: { status: "Applied" } });
     toast(`Applied: ${r.company}`);
@@ -1655,6 +1658,198 @@ function ivCompany(d) {
           ${p.detail ? `<span class="item__meta item__meta--wrap">${esc(p.detail)}</span>` : ""}</span><span class="item__aside">${src(p.source)}</span></div>`).join("")}</div></section>` : ""}
     ${(r.recent || []).length ? `<section class="iv-section"><span class="eyebrow">Lately</span>${rows(r.recent, "text", "date")}</section>` : ""}
     ${(r.reported_questions || []).length ? `<section class="iv-section"><span class="eyebrow">What candidates report being asked</span>${rows(r.reported_questions, "text", "round")}</section>` : ""}`;
+}
+
+// ================= cold mail =================
+// One application at a time: say who you're writing to, get an email and its follow-up from your real facts,
+// edit them, and save either to Gmail drafts. The app never sends; you send from Gmail.
+const CM = { list: [], roles: {}, tones: {}, sel: store.get("cv.cm", ""), data: null, token: 0, role: "hiring_manager", tone: "plainspoken", part: {} };
+
+function openColdMail(id) { CM.sel = id; store.set("cv.cm", id); showView("outreach"); }
+
+async function loadColdMail() {
+  let r;
+  try { r = await api("/api/coldmail"); }
+  catch (e) {
+    $("#cmList").innerHTML = "";
+    $("#cmMain").innerHTML = `<div class="notice notice--bad">Couldn't load your applications (${esc(e.message)}).
+      ${/not found/i.test(e.message) ? "The app's server is older than this page: close the start.bat window and run start.bat again." : "Is the app running? Start it with start.bat."}</div>`;
+    return;
+  }
+  CM.list = r.apps; CM.roles = r.roles; CM.tones = r.tones;
+  if (!CM.list.some((a) => a.id === CM.sel)) CM.sel = CM.list[0]?.id || "";
+  renderCmList();
+  if (CM.sel) selectCm(CM.sel);
+  else $("#cmMain").innerHTML = `<div class="empty">Tailor a CV first. Every application you tailor shows up here.</div>`;
+}
+
+function renderCmList() {
+  $("#cmList").innerHTML = CM.list.map((a) => `<div class="item item--link item--nav ${a.id === CM.sel ? "on" : ""}" data-cm="${esc(a.id)}">${logoTile(a.id, a.logo, a.company)}
+      <span class="item__body"><span class="item__title">${esc(a.company)}</span><span class="item__meta" title="${esc(a.role)}">${esc(a.role)}</span></span>
+      <span class="item__aside">${a.sent ? `<span class="tag tag--ok num" title="${a.sent} sent">${a.sent} sent</span>` : a.mails ? `<span class="tag num" title="${a.mails} written">${a.mails}</span>` : ""}</span></div>`).join("");
+  $$("#cmList [data-cm]").forEach((el) => (el.onclick = () => el.dataset.cm !== CM.sel && selectCm(el.dataset.cm)));
+}
+
+async function selectCm(id) {
+  CM.sel = id; store.set("cv.cm", id); renderCmList();
+  const token = ++CM.token;
+  const d = await api(`/api/apps/${id}/coldmail`);
+  if (token !== CM.token) return;
+  CM.data = d;
+  renderCm();
+}
+
+function renderCm() {
+  const a = CM.list.find((x) => x.id === CM.sel) || {}, d = CM.data;
+  $("#cmMain").innerHTML = `
+    <header class="iv-head">${logoTile(a.id, a.logo, a.company, "logo--lg")}
+      <div class="iv-head__titles"><span class="eyebrow">Cold mail</span><h2 class="type-h2">${esc(a.role)}</h2>
+        <span class="type-meta">${esc(a.company)} · ${d.mails.length} email${d.mails.length === 1 ? "" : "s"} written</span></div></header>
+    <div class="cm-grid">
+      <section class="card plunk cm-form">
+        <span class="eyebrow">Who are you writing to?</span>
+        <div class="cm-form__row">
+          <label class="field"><span class="type-meta">Name</span><input type="text" id="cmName" placeholder="e.g. Priya Sharma"></label>
+          <label class="field"><span class="type-meta">Email</span><input type="text" id="cmEmail" inputmode="email" autocomplete="off" placeholder="name@company.com"></label>
+        </div>
+        <div class="field"><span class="type-meta">Their role</span><div class="chip-row" id="cmRole">
+          ${Object.entries(CM.roles).map(([k, l]) => `<button class="chip ${k === CM.role ? "on" : ""}" data-role="${k}" title="${esc(l)}">${esc({ hiring_manager: "Hiring manager", recruiter: "Recruiter", engineer: "Engineer on the team", leader: "Founder or leader", other: "Other" }[k] || k)}</button>`).join("")}</div></div>
+        <label class="field"><span class="type-meta">Context, if any</span>
+          <textarea id="cmContext" rows="2" placeholder="e.g. Saw their post about growing the payments team; we met at PyCon Bengaluru"></textarea></label>
+        <div class="field"><span class="type-meta">Tone</span><div class="seg" id="cmTone">${Object.entries(CM.tones).map(([k, l]) => `<button data-tone="${k}" class="${k === CM.tone ? "on" : ""}">${esc(l)}</button>`).join("")}</div></div>
+        <button class="btn btn--accent btn--block" id="cmWrite">Write the email ${ICON.arrow}</button>
+        <div id="cmBusy"></div>
+        <p class="type-meta">${d.has_research ? "Uses the company research from your interview prep, so it can mention what they actually build." : "Prepare this interview first and the email can mention what the company actually builds."}
+          Only an address you have: a public one or one they gave you. The app never guesses emails.</p>
+      </section>
+      <section class="cm-mails" id="cmMails">${d.mails.length ? d.mails.map(cmCard).join("") : `<div class="board__none">Your emails for ${esc(a.company)} appear here, ready to edit and save to Gmail.</div>`}</section>
+    </div>`;
+  $("#cmRole").onclick = (e) => { const b = e.target.closest("[data-role]"); if (b) { CM.role = b.dataset.role; $$("#cmRole .chip").forEach((x) => x.classList.toggle("on", x === b)); } };
+  $("#cmTone").onclick = (e) => { const b = e.target.closest("[data-tone]"); if (b) { CM.tone = b.dataset.tone; $$("#cmTone button").forEach((x) => x.classList.toggle("on", x === b)); } };
+  $("#cmWrite").onclick = cmWrite;
+  wireCmCards();
+}
+
+const cmRoleLabel = (k) => ({ hiring_manager: "Hiring manager", recruiter: "Recruiter", engineer: "Engineer", leader: "Founder or leader", other: "Other" }[k] || k);
+const cmFollowDue = (m) => { if (!m.sent_at) return ""; const d = new Date(m.sent_at + "T00:00:00"); d.setDate(d.getDate() + 6); return d; };
+
+function cmCard(m) {
+  const part = CM.part[m.id] || "first", p = part === "follow_up" ? m.follow_up : m, draft = m.drafts?.[part];
+  const due = cmFollowDue(m), late = due && due <= new Date();
+  return `<article class="card cm-mail" data-mail="${esc(m.id)}">
+    <div class="cm-mail__head">
+      <div class="cm-mail__to"><span class="type-meta">To</span><b>${esc(m.to_name || m.to_email)}</b>${m.to_name ? `<span class="type-meta">${esc(m.to_email)}</span>` : ""}
+        <span class="tag">${esc(cmRoleLabel(m.to_role))}</span><span class="tag">${esc(CM.tones[m.tone] || m.tone)}</span>
+        ${m.sent_at ? `<span class="tag tag--ok">Sent ${esc(m.sent_at)}</span>` : draft ? `<span class="tag tag--info">In Gmail drafts</span>` : ""}</div>
+      <button class="icon-btn icon-btn--sm" data-act="del" title="Delete this email" aria-label="Delete">${ICON.x}</button>
+    </div>
+    ${m.sent_at && part === "first" ? `<div class="notice ${late ? "" : "notice--info"}">${late ? "Time to follow up: no reply in six days." : `Follow up on ${esc(due.toLocaleDateString([], { day: "numeric", month: "short" }))} if there's no reply.`}
+      <button class="btn btn--link" data-act="part" data-part="follow_up">Open the follow-up</button></div>` : ""}
+    <div class="seg cm-mail__part">${[["first", "Email"], ["follow_up", "Follow-up"]].map(([k, l]) => `<button data-act="part" data-part="${k}" class="${k === part ? "on" : ""}">${l}</button>`).join("")}</div>
+    <input type="text" class="cm-mail__subject" data-field="subject" value="${esc(p.subject)}" aria-label="Subject" placeholder="Subject">
+    <textarea class="cm-mail__body" data-field="body" rows="8" aria-label="Email body">${esc(p.body)}</textarea>
+    ${part === "first" && (m.flags || []).length ? `<div>${flagsHtml(m.flags)}</div>` : ""}
+    <div class="cm-mail__foot">
+      <span class="type-meta num" data-words>${p.body.split(/\s+/).filter(Boolean).length} words</span><span class="sp"></span>
+      <button class="btn btn--sm btn--ghost" data-act="copy">Copy</button>
+      ${part === "first" ? `<button class="btn btn--sm btn--ghost" data-act="sent">${m.sent_at ? "Not sent yet" : "I sent it"}</button>` : ""}
+      <a class="btn btn--sm" href="/apps/${esc(CM.sel)}/pdf?download=1" title="${esc(CM.data.pdf)}">Download CV to attach</a>
+      ${draft?.url ? `<a class="btn btn--sm" href="${esc(draft.url)}" target="_blank" rel="noopener">Open draft in Gmail</a>` : ""}
+      <button class="btn btn--sm btn--primary" data-act="draft">${draft ? "Save again to Gmail" : "Save to Gmail drafts"}</button>
+    </div>
+    <div class="cm-mail__busy" data-busy></div>
+  </article>`;
+}
+
+function wireCmCards() {
+  $$("#cmMails [data-mail]").forEach((card) => {
+    const id = card.dataset.mail, mail = () => CM.data.mails.find((x) => x.id === id);
+    const part = () => CM.part[id] || "first";
+    const body = $(".cm-mail__body", card);
+    const grow = () => { body.style.height = "auto"; body.style.height = body.scrollHeight + 2 + "px"; };
+    grow();
+    let save;
+    card.oninput = (e) => {
+      const f = e.target.dataset.field; if (!f) return;
+      const m = mail(), target = part() === "follow_up" ? m.follow_up : m;
+      target[f] = e.target.value;
+      if (f === "body") { grow(); $("[data-words]", card).textContent = `${e.target.value.split(/\s+/).filter(Boolean).length} words`; }
+      clearTimeout(save);
+      save = setTimeout(() => cmPersist(id), 600);
+      card._pending = () => { clearTimeout(save); return cmPersist(id); };
+    };
+    card.onclick = async (e) => {
+      const b = e.target.closest("[data-act]"); if (!b) return;
+      const m = mail();
+      if (b.dataset.act === "part") { CM.part[id] = b.dataset.part; return cmRerender(id); }
+      if (b.dataset.act === "copy") { const p = part() === "follow_up" ? m.follow_up : m; return copy(`Subject: ${p.subject}\n\n${p.body}`); }
+      if (b.dataset.act === "del") {
+        if (!confirm("Delete this email? Any Gmail draft you saved stays in Gmail.")) return;
+        await api(`/api/apps/${CM.sel}/coldmail/${id}`, { method: "DELETE" });
+        CM.data.mails = CM.data.mails.filter((x) => x.id !== id);
+        return renderCm();
+      }
+      if (b.dataset.act === "sent") {
+        if (card._pending) await card._pending();
+        const r = await api(`/api/apps/${CM.sel}/coldmail/${id}`, { method: "PUT", body: { sent: !m.sent_at } });
+        Object.assign(m, r); cmRerender(id); cmRefreshList();
+        if (r.sent_at) toast("Marked sent. The follow-up is ready when you need it.");
+        return;
+      }
+      if (b.dataset.act === "draft") return cmDraft(id, card);
+    };
+  });
+}
+
+async function cmPersist(id) {
+  const m = CM.data.mails.find((x) => x.id === id); if (!m) return;
+  const r = await api(`/api/apps/${CM.sel}/coldmail/${id}`, { method: "PUT", body: { subject: m.subject, body: m.body, follow_up: m.follow_up } });
+  m.flags = r.flags; m.words = r.words;
+}
+
+function cmRerender(id) {
+  const card = $(`#cmMails [data-mail="${id}"]`), m = CM.data.mails.find((x) => x.id === id);
+  if (!card || !m) return;
+  card.outerHTML = cmCard(m);
+  wireCmCards();
+}
+
+async function cmRefreshList() {
+  const r = await api("/api/coldmail").catch(() => null);
+  if (r) { CM.list = r.apps; renderCmList(); }
+}
+
+async function cmWrite() {
+  const email = $("#cmEmail").value.trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { $("#cmEmail").classList.add("invalid"); $("#cmEmail").focus(); toast("Give their email address."); return; }
+  $("#cmEmail").classList.remove("invalid");
+  const btn = $("#cmWrite"), busy = $("#cmBusy"), token = CM.token, app = CM.sel;
+  btn.disabled = true;
+  busy.innerHTML = `<div class="progress"></div><div class="progress__text">Writing your email and its follow-up, about half a minute</div>`;
+  try {
+    const { job } = await api(`/api/apps/${app}/coldmail`, { body: { to_name: $("#cmName").value, to_email: email, to_role: CM.role, context: $("#cmContext").value, tone: CM.tone } });
+    const mail = await pollJob(job, (l) => { const t = $(".progress__text", busy); if (t) t.textContent = l.msg; });
+    if (token !== CM.token || app !== CM.sel) return;
+    CM.data.mails.unshift(mail);
+    renderCm(); cmRefreshList();
+    const errs = (mail.flags || []).filter((f) => f.level === "error").length;
+    toast(errs ? `Written. ${errs} check${errs > 1 ? "s" : ""} flagged; read it before you save it.` : "Written. Edit anything, then save it to Gmail drafts.", 4000);
+  } catch (e) { busy.innerHTML = `<div class="notice notice--bad">${esc(e.message)}</div>`; }
+  finally { if ($("#cmWrite")) $("#cmWrite").disabled = false; }
+}
+
+async function cmDraft(id, card) {
+  if (card._pending) await card._pending();
+  const which = CM.part[id] || "first", busy = $("[data-busy]", card), btn = $('[data-act="draft"]', card);
+  btn.disabled = true;
+  busy.innerHTML = `<div class="progress"></div><div class="progress__text">Saving to your Gmail drafts</div>`;
+  try {
+    const { job } = await api(`/api/apps/${CM.sel}/coldmail/${id}/draft`, { body: { which } });
+    const m = await pollJob(job, () => {});
+    Object.assign(CM.data.mails.find((x) => x.id === id), m);
+    cmRerender(id);
+    toast("Saved to your Gmail drafts. Attach the CV there, then send it.", 4500);
+  } catch (e) { busy.innerHTML = `<div class="notice notice--bad">${esc(e.message)}</div>`; btn.disabled = false; }
 }
 
 // ================= global Claude / Gemini switch =================

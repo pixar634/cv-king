@@ -331,6 +331,67 @@ def interview_md(app_id: str):
     return FileResponse(p, media_type="text/markdown", filename=f"{app_id}_interview.md")
 
 
+# ---------- cold mail ----------
+
+@app.get("/api/coldmail")
+def coldmail_list():
+    from . import coldmail
+    rows = []
+    for r in tracker.load():
+        if not (OUTPUT / r["id"] / "report.json").exists():
+            continue
+        mails = coldmail.load(r["id"])["mails"]
+        rows.append({k: r.get(k, "") for k in ("id", "company", "role", "status", "logo", "created")}
+                    | {"mails": len(mails), "sent": sum(1 for x in mails if x.get("sent_at"))})
+    from .letters import voices
+    return {"apps": rows, "roles": coldmail.ROLES, "tones": {k: v["label"] for k, v in voices().items() if k in coldmail.TONES}}
+
+
+@app.get("/api/apps/{app_id}/coldmail")
+def coldmail_get(app_id: str):
+    from . import coldmail
+    folder = _app_dir(app_id)
+    report = tailor.load_report(app_id)
+    return coldmail.load(app_id) | {"pdf": report.get("pdf", ""), "has_research": (folder / "interview.json").exists()}
+
+
+@app.post("/api/apps/{app_id}/coldmail")
+def coldmail_write(app_id: str, body: dict = Body(...)):
+    from . import coldmail
+    _app_dir(app_id)
+    if not coldmail.EMAIL_RE.match(str(body.get("to_email") or "").strip()):
+        raise HTTPException(400, "Give the recipient's email address.")
+    engine = _prefs(load_profile())["defaults"].get("engine", "claude:opus")
+    return {"job": start_job("coldmail", lambda a, b, e, progress: coldmail.write(a, b, e, progress), app_id, body, engine)}
+
+
+@app.put("/api/apps/{app_id}/coldmail/{mail_id}")
+def coldmail_update(app_id: str, mail_id: str, body: dict = Body(...)):
+    from . import coldmail
+    _app_dir(app_id)
+    try:
+        return coldmail.update(app_id, mail_id, body)
+    except KeyError:
+        raise HTTPException(404, "No such email")
+
+
+@app.delete("/api/apps/{app_id}/coldmail/{mail_id}")
+def coldmail_delete(app_id: str, mail_id: str):
+    from . import coldmail
+    _app_dir(app_id)
+    coldmail.remove(app_id, mail_id)
+    return {"ok": True}
+
+
+@app.post("/api/apps/{app_id}/coldmail/{mail_id}/draft")
+def coldmail_draft(app_id: str, mail_id: str, body: dict = Body(default={})):
+    """Save to Gmail drafts. Never sends."""
+    from . import coldmail
+    _app_dir(app_id)
+    which = "follow_up" if body.get("which") == "follow_up" else "first"
+    return {"job": start_job("coldmail-draft", lambda a, m, w, progress: coldmail.save_draft(a, m, w, progress), app_id, mail_id, which)}
+
+
 # ---------- career map ----------
 
 @app.get("/api/career")

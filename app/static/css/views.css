@@ -203,6 +203,25 @@
 .iv-section { display: flex; flex-direction: column; gap: var(--s-3); }
 
 /* ======================================================================
+   Cold mail
+   ====================================================================== */
+.cm-grid { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: var(--s-5); align-items: start; }
+.cm-form { display: flex; flex-direction: column; gap: var(--s-4); padding: var(--s-5); position: sticky; top: calc(var(--topbar) + var(--s-6)); }
+.cm-form__row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); }
+.cm-form textarea { width: 100%; resize: vertical; }
+.cm-mails { display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; }
+.cm-mail { display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-5); }
+.cm-mail__head { display: flex; align-items: flex-start; gap: var(--s-3); }
+.cm-mail__to { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13.5px; }
+.cm-mail__to b { font-weight: 800; color: var(--text); }
+.cm-mail__part { align-self: flex-start; }
+.cm-mail__subject { width: 100%; height: auto !important; padding: 10px 12px !important; font-weight: 800; font-size: 15px !important; background: var(--black) !important; }
+.cm-mail__body { width: 100%; min-height: 180px; resize: none; overflow: hidden; padding: 14px 16px !important; font-size: 14px !important; line-height: 1.7; color: var(--text); background: var(--black) !important; }
+.cm-mail__foot { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+.cm-mail__busy:empty { display: none; }
+@media (max-width: 1100px) { .cm-grid { grid-template-columns: 1fr; } .cm-form { position: static; } }
+
+/* ======================================================================
    Career
    ====================================================================== */
 .career { height: calc(100vh - var(--topbar)); display: flex; flex-direction: column; overflow: hidden; }

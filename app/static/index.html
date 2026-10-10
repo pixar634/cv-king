@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="/static/css/tokens.css?v=1">
 <link rel="stylesheet" href="/static/css/base.css?v=4">
 <link rel="stylesheet" href="/static/css/components.css?v=12">
-<link rel="stylesheet" href="/static/css/views.css?v=9">
+<link rel="stylesheet" href="/static/css/views.css?v=10">
 </head>
 <body>
 <header class="topbar">
@@ -20,6 +20,7 @@
     <button data-view="discover">Discover</button>
     <button data-view="pipeline">Pipeline <span class="tag tag--accent tag--solid num" id="liveCount" hidden></span></button>
     <button data-view="interview">Interview</button>
+    <button data-view="outreach">Cold mail</button>
     <button data-view="career">Career</button>
   </nav>
   <div class="topbar__right">
@@ -162,6 +163,23 @@
   </div>
 </section>
 
+<!-- ================= COLD MAIL ================= -->
+<section class="view" id="v-outreach">
+  <div class="page page--wide">
+    <header class="page__head">
+      <div class="page__intro">
+        <span class="eyebrow">Cold mail</span>
+        <h1 class="type-h1">Get a reply, not a silence</h1>
+        <p class="page__lede">Pick an application and say who you're writing to. You get a short email and its follow-up, built from your real experience and what the company builds. It goes to your Gmail drafts; you send it.</p>
+      </div>
+    </header>
+    <div class="split">
+      <aside class="split__nav"><span class="eyebrow">Your applications</span><div class="list" id="cmList"></div></aside>
+      <section class="split__main" id="cmMain"></section>
+    </div>
+  </div>
+</section>
+
 <!-- ================= CAREER ================= -->
 <section class="view" id="v-career">
   <div class="career">
@@ -296,6 +314,6 @@
 <script src="/static/vendor/codemirror-5.65.16/closebrackets.min.js"></script>
 <script src="/static/fx.js?v=5"></script>
 <script src="/static/career.js?v=4"></script>
-<script src="/static/app.js?v=33"></script>
+<script src="/static/app.js?v=34"></script>
 </body>
 </html>
