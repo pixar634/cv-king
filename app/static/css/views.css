@@ -169,7 +169,7 @@
 /* pipeline */
 /* split: controls in a sticky left column, content wrapping across the wide right side (Discover, Pipeline) */
 .split { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: var(--s-8); align-items: start; }
-.split__nav { position: sticky; top: calc(var(--topbar) + var(--s-6)); max-height: calc(100vh - var(--topbar) - var(--s-10)); overflow-y: auto; display: flex; flex-direction: column; gap: var(--s-5); padding-bottom: var(--s-2); }
+.split__nav { scrollbar-width: none; position: sticky; top: calc(var(--topbar) + var(--s-6)); max-height: calc(100vh - var(--topbar) - var(--s-10)); overflow-y: auto; display: flex; flex-direction: column; gap: var(--s-5); padding-bottom: var(--s-2); }
 .split__nav > .btn:not(.btn--block) { align-self: flex-start; }
 .split__main { min-width: 0; display: flex; flex-direction: column; gap: var(--s-5); }
 .split__head { display: flex; align-items: baseline; gap: var(--s-4); flex-wrap: wrap; padding-bottom: var(--s-4); border-bottom: 1px solid var(--line); }
@@ -182,6 +182,22 @@
 .app-card__host { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .app-card__acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .app-card.err .progress__text { color: var(--bad); }
+
+/* ======================================================================
+   Interview
+   ====================================================================== */
+.iv-head { display: flex; align-items: center; gap: var(--s-4); flex-wrap: wrap; }
+.iv-head__titles { flex: 1; min-width: 240px; display: flex; flex-direction: column; gap: 4px; }
+.iv-head__acts { display: flex; gap: var(--s-2); flex-wrap: wrap; }
+.iv-stats { display: flex; gap: var(--s-8); flex-wrap: wrap; }
+.iv-head .iv-stats { margin-right: var(--s-4); }
+.iv-panel { display: flex; flex-direction: column; gap: var(--s-5); }
+.iv-panel .hud { scroll-margin-top: calc(var(--topbar) + 12px); }
+.iv-overview { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
+.iv-overview.open { display: block; }
+.iv-product { display: flex; flex-direction: column; gap: 8px; }
+.iv-product .btn--link { align-self: flex-start; margin-top: 2px; }
+.iv-section { display: flex; flex-direction: column; gap: var(--s-3); }
 
 /* ======================================================================
    Career

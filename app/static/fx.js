@@ -3,7 +3,8 @@
    - Components and text use Motion (motion.dev, the framework-free build of Framer Motion):
      content rises in as it renders, headings reveal word by word, scores count up, and
      overlays (drawer, menus, dock) animate both in and out.
-   - Page transitions use GSAP, and only page transitions: a two-panel curtain on one timeline.
+   - GSAP runs the big set pieces only: the page transition (a two-panel curtain on one timeline) and the
+     interview flow, where one step leaves as the next arrives, text decodes in and answers unfold.
    - With prefers-reduced-motion, everything resolves instantly. */
 (function () {
   const M = window.Motion, G = window.gsap;
@@ -179,7 +180,8 @@
     if (!curtain) buildCurtain();
     const panels = curtain.querySelectorAll(".curtain__panel");
     const text = curtain.querySelectorAll(".curtain__index, .curtain__name");
-    curtain.querySelector(".curtain__index").textContent = `${String(index + 1).padStart(2, "0")} / 04`;
+    const total = document.querySelectorAll("#nav [data-view]").length;
+    curtain.querySelector(".curtain__index").textContent = `${String(index + 1).padStart(2, "0")} / ${String(total).padStart(2, "0")}`;
     curtain.querySelector(".curtain__name").textContent = name;
     const main = document.querySelector("main");
     pageTl = G.timeline({ defaults: { duration: 0.42, ease: "expo.inOut" }, onComplete: () => { pageTl = null; } })
@@ -205,6 +207,74 @@
     rise([...document.querySelectorAll(".view.on .composer, .view.on .stage__bar")], { delay: 0.15 });
   }
 
-  window.FX = { rise, words, count, show, hide, toggle, isOpen, enterView, page };
+  // ---------- interview flow (GSAP): one step leaves, the next arrives ----------
+  const GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<>/#%&*+=";
+  let radar = null;
+
+  // Text decodes into place, left to right; the element keeps its final height so nothing jumps.
+  function scramble(el, text, { delay = 0 } = {}) {
+    if (!el) return;
+    text = text ?? el.textContent;
+    el.textContent = text;
+    if (reduced() || !G) return;
+    el.style.minHeight = `${el.offsetHeight}px`;
+    el.textContent = "";
+    const o = { p: 0 };
+    G.to(o, { p: 1, delay, duration: Math.min(1.1, 0.35 + text.length * 0.008), ease: "power2.out",
+      onUpdate: () => {
+        const n = Math.floor(o.p * text.length);
+        let s = text.slice(0, n);
+        for (let i = n; i < Math.min(text.length, n + 10); i++) s += /\s/.test(text[i]) ? text[i] : GLYPHS[(Math.random() * GLYPHS.length) | 0];
+        el.textContent = s;
+      },
+      onComplete: () => { el.textContent = text; el.style.removeProperty("min-height"); } });
+  }
+
+  // Replace the step on a HUD stage: the old one skews out, the new one wipes in, a scan line sweeps the frame.
+  function flowSwap(stage, html, dir = 1) {
+    stage.querySelectorAll(":scope > .is-leaving").forEach((x) => x.remove());
+    const old = stage.querySelector(":scope > .hud__slide");
+    const next = document.createElement("div");
+    next.className = "hud__slide"; next.innerHTML = html;
+    if (reduced() || !G) { if (old) old.remove(); stage.appendChild(next); return next; }
+    if (old) { G.killTweensOf(old); old.classList.add("is-leaving"); }
+    stage.appendChild(next);
+    const scan = stage.closest(".hud")?.querySelector(".hud__scan");
+    const tl = G.timeline({ defaults: { ease: "expo.out" } });
+    if (old) tl.to(old, { x: -48 * dir, skewX: 6 * dir, autoAlpha: 0, duration: 0.3, ease: "power3.in", onComplete: () => old.remove() }, 0);
+    tl.fromTo(next, { x: 64 * dir, skewX: -4 * dir, autoAlpha: 0, clipPath: dir > 0 ? "inset(0% 0% 0% 100%)" : "inset(0% 100% 0% 0%)" },
+                    { x: 0, skewX: 0, autoAlpha: 1, clipPath: "inset(0% 0% 0% 0%)", duration: 0.7, clearProps: "transform,clipPath" }, old ? 0.16 : 0)
+      .fromTo(next.querySelectorAll("[data-flow-in]"), { y: 18, autoAlpha: 0 },
+                    { y: 0, autoAlpha: 1, duration: 0.55, stagger: 0.06, clearProps: "transform" }, "<0.2");
+    if (scan) tl.fromTo(scan, { yPercent: -100, autoAlpha: 1 }, { yPercent: 900, autoAlpha: 0, duration: 0.9, ease: "power2.inOut" }, 0);
+    next.querySelectorAll("[data-scramble]").forEach((el, i) => scramble(el, null, { delay: (old ? 0.3 : 0.12) + i * 0.1 }));
+    return next;
+  }
+
+  // A whole HUD arriving (the preparing screen): it unfolds from the top, and its radar starts turning.
+  function flowIn(el) {
+    if (!el) return;
+    if (radar) { radar.kill(); radar = null; }
+    if (reduced() || !G) return;
+    const dish = el.querySelector(".hud-radar i");
+    G.fromTo(el, { autoAlpha: 0, y: 16, clipPath: "inset(0% 0% 100% 0%)" },
+                 { autoAlpha: 1, y: 0, clipPath: "inset(0% 0% 0% 0%)", duration: 0.7, ease: "expo.out", clearProps: "transform,clipPath" });
+    el.querySelectorAll("[data-scramble]").forEach((t, i) => scramble(t, null, { delay: 0.2 + i * 0.1 }));
+    if (dish) radar = G.to(dish, { rotation: 360, duration: 2.4, ease: "none", repeat: -1 });
+  }
+
+  // An answer unfolding downwards, its points sliding in one after another.
+  function flowReveal(el) {
+    el.hidden = false;
+    if (reduced() || !G) return;
+    G.timeline({ defaults: { ease: "expo.out" } })
+      .fromTo(el, { clipPath: "inset(0% 0% 100% 0%)" }, { clipPath: "inset(0% 0% 0% 0%)", duration: 0.6, clearProps: "clipPath" })
+      .fromTo(el.querySelectorAll("li, .code, .hud-mono, .btn--link"), { x: -14, autoAlpha: 0 },
+              { x: 0, autoAlpha: 1, duration: 0.45, stagger: 0.035, clearProps: "transform" }, 0.08);
+  }
+
+  const pulse = (el) => { if (!reduced() && G) G.fromTo(el, { scale: 0.96 }, { scale: 1, duration: 0.4, ease: "back.out(3)", clearProps: "transform" }); };
+
+  window.FX = { rise, words, count, show, hide, toggle, isOpen, enterView, page, scramble, flowSwap, flowIn, flowReveal, pulse };
   boot();
 })();

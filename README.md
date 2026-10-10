@@ -54,6 +54,17 @@ You know the drill: you find a role you'd be great at, spend an evening rewordin
 - 🔄 **Change status from the card**, or click any card to reopen its CV.
 - 📈 **Export to Excel** with one click.
 
+### 🎤 Interview: walk in knowing the questions
+- 🔬 **Researches the company first**, on the web with sources: what it actually builds and ships, its stack, its stated values, what it launched lately, and how it interviews for this role (stages, formats and questions candidates report).
+- 🧩 **Three rounds, planned like the real thing**: a screen, the deep technical, design, case or managerial round, and a leadership round with **culture fit** built on the company's own values. When the research finds the company's actual process, the rounds follow it.
+- 🧑‍💼 **Coding only when the role codes.** Managers, PMs and other non-coding roles get managerial and case questions instead.
+- 🎯 **Questions to industry standard** for the JD and level, including deep dives into the claims on your tailored CV, with model answers built only from your real experience.
+- 📈 **Adaptive practice**: one question at a time in a sci-fi HUD. Get two right in a row and the questions get harder; mark one to review and it eases off. Every question has why it's asked, a model answer, follow-ups and pitfalls.
+- 💻 **Adaptive coding test (LeetCode-style)** for coding roles: ten problems across five levels, set for the job, in Python or JavaScript. Your code runs live against hidden tests. Solve one and the next is a level harder; skip one and it gets easier. Score, streak and timer included.
+- 🛡️ **A real sandbox**: code runs in your browser, in a worker with no network access, never on your machine. Every test is checked against a reference solution first, so a wrong test can't fail you.
+- ⌨️ **Keyboard flow**: → next, ← back, Space reveal, G got it, R review again, Ctrl+Enter submit.
+- 📥 **Download the notes** as Markdown to read on the way.
+
 ### 🧭 Career: where your next five years can go
 - 🗺️ **Your history as an interactive map**, built from your profile.
 - 🛣️ **Five or six routes for the next five years**, researched on the web: Forward Deployed / Applied AI, Engineering Manager, Product, Staff IC, Solutions and early-stage.
@@ -64,7 +75,7 @@ You know the drill: you find a role you'd be great at, spend an evening rewordin
 - 🌱 **Growth log:** record what you've done, learned or want next. The next map reads all of it, and skills you mark for CVs join your profile.
 
 ### 🎬 Motion
-- 🌊 **Page transitions** with a two-panel curtain and the screen's name, built on GSAP.
+- 🌊 **Page transitions** with a two-panel curtain and the screen's name, and the interview's flow of one step at a time, built on GSAP.
 - ✨ **Everything arrives with intent:** cards, lists and panels rise in, headings reveal word by word, and scores count up, built on Motion (the framework-free Framer Motion).
 - 🚪 **Smooth exits** for the settings drawer, menus and the selection dock.
 - ♿ **Respects reduced motion:** if your system asks for less motion, everything appears instantly.
@@ -102,7 +113,9 @@ Keep the `start.bat` window open while you work; closing it stops the app.
 |---|---|
 | `app/` | The FastAPI server, tailoring engine and web UI |
 | `app/static/css/` | The design system: `tokens.css` → `base.css` → `components.css` → `views.css` |
-| `app/static/fx.js` | All motion in one place: Motion for components and text, GSAP for page transitions |
+| `app/static/fx.js` | All motion in one place: Motion for components and text, GSAP for page transitions and the interview flow |
+| `app/interview.py` | Company research, the three-round interview plan and the adaptive coding test |
+| `app/static/runner.js` | The coding-test sandbox: a network-free worker running JavaScript and Python (Pyodide) |
 | `knowledge/playbook.md` | The writing brief: how ATS and recruiters read a CV, and the rules |
 | `knowledge/markets.yaml` | Market conventions for each region |
 | `knowledge/tracks.yaml` | Career tracks and what each one leads with |

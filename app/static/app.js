@@ -90,7 +90,7 @@ function wireNav() {
   $("#nav").onclick = (e) => { const b = e.target.closest("button"); if (b) showView(b.dataset.view); };
 }
 
-const VIEWS = ["tailor", "discover", "pipeline", "career"];
+const VIEWS = ["tailor", "discover", "pipeline", "interview", "career"];
 function showView(v) {
   const from = $(".view.on")?.id.slice(2);
   $$("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.view === v));
@@ -100,6 +100,7 @@ function showView(v) {
     if (v === "discover") loadFound();
     if (v === "pipeline") loadPipeline();
     if (v === "career") loadCareer();
+    if (v === "interview") loadInterview();
     renderDock();
   };
   if (from === v) return swap();
@@ -210,6 +211,7 @@ function renderJobCard() {
     : done ? (S.app.scores.after < S.app.scores.ceiling - 3
         ? `<div class="job__foot"><span class="type-meta">Your profile can now reach ${S.app.scores.ceiling}% for this job; this CV is at ${S.app.scores.after}%.</span><button class="btn btn--primary btn--sm" id="jRedo">Re-tailor</button></div>`
         : `<div class="job__foot"><span class="type-meta">Tailored from your profile only. Every number and skill was checked against it.</span><button class="btn btn--sm" id="jRedo" title="Rewrite this CV with your current profile">Re-tailor</button></div>`)
+        + `<button class="btn btn--primary btn--block" id="jPrep">Prepare for the interview ${ICON.arrow}</button>`
     : `<div class="job__controls">
         <label class="field"><span class="eyebrow">Market</span><select id="jMarket" class="control--sm">${marketOptions(market)}</select></label>
         <label class="field"><span class="eyebrow">Career track</span><select id="jTrack" class="control--sm"><option value="auto" ${D().track === "auto" ? "selected" : ""}>From the job title</option>${Object.entries(S.state.tracks).map(([k, t]) => `<option value="${k}" ${k === D().track ? "selected" : ""}>${esc(t.label)}</option>`).join("")}</select></label>
@@ -234,6 +236,8 @@ function renderJobCard() {
   if (go) go.onclick = () => tailorJob();
   const retry = $("#jRetry");
   if (retry) retry.onclick = () => { S.item = null; renderJobCard(); tailorJob(); };
+  const prep = $("#jPrep");
+  if (prep) prep.onclick = () => openInterview(S.app.id);
   const redo = $("#jRedo");
   if (redo) redo.onclick = () => {
     const old = S.app;
@@ -884,6 +888,7 @@ function renderPipeline() {
         ${r.job_url ? `<a class="btn btn--sm" href="${esc(r.job_url)}" target="_blank" rel="noopener" data-stop title="${esc(r.job_url)}">Open posting</a>` : `<span class="type-meta">No link saved</span>`}
         <a class="btn btn--sm btn--ghost" href="/apps/${esc(r.id)}/pdf?download=1" data-stop title="${esc(r.pdf)}">PDF</a>
         ${r.status === "Generated" ? `<button class="btn btn--sm btn--ghost" data-applied="${esc(r.id)}" data-stop>Mark applied</button>` : ""}
+        <button class="btn btn--sm btn--ghost" data-prep="${esc(r.id)}" data-stop title="Interview questions for this job">Interview</button>
       </div></div>`;
   const flightCard = (b) => `<div class="card app-card ${b.status === "error" ? "err" : ""}" data-flight="${esc(b.id)}">
       <div class="item"><span class="logo logo--sm">${initial(b.company || b.role)}</span><span class="item__body"><span class="item__title">${esc(b.company || "Reading the posting")}</span><span class="item__meta">${esc(b.role || "")}</span></span><span class="tag ${b.status === "error" ? "tag--bad" : "tag--accent"}">${b.status === "error" ? "Failed" : "Writing"}</span></div>
@@ -899,6 +904,7 @@ function renderPipeline() {
   renderPipeline.sig = sig;
   $("#stageNav").innerHTML = navHtml; $("#stageHead").innerHTML = headHtml; $("#board").innerHTML = boardHtml;
   $$("[data-open]").forEach((el) => (el.onclick = (e) => { if (!e.target.closest("select, [data-stop]")) openApp(el.dataset.open); }));
+  $$("[data-prep]").forEach((b) => (b.onclick = () => openInterview(b.dataset.prep)));
   $$("[data-applied]").forEach((b) => (b.onclick = async () => {
     const r = await api(`/api/apps/${b.dataset.applied}/track`, { body: { status: "Applied" } });
     toast(`Applied: ${r.company}`);
@@ -911,6 +917,674 @@ function renderPipeline() {
   }));
   $$("[data-retry]").forEach((b) => (b.onclick = async () => { await api(`/api/batch/${b.dataset.retry}/retry`, { body: {} }); loadPipeline(); pollBatch(true); }));
   $$("[data-remove]").forEach((b) => (b.onclick = async () => { await api(`/api/batch/${b.dataset.remove}`, { method: "DELETE" }); loadPipeline(); }));
+}
+
+// ================= interview prep =================
+// One step at a time: a setup flow, a mission log while it prepares, then the three rounds as adaptive decks,
+// and for roles that code, an adaptive coding test. Marks, test progress and code drafts are practice
+// conveniences, so they live in this browser.
+const IV = { list: [], sel: store.get("cv.iv", ""), data: null, token: 0, tab: "", filter: "all", err: "", setup: null, deck: null };
+const ivMarksKey = (id) => `cv.ivmarks.${id}`;
+const LEVEL_TONE = { basic: "tag--ok", intermediate: "tag--info", advanced: "tag--merge" };
+const LEVEL_ORDER = ["basic", "intermediate", "advanced"];
+const pad2 = (n) => String(n).padStart(2, "0");
+const ivApp = () => IV.list.find((x) => x.id === IV.sel) || {};
+// Bring the practice frame up under the top bar when a round or a problem starts, so it's never below the fold.
+function ivFocusHud() {
+  const h = $("#ivPanel .hud"); if (!h) return;
+  const top = h.getBoundingClientRect().top;
+  if (top < 60 || top > innerHeight * 0.35) h.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+}
+const hud = (inner, controls = "") => `<div class="hud" data-fx-skip><div class="hud__frame"></div><div class="hud__scan"></div>${inner}
+  ${controls ? `<div class="hud__controls">${controls}</div>` : ""}</div>`;
+
+function openInterview(id) { IV.sel = id; store.set("cv.iv", id); IV.tab = ""; showView("interview"); }
+
+async function loadInterview() {
+  const r = await api("/api/interview");
+  IV.list = r.apps;
+  if (!IV.list.some((a) => a.id === IV.sel)) IV.sel = IV.list[0]?.id || "";
+  renderIvList();
+  if (IV.sel) selectIv(IV.sel);
+  else $("#ivMain").innerHTML = `<div class="empty">Tailor a CV first. Every application you tailor shows up here, ready for interview prep.</div>`;
+}
+
+function renderIvList() {
+  $("#ivList").innerHTML = IV.list.map((a) => `<div class="item item--link item--nav ${a.id === IV.sel ? "on" : ""}" data-iv="${esc(a.id)}">${logoTile(a.id, a.logo, a.company)}
+      <span class="item__body"><span class="item__title">${esc(a.company)}</span><span class="item__meta" title="${esc(a.role)}">${esc(a.role)}</span></span>
+      <span class="item__aside">${a.preparing ? `<span class="spinner" style="width:12px;height:12px" title="Preparing"></span>` : a.questions ? `<span class="tag tag--ok num" title="${a.questions} questions ready">${a.questions}</span>` : ""}</span></div>`).join("");
+  $$("#ivList [data-iv]").forEach((el) => (el.onclick = () => { if (el.dataset.iv !== IV.sel) { IV.tab = ""; selectIv(el.dataset.iv); } }));
+}
+
+async function selectIv(id) {
+  IV.sel = id; store.set("cv.iv", id); IV.setup = IV.deck = null; renderIvList();
+  const token = ++IV.token;
+  const r = await api(`/api/apps/${id}/interview`);
+  if (token !== IV.token) return;
+  IV.data = r.prep;
+  if (r.job) return ivWatch(id, r.job, token);
+  r.prep ? renderIv() : renderIvSetup(false);
+}
+
+// ---------- setup: a flow form ----------
+const SETUP_STEPS = ["depth", "focus", "launch"];
+const DEPTHS = [[4, "Quick", "Four questions a round. A warm-up the night before."], [6, "Standard", "Six a round, climbing from basic to advanced."], [8, "Deep", "Eight a round, with more advanced questions to climb into."]];
+
+function renderIvSetup(again) {
+  IV.deck = null;
+  const a = ivApp(), prev = IV.data?.options || {};
+  IV.setup = { step: 0, again, per: [4, 6, 8].includes(prev.per_round) ? prev.per_round : 6, focus: prev.focus || "", reuse: !!(again && IV.data?.research) };
+  $("#ivMain").innerHTML = `${IV.err ? `<div class="notice notice--bad">${esc(IV.err)}</div>` : ""}` + hud(
+    `<div class="hud__bar"><span>${again ? "Recalibrate" : "New session"} · ${esc(a.company)}</span><span id="ivStepNo"></span></div>
+     <div class="hud__segs" id="ivSegs">${SETUP_STEPS.map(() => "<i></i>").join("")}</div>
+     <div class="hud__stage" id="ivStage"></div>`,
+    `<button class="btn btn--sm btn--ghost" id="ivStepBack">Back</button>${again ? `<button class="btn btn--sm btn--ghost" id="ivBack">Back to my questions</button>` : ""}
+     <span class="sp"></span><span class="type-meta"><span class="kbd">Enter</span> next</span><button class="btn btn--primary" id="ivStepNext">Next ${ICON.arrow}</button>`);
+  IV.err = "";
+  $("#ivStepBack").onclick = () => IV.setup.step && ivStep(IV.setup.step - 1, -1);
+  $("#ivStepNext").onclick = ivStepNext;
+  const back = $("#ivBack"); if (back) back.onclick = renderIv;
+  ivStep(0, 1);
+}
+
+function ivStep(i, dir) {
+  const st = IV.setup, a = ivApp();
+  st.step = i;
+  const html = {
+    depth: () => `<span class="hud-mono" data-flow-in>Step 01 · Depth</span><h2 class="flow-title" data-scramble>How deep do we go?</h2>
+      <p class="type-body" data-flow-in>You get the three rounds ${esc(a.company)} is most likely to run for this role, planned from how it really interviews when that can be found. Coding only if the role codes; managerial and case questions if it doesn't; culture fit in the final round.</p>
+      <div class="choice-grid choice-grid--3" data-flow-in>${DEPTHS.map(([k, t, d]) => `<button class="choice ${st.per === k ? "on" : ""}" data-per="${k}"><span class="choice__n num">${k}</span><b>${t}</b><small>${d}</small></button>`).join("")}</div>`,
+    focus: () => `<span class="hud-mono" data-flow-in>Step 02 · Intel</span><h2 class="flow-title" data-scramble>Anything we should know?</h2>
+      <p class="type-body" data-flow-in>What the recruiter told you, the round you're worried about, the stack they mentioned. Leave it empty if nothing.</p>
+      <textarea id="ivFocus" rows="4" data-flow-in placeholder="e.g. Round two is live coding in Python, then system design for payments.">${esc(st.focus)}</textarea>
+      ${st.again && IV.data?.research ? `<label class="check" data-flow-in><input type="checkbox" id="ivReuse" ${st.reuse ? "checked" : ""}> Reuse the company research from ${esc(IV.data.generated_at.slice(0, 10))} (faster)</label>` : ""}`,
+    launch: () => `<span class="hud-mono" data-flow-in>Step 03 · Launch</span><h2 class="flow-title" data-scramble>Ready when you are.</h2>
+      <div class="iv-stats" data-flow-in>
+        <div class="stat"><span class="eyebrow">Rounds</span><span class="stat__value num">3</span></div>
+        <div class="stat"><span class="eyebrow">Questions</span><span class="stat__value num">${3 * st.per}</span></div>
+        <div class="stat"><span class="eyebrow">Takes</span><span class="stat__value num">3–8<small> min</small></span></div></div>
+      <p class="type-body" data-flow-in>${st.reuse ? "Using the research you already have" : `First the web: what ${esc(a.company)} actually builds, what it values and how it interviews`}, then the three rounds, written to industry standard for this role and level.</p>
+      <div data-flow-in><button class="btn btn--accent btn--lg" id="ivLaunch">Research ${esc(a.company)} and write my interview ${ICON.arrow}</button></div>
+      <p class="type-meta" data-flow-in>The research runs on Claude with web search; the questions use the writer chosen at the top.</p>`,
+  }[SETUP_STEPS[i]]();
+  const el = FX.flowSwap($("#ivStage"), html, dir);
+  el.onclick = (e) => {
+    const d = e.target.closest("[data-per]");
+    if (d) { st.per = +d.dataset.per; $$("[data-per]", el).forEach((x) => x.classList.toggle("on", x === d)); FX.pulse(d); }
+  };
+  const f = $("#ivFocus", el); if (f) { f.oninput = () => (st.focus = f.value); setTimeout(() => f.focus(), 400); }
+  const rc = $("#ivReuse", el); if (rc) rc.onchange = () => (st.reuse = rc.checked);
+  const go = $("#ivLaunch", el); if (go) go.onclick = ivLaunch;
+  $("#ivStepNo").textContent = `${pad2(i + 1)} / ${pad2(SETUP_STEPS.length)}`;
+  $$("#ivSegs i").forEach((s, k) => { s.className = k < i ? "done" : k === i ? "cur" : ""; });
+  $("#ivStepBack").disabled = i === 0;
+  $("#ivStepNext").hidden = i === SETUP_STEPS.length - 1;
+}
+
+function ivStepNext() {
+  const st = IV.setup;
+  if (st.step < SETUP_STEPS.length - 1) ivStep(st.step + 1, 1); else ivLaunch();
+}
+
+async function ivLaunch() {
+  const st = IV.setup;
+  try { const { job } = await api(`/api/apps/${IV.sel}/interview`, { body: { per_round: st.per, focus: st.focus, reuse_research: st.reuse } }); ivWatch(IV.sel, job, ++IV.token); }
+  catch (e) { toast(e.message, 5000); }
+}
+
+// ---------- preparing: a mission log ----------
+function missionLog(title) {
+  return `<div class="hud__stage"><div class="flow-prep">
+      <div class="hud-radar" aria-hidden="true"><i></i></div>
+      <div class="flow-prep__body"><h2 class="flow-title" data-scramble>${title}</h2>
+        <div class="flow-log" id="ivLog"></div>
+        <p class="type-meta">You can leave this screen; it carries on.</p></div></div></div>`;
+}
+function logLine(token, msg, t) {
+  const log = $("#ivLog"); if (!log || token !== IV.token) return;
+  log.insertAdjacentHTML("beforeend", `<div class="flow-log__line"><span class="hud-mono">${esc(t || "")}</span><span class="flow-log__msg"></span></div>`);
+  FX.scramble(log.lastElementChild.querySelector(".flow-log__msg"), msg);
+}
+async function runClock(job, el) {
+  const info = await api(`/api/jobs/${job}`).catch(() => null);
+  const started = info?.started ? new Date(info.started).getTime() : Date.now();
+  const tick = setInterval(() => {
+    if (!el.isConnected) return clearInterval(tick);
+    const s = Math.round((Date.now() - started) / 1000); el.textContent = `${pad2(Math.floor(s / 60))}:${pad2(s % 60)}`;
+  }, 1000);
+  return () => clearInterval(tick);
+}
+
+async function ivWatch(id, job, token) {
+  IV.setup = IV.deck = null;
+  const a = IV.list.find((x) => x.id === id);
+  if (a) { a.preparing = true; renderIvList(); }
+  $("#ivMain").innerHTML = hud(`<div class="hud__bar"><span>Preparing · ${esc(a?.company || "")}</span><span id="ivClock">00:00</span></div>
+    ${missionLog("Researching the company, then planning your three rounds")}`);
+  FX.flowIn($("#ivMain .hud"));
+  const stop = await runClock(job, $("#ivClock"));
+  let ok = false;
+  try { await pollJob(job, (l) => logLine(token, l.msg, l.t)); ok = true; toast(`Interview ready: ${a?.company || ""}`, 4000); }
+  catch (e) { IV.err = e.message; }
+  stop();
+  const r = await api("/api/interview").catch(() => null);
+  if (r) { IV.list = r.apps; renderIvList(); }
+  if (token !== IV.token || !$("#v-interview").classList.contains("on")) return;
+  if (ok) { IV.tab = ""; selectIv(id); }
+  else { IV.data = (await api(`/api/apps/${id}/interview`)).prep; renderIvSetup(!!IV.data); }
+}
+
+// ---------- prepared: overview, then tabs: the company, the three rounds, the coding test ----------
+function renderIv() {
+  IV.setup = null;
+  const d = IV.data, marks = store.get(ivMarksKey(IV.sel), {});
+  const a = ivApp();
+  const total = d.rounds.reduce((n, x) => n + x.questions.length, 0);
+  const got = Object.values(marks).filter((v) => v === "got").length;
+  const tabs = [["intel", "Company", ""], ...d.rounds.map((r, i) => [r.id, `${pad2(i + 1)} ${r.name}`, `${r.questions.length}`]), ...(d.needs_coding ? [["code", "Coding test", ""]] : [])];
+  if (!tabs.some((t) => t[0] === IV.tab)) IV.tab = d.rounds[0]?.id || "intel";
+  $("#ivMain").innerHTML = `
+    <header class="iv-head">${logoTile(a.id, a.logo, d.company, "logo--lg")}
+      <div class="iv-head__titles"><span class="eyebrow">Interview prep</span><h2 class="type-h2">${esc(d.role)}</h2>
+        <span class="type-meta">${esc(d.company)} · prepared ${esc(new Date(d.generated_at).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))}${d.needs_coding ? "" : " · no coding rounds for this role"}</span></div>
+      <div class="iv-stats">
+        <div class="stat"><span class="eyebrow">Questions</span><span class="stat__value num">${total}</span></div>
+        <div class="stat"><span class="eyebrow">Got it</span><span class="stat__value num" id="ivGot">${got}<small>/${total}</small></span></div></div>
+      <div class="iv-head__acts"><a class="btn btn--sm" href="/apps/${esc(IV.sel)}/interview.md" download>Download notes</a><button class="btn btn--sm btn--ghost" id="ivAgain">Prepare again</button></div>
+    </header>
+    ${d.overview ? `<p class="type-body iv-overview" id="ivOverview" title="Click to read it all">${esc(d.overview)}</p>` : ""}
+    <div class="tabs" id="ivTabs">${tabs.map(([k, l, n]) => `<button data-tab="${k}" class="${k === IV.tab ? "on" : ""}">${esc(l)}${n ? ` <span class="tabs__count num">${n}</span>` : ""}</button>`).join("")}</div>
+    <div class="iv-panel" id="ivPanel"></div>`;
+  $("#ivAgain").onclick = () => renderIvSetup(true);
+  const ov = $("#ivOverview"); if (ov) ov.onclick = () => ov.classList.toggle("open");
+  $("#ivTabs").onclick = (e) => { const b = e.target.closest("[data-tab]"); if (b) ivTab(b.dataset.tab); };
+  renderIvPanel();
+}
+
+function ivTab(id) {
+  IV.tab = id;
+  $$("#ivTabs [data-tab]").forEach((x) => x.classList.toggle("on", x.dataset.tab === id));
+  renderIvPanel();
+}
+
+function renderIvPanel() {
+  IV.deck = null;
+  if (IV.tab === "intel") { $("#ivPanel").innerHTML = ivCompany(IV.data); return; }
+  if (IV.tab === "code") return ctOpen();
+  ivDeck(IV.data.rounds.find((r) => r.id === IV.tab));
+}
+
+// ---------- a round as an adaptive deck ----------
+// It opens on the round's brief, then serves one question at a time. Two "got it" in a row raise the
+// difficulty; a "review again" lowers it. Back walks through the questions already seen.
+function ivDeck(round) {
+  const marks = store.get(ivMarksKey(IV.sel), {});
+  const items = round.questions.map((q, i) => [q, i, `${round.id}:${i}`])
+    .filter(([, , k]) => IV.filter === "all" || (IV.filter === "again" ? marks[k] === "again" : !marks[k]));
+  const ri = IV.data.rounds.indexOf(round);
+  IV.deck = { round, items, order: [], at: -1, target: 0, streak: 0, done: false };
+  $("#ivPanel").innerHTML = `
+    <div class="report__row"><span class="type-meta">${esc(round.decides || "")}</span>
+      <div class="seg" id="ivFilter">${[["all", "All"], ["new", "Not marked"], ["again", "To review"]].map(([k, l]) => `<button data-f="${k}" class="${IV.filter === k ? "on" : ""}">${l}</button>`).join("")}</div></div>` + hud(
+    `<div class="hud__bar"><span>Round ${pad2(ri + 1)} / ${pad2(IV.data.rounds.length)} · ${esc(round.name)}</span><span id="ivQNo"></span></div>
+     <div class="hud__segs" id="ivSegs">${items.map(() => "<i></i>").join("")}</div>
+     <div class="hud__stage" id="ivStage"></div>`,
+    `<button class="btn btn--sm btn--ghost" id="ivPrev" title="Left arrow">Back</button>
+     <button class="btn btn--sm" id="ivReveal" title="Space">Reveal answer <span class="kbd">Space</span></button><span class="sp"></span>
+     <span class="hud-mono" id="ivLevel"></span>
+     <button class="chip" data-mark="again" title="R">Review again <span class="kbd">R</span></button>
+     <button class="chip" data-mark="got" title="G">Got it <span class="kbd">G</span></button>
+     <button class="btn btn--primary" id="ivNext" title="Right arrow or Enter">Next ${ICON.arrow}</button>`);
+  $("#ivFilter").onclick = (e) => { const b = e.target.closest("[data-f]"); if (b) { IV.filter = b.dataset.f; ivDeck(round); } };
+  $("#ivPrev").onclick = () => ivMove(-1);
+  $("#ivNext").onclick = () => ivMove(1);
+  $("#ivReveal").onclick = ivReveal;
+  $$(".hud__controls [data-mark]").forEach((b) => (b.onclick = () => ivMark(b.dataset.mark)));
+  $(".hud__controls").hidden = true;
+  if (!items.length) {
+    FX.flowSwap($("#ivStage"), `<div class="flow-round"><span class="hud-mono" data-flow-in>Nothing here</span><h2 class="flow-title" data-scramble>${IV.filter === "again" ? "Nothing marked to review." : "Every question in this round is marked."}</h2>
+      <p class="type-body" data-flow-in>Switch the filter to All to run the round again.</p></div>`, 1);
+    return;
+  }
+  ivBrief(1);
+}
+
+function ivBrief(dir) {
+  const D = IV.deck, r = D.round, ri = IV.data.rounds.indexOf(r);
+  D.at = -1;
+  FX.flowSwap($("#ivStage"), `<div class="flow-round">
+      <span class="hud-mono" data-flow-in>Round ${pad2(ri + 1)} of ${pad2(IV.data.rounds.length)}</span>
+      <h2 class="flow-title flow-title--xl" data-scramble>${esc(r.name)}</h2>
+      ${r.format ? `<p class="type-body" data-flow-in>${esc(r.format)}</p>` : ""}
+      ${r.decides ? `<p class="type-meta" data-flow-in><b class="text-2">What it decides:</b> ${esc(r.decides)}</p>` : ""}
+      ${r.source ? `<div data-flow-in><a class="btn btn--link" href="${esc(r.source)}" target="_blank" rel="noopener">How we know this round</a></div>` : ""}
+      <div data-flow-in><button class="btn btn--accent btn--lg" id="ivBegin">Begin round ${ICON.arrow}</button>
+        <span class="type-meta" style="margin-left:12px">Questions get harder as you get them right.</span></div></div>`, dir);
+  $("#ivBegin").onclick = () => { ivFocusHud(); ivMove(1); };
+  $(".hud__controls").hidden = true;
+  $("#ivQNo").textContent = `${D.items.length} questions`;
+  ivSegs();
+}
+
+// The next question: unseen, at the target difficulty if there is one, else the nearest difficulty to it.
+function ivPick() {
+  const D = IV.deck, seen = new Set(D.order);
+  const left = D.items.map((it, k) => [k, LEVEL_ORDER.indexOf(it[0].level)]).filter(([k]) => !seen.has(k));
+  if (!left.length) return -1;
+  left.sort((a, b) => Math.abs(a[1] - D.target) - Math.abs(b[1] - D.target) || a[0] - b[0]);
+  return left[0][0];
+}
+
+function ivShow(dir) {
+  const D = IV.deck, [q, i, key] = D.items[D.order[D.at]];
+  const mark = store.get(ivMarksKey(IV.sel), {})[key];
+  const li = (items) => items.map((t) => `<li>${esc(t)}</li>`).join("");
+  D.revealed = false; D.done = false;
+  FX.flowSwap($("#ivStage"), `<div class="flow-q">
+      <div class="flow-q__meta" data-flow-in><span class="flow-q__n num">${pad2(D.at + 1)}</span><span class="tag ${LEVEL_TONE[q.level] || ""}">${esc(q.level)}</span><span class="tag">${esc(q.kind)}</span>
+        ${mark ? `<span class="tag ${mark === "got" ? "tag--ok" : "tag--warn"}">${mark === "got" ? "Got it" : "To review"}</span>` : ""}</div>
+      <h3 class="flow-q__text" data-scramble>${esc(q.q)}</h3>
+      ${q.why ? `<p class="type-meta" data-flow-in><b class="text-2">Why they ask:</b> ${esc(q.why)}</p>` : ""}
+      <div class="flow-q__answer" id="ivAnswer" hidden>
+        ${q.answer.length ? `<div><div class="hud-mono" style="margin-bottom:10px">Model answer</div><ol class="bullets">${li(q.answer)}</ol></div>` : ""}
+        ${q.code ? `<pre class="code"><code>${esc(q.code)}</code></pre>` : ""}
+        ${q.follow_ups.length ? `<div><div class="hud-mono" style="margin-bottom:8px">Follow-ups</div><ul class="bullets">${li(q.follow_ups)}</ul></div>` : ""}
+        ${q.pitfalls.length ? `<div><div class="hud-mono" style="margin-bottom:8px">Pitfalls</div><ul class="bullets bullets--warn">${li(q.pitfalls)}</ul></div>` : ""}
+        ${q.source ? `<div><a class="btn btn--link" href="${esc(q.source)}" target="_blank" rel="noopener">Where this comes from</a></div>` : ""}
+      </div></div>`, dir);
+  $(".hud__controls").hidden = false;
+  $("#ivQNo").textContent = `Q ${pad2(D.at + 1)} / ${pad2(D.items.length)}`;
+  $("#ivReveal").innerHTML = `Reveal answer <span class="kbd">Space</span>`;
+  $("#ivNext").innerHTML = D.order.length === D.items.length && D.at === D.order.length - 1 ? `Finish round ${ICON.arrow}` : `Next ${ICON.arrow}`;
+  $("#ivLevel").textContent = `Difficulty ${["▮▯▯", "▮▮▯", "▮▮▮"][D.target]}`;
+  $$(".hud__controls [data-mark]").forEach((b) => b.classList.toggle("on", mark === b.dataset.mark));
+  ivSegs();
+}
+
+function ivSegs() {
+  const D = IV.deck, marks = store.get(ivMarksKey(IV.sel), {});
+  $$("#ivSegs i").forEach((s, k) => {
+    const shown = k < D.order.length, m = shown ? marks[D.items[D.order[k]][2]] : "";
+    s.className = [shown ? "done" : "", k === D.at && !D.done ? "cur" : "", m || ""].join(" ").trim();
+  });
+}
+
+function ivReveal() {
+  const D = IV.deck, a = $("#ivAnswer");
+  if (!D || D.done || D.at < 0 || !a) return;
+  D.revealed = !D.revealed;
+  D.revealed ? FX.flowReveal(a) : (a.hidden = true);
+  $("#ivReveal").innerHTML = D.revealed ? `Hide answer <span class="kbd">Space</span>` : `Reveal answer <span class="kbd">Space</span>`;
+}
+
+function ivMark(kind) {
+  const D = IV.deck; if (!D || D.done || D.at < 0) return;
+  const key = D.items[D.order[D.at]][2], all = store.get(ivMarksKey(IV.sel), {});
+  const was = all[key];
+  all[key] === kind ? delete all[key] : (all[key] = kind);
+  store.set(ivMarksKey(IV.sel), all);
+  const total = IV.data.rounds.reduce((n, x) => n + x.questions.length, 0);
+  $("#ivGot").innerHTML = `${Object.values(all).filter((v) => v === "got").length}<small>/${total}</small>`;
+  $$(".hud__controls [data-mark]").forEach((b) => b.classList.toggle("on", all[key] === b.dataset.mark));
+  ivSegs();
+  if (!all[key] || was) return;          // only a fresh mark moves the difficulty and the deck
+  if (kind === "got") { D.streak += 1; if (D.streak >= 2 && D.target < 2) { D.target += 1; D.streak = 0; ivLevelShift(1); } }
+  else { D.streak = 0; if (D.target > 0) { D.target -= 1; ivLevelShift(-1); } }
+  setTimeout(() => IV.deck === D && D.items[D.order[D.at]]?.[2] === key && ivMove(1), 420);
+}
+
+function ivLevelShift(dir) {
+  const el = $("#ivLevel"); if (!el) return;
+  FX.scramble(el, dir > 0 ? "Difficulty up ▲" : "Easing off ▼");
+  toast(dir > 0 ? "Two in a row. The questions get harder." : "Easing off a level.", 1800);
+}
+
+function ivMove(step) {
+  const D = IV.deck; if (!D) return;
+  if (D.done) return step > 0 ? ivNextRound() : (D.done = false, D.at = D.order.length - 1, ivShow(-1));
+  if (step < 0) { if (D.at > 0) { D.at -= 1; ivShow(-1); } else if (D.at === 0) ivBrief(-1); return; }
+  if (D.at < D.order.length - 1) { D.at += 1; return ivShow(1); }
+  const k = ivPick();
+  if (k < 0) return ivRoundDone();
+  D.order.push(k); D.at = D.order.length - 1; ivShow(1);
+}
+
+function ivRoundDone() {
+  const D = IV.deck, d = IV.data, ri = d.rounds.indexOf(D.round), next = d.rounds[ri + 1];
+  const marks = store.get(ivMarksKey(IV.sel), {});
+  const got = D.round.questions.filter((_, i) => marks[`${D.round.id}:${i}`] === "got").length;
+  D.done = true;
+  const after = next ? next.name : d.needs_coding ? "Coding test" : "Interview complete";
+  FX.flowSwap($("#ivStage"), `<div class="flow-round">
+      <span class="hud-mono" data-flow-in>Round ${pad2(ri + 1)} complete · ${got} of ${D.round.questions.length} got it</span>
+      <h2 class="flow-title flow-title--xl" data-scramble>${esc(after)}</h2>
+      <p class="type-body" data-flow-in>${next ? esc(next.format || "") : d.needs_coding ? "An adaptive, LeetCode-style test. Your code runs here, against hidden tests." : "Run the ones you marked to review again, or download the notes to read on the way."}</p>
+      <div data-flow-in><button class="btn btn--accent btn--lg" id="ivNextRound">${next ? `Start round ${pad2(ri + 2)}` : d.needs_coding ? "Open the coding test" : "Review what's left"} ${ICON.arrow}</button></div></div>`, 1);
+  $("#ivNextRound").onclick = ivNextRound;
+  $("#ivQNo").textContent = "Round complete";
+  $(".hud__controls").hidden = true;
+  ivSegs();
+}
+
+function ivNextRound() {
+  const d = IV.data, ri = d.rounds.indexOf(IV.deck.round), next = d.rounds[ri + 1];
+  if (next) return ivTab(next.id);
+  if (d.needs_coding) return ivTab("code");
+  IV.filter = "again"; ivTab(d.rounds[0].id);
+}
+
+document.addEventListener("keydown", (e) => {
+  if (!$("#v-interview").classList.contains("on") || e.ctrlKey || e.metaKey || e.altKey) return;
+  const tag = document.activeElement.tagName;
+  if (/INPUT|TEXTAREA|SELECT/.test(tag) || document.activeElement.closest?.(".CodeMirror")) return;
+  if (/^(BUTTON|A)$/.test(tag) && (e.key === "Enter" || e.key === " ")) return;   // the focused button handles it
+  if (IV.setup && e.key === "Enter") { e.preventDefault(); return ivStepNext(); }
+  if (CT.next && e.key === "Enter") { e.preventDefault(); return CT.next(); }
+  if (!IV.deck) return;
+  const k = e.key.toLowerCase();
+  if (k === "arrowright" || k === "enter") { e.preventDefault(); ivMove(1); }
+  else if (k === "arrowleft") { e.preventDefault(); ivMove(-1); }
+  else if (k === " ") { e.preventDefault(); ivReveal(); }
+  else if (k === "g") ivMark("got");
+  else if (k === "r") ivMark("again");
+});
+
+// ---------- the coding test: adaptive, LeetCode-style, run in a browser sandbox ----------
+// Solve a problem and the next is a level harder; skip one or look at the solution and the next is a level
+// easier. Each problem's tests are first checked against its reference solution; tests it fails are dropped.
+const CT = { data: null, st: null, cm: null, workers: {}, ready: {}, checked: {}, next: null, timer: null };
+const ctKey = (id) => `cv.codetest.${id}`;
+const LANG = { python: "Python", javascript: "JavaScript" };
+
+function ctFresh() {
+  return { level: 2, streak: 0, score: 0, history: [], drafts: {}, lang: IV.data?.coding_language || "python", current: null, started: Date.now() };
+}
+const ctSave = () => store.set(ctKey(IV.sel), CT.st);
+
+async function ctOpen() {
+  const token = IV.token;
+  const r = await api(`/api/apps/${IV.sel}/codetest`);
+  if (token !== IV.token || IV.tab !== "code") return;
+  CT.data = r.test; CT.st = store.get(ctKey(IV.sel), null) || ctFresh(); CT.next = null;
+  if (r.job) return ctWait(r.job, "Writing your coding test");
+  if (!CT.data) return ctIntro();
+  ctNext();
+}
+
+function ctHud(inner, controls) {
+  $("#ivPanel").innerHTML = hud(inner, controls);
+  return $("#ivPanel .hud");
+}
+
+function ctBar() {
+  const s = CT.st;
+  return `<div class="hud__bar"><span>Coding test · Level ${pad2(s.level)} / 05 · Streak ${s.streak}</span><span>Score ${s.score} · <span id="ctClock">00:00</span></span></div>
+    <div class="hud__segs" id="ctSegs">${[1, 2, 3, 4, 5].map((l) => `<i class="${l < s.level ? "done" : l === s.level ? "cur" : ""}"></i>`).join("")}</div>`;
+}
+
+function ctClock() {
+  clearInterval(CT.timer);
+  CT.timer = setInterval(() => {
+    const el = $("#ctClock"); if (!el) return clearInterval(CT.timer);
+    const s = Math.round((Date.now() - CT.st.started) / 1000); el.textContent = `${pad2(Math.floor(s / 60))}:${pad2(s % 60)}`;
+  }, 1000);
+}
+
+function ctIntro() {
+  ctHud(`<div class="hud__bar"><span>Coding test · ${esc(IV.data.company)}</span><span>Adaptive · 5 levels</span></div><div class="hud__stage" id="ctStage"></div>`);
+  FX.flowSwap($("#ctStage"), `<div class="flow-round">
+      <span class="hud-mono" data-flow-in>Online assessment</span>
+      <h2 class="flow-title" data-scramble>An adaptive coding test, set for this job.</h2>
+      <p class="type-body" data-flow-in>Like a real online assessment. You start at level 2: solve a problem and the next one is a level harder; skip one and it eases off. Write in Python or JavaScript. Your code runs right here against hidden tests, in a sandbox that can't touch the network or your files.</p>
+      <div class="iv-stats" data-flow-in>
+        <div class="stat"><span class="eyebrow">Levels</span><span class="stat__value num">5</span></div>
+        <div class="stat"><span class="eyebrow">Problems</span><span class="stat__value num">10</span></div>
+        <div class="stat"><span class="eyebrow">Writing it takes</span><span class="stat__value num">2–5<small> min</small></span></div></div>
+      <div data-flow-in><button class="btn btn--accent btn--lg" id="ctGen">Write my coding test ${ICON.arrow}</button></div></div>`, 1);
+  $("#ctGen").onclick = async () => {
+    try { const { job } = await api(`/api/apps/${IV.sel}/codetest`, { body: {} }); ctWait(job, "Writing your coding test"); }
+    catch (e) { toast(e.message, 5000); }
+  };
+}
+
+async function ctWait(job, title) {
+  const token = IV.token;
+  ctHud(`<div class="hud__bar"><span>Coding test · ${esc(IV.data.company)}</span><span id="ivClock">00:00</span></div>${missionLog(title)}`);
+  FX.flowIn($("#ivPanel .hud"));
+  const stop = await runClock(job, $("#ivClock"));
+  try { await pollJob(job, (l) => logLine(token, l.msg, l.t)); }
+  catch (e) { toast(e.message, 5000); }
+  stop();
+  if (token === IV.token && IV.tab === "code") ctOpen();
+}
+
+// ---- the sandbox ----
+function ctWorker(lang) {
+  if (!CT.workers[lang]) CT.workers[lang] = new Worker(`/static/runner.js?v=1&lang=${lang}`);
+  return CT.workers[lang];
+}
+
+function ctExec(lang, code, name, tests) {
+  // The first Python run downloads and starts Pyodide; after that a run gets six seconds.
+  const ms = lang === "python" && !CT.ready.python ? 90000 : 6000;
+  return new Promise((resolve) => {
+    const w = ctWorker(lang), id = Math.random().toString(36).slice(2);
+    const timer = setTimeout(() => {
+      w.terminate(); delete CT.workers[lang]; CT.ready[lang] = false;
+      resolve({ fatal: `Time limit exceeded (${ms / 1000}s). Look for an infinite loop or an approach that's too slow.` });
+    }, ms);
+    const on = ({ data }) => {
+      if (data.id !== id) return;
+      clearTimeout(timer); w.removeEventListener("message", on); CT.ready[lang] = true; resolve(data);
+    };
+    w.addEventListener("message", on);
+    w.postMessage({ id, lang, code, name, tests: tests.map((t) => t.args) });
+  });
+}
+
+const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : 1))) : x));
+function closeEnough(a, b) {
+  if (typeof a === "number" && typeof b === "number") return Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(b));
+  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((x, i) => closeEnough(x, b[i]));
+  return canon(a) === canon(b);
+}
+function same(got, want, mode) {
+  if (mode === "float") return closeEnough(got, want);
+  if (mode === "unordered" && Array.isArray(got) && Array.isArray(want)) return got.length === want.length && canon(got.map(canon).sort()) === canon(want.map(canon).sort());
+  return canon(got) === canon(want);
+}
+
+// A problem's usable tests in a language: the ones its reference solution passes.
+async function ctTests(p, lang) {
+  const key = `${p.id}:${lang}`;
+  if (CT.checked[key]) return CT.checked[key];
+  const res = await ctExec(lang, p.solution[lang], p.function[lang], p.tests);
+  const ok = res.results ? p.tests.filter((t, i) => res.results[i]?.ok && same(res.results[i].out, t.expected, p.compare)) : [];
+  CT.checked[key] = ok;
+  return ok;
+}
+
+// ---- choosing and showing a problem ----
+async function ctNext() {
+  const s = CT.st, done = new Set(s.history.map((h) => h.id));
+  let p = s.current && CT.data.problems.find((x) => x.id === s.current);
+  if (!p) p = CT.data.problems.find((x) => x.level === s.level && !done.has(x.id) && !CT.checked[`${x.id}:bad`]);
+  if (!p) {
+    const { job } = await api(`/api/apps/${IV.sel}/codetest`, { body: { level: s.level } });
+    return ctWait(job, `You've used every level ${s.level} problem. Writing two more.`);
+  }
+  if (!CT.checked[`${p.id}:${s.lang}`]) {
+    ctHud(ctBar() + `<div class="hud__stage" id="ctStage"></div>`);
+    FX.flowSwap($("#ctStage"), `<div class="flow-round"><span class="hud-mono" data-flow-in>Level ${pad2(p.level)} · ${esc(p.topic)}</span>
+      <h2 class="flow-title" data-scramble>${s.lang === "python" && !CT.ready.python ? "Booting the Python sandbox" : "Checking the tests"}</h2>
+      <p class="type-meta" data-flow-in>${s.lang === "python" && !CT.ready.python ? "The first run downloads Python for the browser, about 10 MB; after that it's instant." : "Each test is run against the reference solution first, so a wrong test can't fail you."}</p></div>`, 1);
+    const tests = await ctTests(p, s.lang);
+    if (tests.length < 3) { CT.checked[`${p.id}:bad`] = true; s.current = null; return ctNext(); }
+  }
+  s.current = p.id; ctSave();
+  ctShow(p);
+}
+
+function ctShow(p) {
+  const s = CT.st, lang = s.lang;
+  CT.next = null;
+  const draftKey = `${p.id}:${lang}`;
+  const n = s.history.length + 1;
+  ctHud(ctBar() + `<div class="hud__stage" id="ctStage"></div>`,
+    `<div class="seg" id="ctLang">${Object.entries(LANG).map(([k, l]) => `<button data-lang="${k}" class="${k === lang ? "on" : ""}">${l}</button>`).join("")}</div>
+     <button class="btn btn--sm btn--ghost" id="ctReset">Reset code</button><span class="sp"></span>
+     <button class="btn btn--sm btn--ghost" id="ctSkip" title="Counts as a miss: the next problem is easier">Skip</button>
+     <button class="btn btn--sm btn--ghost" id="ctSolution" title="Counts as a miss">Show solution</button>
+     <button class="btn btn--sm" id="ctRun" title="Ctrl+'">Run examples</button>
+     <button class="btn btn--accent" id="ctSubmit" title="Ctrl+Enter">Submit ${ICON.arrow}</button>`);
+  const el = FX.flowSwap($("#ctStage"), `<div class="code-test">
+      <section class="code-test__problem">
+        <span class="hud-mono" data-flow-in>Problem ${pad2(n)} · Level ${pad2(p.level)}${p.topic ? ` · ${esc(p.topic)}` : ""}</span>
+        <h3 class="flow-q__text" data-scramble>${esc(p.title)}</h3>
+        <div class="code-test__statement" data-flow-in>${esc(p.statement)}</div>
+        ${p.examples.map((e, i) => `<div class="code-test__example" data-flow-in><b>Example ${i + 1}</b>\nInput: ${esc(e.input)}\nOutput: ${esc(e.output)}${e.explain ? `\nWhy: ${esc(e.explain)}` : ""}</div>`).join("")}
+        ${p.constraints.length ? `<div data-flow-in><div class="hud-mono" style="margin-bottom:8px">Constraints</div><ul class="bullets">${p.constraints.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}
+        ${p.hints.length ? `<div data-flow-in><button class="btn btn--sm btn--ghost" id="ctHint">Show a hint</button><ol class="bullets" id="ctHints" style="margin-top:10px"></ol></div>` : ""}
+      </section>
+      <section class="code-test__work">
+        <div class="code-test__editor" id="ctEditor"></div>
+        <div class="code-test__console" id="ctOut"><span class="text-3">Run the examples to check your approach, then submit against every test. <span class="kbd">Ctrl</span> <span class="kbd">Enter</span> submits.</span></div>
+      </section></div>`, 1);
+  CT.cm = CodeMirror($("#ctEditor", el), {
+    value: s.drafts[draftKey] ?? p.starter[lang], mode: lang === "python" ? "python" : "javascript", theme: "pop",
+    lineNumbers: true, indentUnit: lang === "python" ? 4 : 2, tabSize: 4, matchBrackets: true, autoCloseBrackets: true,
+    extraKeys: { "Ctrl-Enter": () => ctRun(true), "Cmd-Enter": () => ctRun(true), "Ctrl-'": () => ctRun(false),
+      Tab: (cm) => (cm.somethingSelected() ? cm.indentSelection("add") : cm.replaceSelection(" ".repeat(cm.getOption("indentUnit")))) },
+  });
+  let save;
+  CT.cm.on("change", () => { clearTimeout(save); save = setTimeout(() => { s.drafts[draftKey] = CT.cm.getValue(); ctSave(); }, 400); });
+  setTimeout(() => { CT.cm.refresh(); CT.cm.focus({ preventScroll: true }); ivFocusHud(); }, 700);
+  ctClock();
+  $("#ctLang").onclick = (e) => { const b = e.target.closest("[data-lang]"); if (b && b.dataset.lang !== s.lang) { s.lang = b.dataset.lang; ctSave(); ctNext(); } };
+  $("#ctReset").onclick = () => { CT.cm.setValue(p.starter[lang]); };
+  $("#ctRun").onclick = () => ctRun(false);
+  $("#ctSubmit").onclick = () => ctRun(true);
+  $("#ctSkip").onclick = () => ctMiss(p, "skipped");
+  $("#ctSolution").onclick = () => ctReveal(p);
+  const hint = $("#ctHint");
+  if (hint) { let k = 0; hint.onclick = () => { if (k < p.hints.length) { $("#ctHints").insertAdjacentHTML("beforeend", `<li>${esc(p.hints[k++])}</li>`); FX.pulse($("#ctHints").lastElementChild); } if (k >= p.hints.length) hint.disabled = true; }; }
+}
+
+async function ctRun(submit) {
+  const s = CT.st, p = CT.data.problems.find((x) => x.id === s.current);
+  if (!p || !CT.cm) return;
+  const out = $("#ctOut"), lang = s.lang;
+  const all = await ctTests(p, lang);
+  const tests = submit ? all : all.slice(0, Math.max(1, Math.min(2, p.examples.length || 2)));
+  $("#ctRun").disabled = $("#ctSubmit").disabled = true;
+  out.innerHTML = `<span class="spinner" style="width:12px;height:12px;display:inline-block;vertical-align:-1px"></span> ${submit ? `Running ${tests.length} tests` : "Running the examples"}…`;
+  const t0 = performance.now();
+  const res = await ctExec(lang, CT.cm.getValue(), p.function[lang], tests);
+  const took = Math.round(performance.now() - t0);
+  $("#ctRun").disabled = $("#ctSubmit").disabled = false;
+  if (res.fatal) { out.innerHTML = `<div class="ct-fail">${esc(res.fatal)}</div>`; FX.pulse(out); return; }
+  const rows = tests.map((t, i) => ({ t, r: res.results[i], ok: res.results[i]?.ok && same(res.results[i].out, t.expected, p.compare) }));
+  const passed = rows.filter((x) => x.ok).length;
+  const show = (x, i) => `<div class="ct-case ${x.ok ? "ct-pass" : "ct-fail"}"><b>${x.ok ? "✓" : "✗"} Test ${i + 1}</b>
+      <div>Input: ${esc(JSON.stringify(x.t.args).slice(1, -1))}</div><div>Expected: ${esc(JSON.stringify(x.t.expected))}</div>
+      <div>${x.r.ok ? `Output: ${esc(JSON.stringify(x.r.out))}` : esc(x.r.error)}</div>${x.r.stdout ? `<div class="text-3">stdout: ${esc(x.r.stdout)}</div>` : ""}</div>`;
+  if (!submit) {
+    out.innerHTML = `<div class="${passed === rows.length ? "ct-pass" : "ct-fail"}"><b>${passed} / ${rows.length} examples passed</b> <span class="text-3">· ${took} ms</span></div>${rows.map(show).join("")}`;
+    return;
+  }
+  if (passed < rows.length) {
+    const first = rows.findIndex((x) => !x.ok);
+    out.innerHTML = `<div class="ct-fail"><b>Wrong answer · ${passed} / ${rows.length} tests passed</b></div>${show(rows[first], first)}`;
+    FX.pulse(out);
+    return;
+  }
+  ctSolved(p, took);
+}
+
+function ctSolved(p, ms) {
+  const s = CT.st;
+  s.streak += 1;
+  const gained = p.level * 100 + (s.streak > 1 ? 50 * (s.streak - 1) : 0);
+  s.score += gained;
+  s.history.push({ id: p.id, level: p.level, result: "solved", ms });
+  const up = s.level < 5;
+  if (up) s.level += 1;
+  s.current = null; ctSave();
+  ctInterstitial(`Accepted · +${gained}${s.streak > 1 ? ` · streak ${s.streak}` : ""}`, up ? `Level ${pad2(s.level)}` : "Top level", up ? "Harder problems from here." : "You're at the hardest level. Keep the streak going.");
+}
+
+function ctMiss(p, result) {
+  const s = CT.st;
+  s.streak = 0;
+  s.history.push({ id: p.id, level: p.level, result });
+  const down = s.level > 1;
+  if (down) s.level -= 1;
+  s.current = null; ctSave();
+  ctInterstitial(result === "skipped" ? "Skipped" : "Solution viewed", down ? `Level ${pad2(s.level)}` : "Level 01", down ? "Easing off a level." : "Staying at the first level.");
+}
+
+function ctReveal(p) {
+  const s = CT.st, out = $("#ctOut");
+  out.innerHTML = `<div class="hud-mono" style="margin-bottom:8px">Reference solution · ${esc(p.complexity)}</div><pre class="code" style="border:0;padding:0;background:none">${esc(p.solution[s.lang])}</pre>
+    <button class="btn btn--sm btn--primary" id="ctAfter" style="margin-top:10px">Next problem ${ICON.arrow}</button>`;
+  CT.cm.setOption("readOnly", true);
+  $("#ctAfter").onclick = () => ctMiss(p, "revealed");
+}
+
+function ctInterstitial(tag, title, line) {
+  const s = CT.st;
+  ctHud(ctBar() + `<div class="hud__stage" id="ctStage"></div>`);
+  FX.flowSwap($("#ctStage"), `<div class="flow-round">
+      <span class="hud-mono" data-flow-in>${esc(tag)}</span>
+      <h2 class="flow-title flow-title--xl" data-scramble>${esc(title)}</h2>
+      <p class="type-body" data-flow-in>${esc(line)}</p>
+      <div data-flow-in><button class="btn btn--accent btn--lg" id="ctGo">Next problem ${ICON.arrow}</button>
+        <button class="btn btn--ghost" id="ctEnd" style="margin-left:8px">End the test</button></div></div>`, 1);
+  ctClock();
+  CT.next = () => { CT.next = null; ctNext(); };
+  $("#ctGo").onclick = CT.next;
+  $("#ctEnd").onclick = ctSummary;
+  FX.pulse($("#ctSegs"));
+}
+
+function ctSummary() {
+  const s = CT.st, solved = s.history.filter((h) => h.result === "solved");
+  const best = Math.max(0, ...solved.map((h) => h.level));
+  CT.next = null;
+  ctHud(ctBar() + `<div class="hud__stage" id="ctStage"></div>`);
+  FX.flowSwap($("#ctStage"), `<div class="flow-round">
+      <span class="hud-mono" data-flow-in>Test complete</span>
+      <h2 class="flow-title flow-title--xl" data-scramble>${best ? `Level ${pad2(best)} cleared` : "Keep practising"}</h2>
+      <div class="iv-stats" data-flow-in>
+        <div class="stat"><span class="eyebrow">Solved</span><span class="stat__value num">${solved.length}<small>/${s.history.length}</small></span></div>
+        <div class="stat"><span class="eyebrow">Score</span><span class="stat__value num">${s.score}</span></div>
+        <div class="stat"><span class="eyebrow">Highest level</span><span class="stat__value num">${best || "–"}</span></div></div>
+      <div class="list" data-flow-in>${s.history.map((h) => { const p = CT.data.problems.find((x) => x.id === h.id); return `<div class="item"><span class="tag ${h.result === "solved" ? "tag--ok" : "tag--warn"}">${h.result}</span><span class="item__body"><span class="item__title">${esc(p?.title || h.id)}</span></span><span class="item__aside hud-mono">L${h.level}</span></div>`; }).join("")}</div>
+      <div data-flow-in><button class="btn btn--accent btn--lg" id="ctRestart">Start a new test ${ICON.arrow}</button></div></div>`, 1);
+  $("#ctRestart").onclick = () => { CT.st = ctFresh(); ctSave(); ctNext(); };
+}
+
+function ivCompany(d) {
+  const r = d.research || {};
+  const src = (u, label = "Source") => `<a class="btn btn--link" href="${esc(u)}" target="_blank" rel="noopener">${label}</a>`;
+  const empty = !r.summary && !(r.products || []).length && !(r.process || []).length;
+  const rows = (list, text, sub) => `<div class="list">${list.map((x) => `<div class="item"><span class="item__body"><span class="item__text">${esc(x[text])}</span>${x[sub] ? `<span class="item__meta item__meta--wrap">${esc(x[sub])}</span>` : ""}</span><span class="item__aside">${src(x.source)}</span></div>`).join("")}</div>`;
+  return `
+    ${empty ? `<div class="notice notice--info">The web research found nothing it could source for ${esc(d.company)}, so the questions lean on the job description.</div>` : ""}
+    ${r.summary ? `<section class="iv-section"><span class="eyebrow">What ${esc(d.company)} does</span><p class="type-body">${esc(r.summary)}</p>
+      ${r.team_guess ? `<p class="type-meta"><b class="text-2">Likely team:</b> ${esc(r.team_guess)}</p>` : ""}</section>` : ""}
+    ${(r.products || []).length ? `<section class="iv-section"><span class="eyebrow">What they build</span><div class="card-grid">
+      ${r.products.map((p) => `<div class="card iv-product"><span class="type-h3">${esc(p.name)}</span><span class="type-body" style="font-size:13px">${esc(p.what)}</span>
+        ${p.relevance ? `<span class="type-meta">${esc(p.relevance)}</span>` : ""}${src(p.source)}</div>`).join("")}</div></section>` : ""}
+    ${(r.values || []).length ? `<section class="iv-section"><span class="eyebrow">What they value (the culture-fit round leans on this)</span>${rows(r.values, "name", "what")}</section>` : ""}
+    ${(r.stack || []).length ? `<section class="iv-section"><span class="eyebrow">Their stack</span><div class="chip-row">
+      ${r.stack.map((s) => `<a class="chip" href="${esc(s.source)}" target="_blank" rel="noopener" title="Source: ${esc(s.source)}"><span>${esc(s.name)}</span></a>`).join("")}</div></section>` : ""}
+    ${(r.process || []).length ? `<section class="iv-section"><span class="eyebrow">How they interview</span><div class="list">
+      ${r.process.map((p, i) => `<div class="item" style="align-items:flex-start"><span class="steps__n">${pad2(i + 1)}</span>
+        <span class="item__body"><span class="item__title item__title--wrap">${esc(p.stage)}${p.format ? ` <span class="tag">${esc(p.format)}</span>` : ""}</span>
+          ${p.detail ? `<span class="item__meta item__meta--wrap">${esc(p.detail)}</span>` : ""}</span><span class="item__aside">${src(p.source)}</span></div>`).join("")}</div></section>` : ""}
+    ${(r.recent || []).length ? `<section class="iv-section"><span class="eyebrow">Lately</span>${rows(r.recent, "text", "date")}</section>` : ""}
+    ${(r.reported_questions || []).length ? `<section class="iv-section"><span class="eyebrow">What candidates report being asked</span>${rows(r.reported_questions, "text", "round")}</section>` : ""}`;
 }
 
 // ================= global Claude / Gemini switch =================

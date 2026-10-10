@@ -231,6 +231,91 @@ def preview(variant: str = "flowcv", max_pages: str = "auto", market: str = "ind
     return FileResponse(pdf, media_type="application/pdf", headers={"Cache-Control": "no-store"})
 
 
+# ---------- interview prep ----------
+INTERVIEW_JOBS: dict[str, str] = {}   # app id -> the prep job running for it
+
+
+def _prep_job(app_id: str) -> dict | None:
+    job = JOBS.get(INTERVIEW_JOBS.get(app_id, ""))
+    return job if job and job["status"] == "running" else None
+
+
+@app.get("/api/interview")
+def interview_list():
+    from . import interview
+    rows = []
+    for r in tracker.load():
+        folder = OUTPUT / r["id"]
+        if not (folder / "report.json").exists():
+            continue
+        d = interview.load(r["id"])
+        rows.append({k: r.get(k, "") for k in ("id", "company", "role", "status", "logo", "created")}
+                    | {"prepared_at": d["generated_at"] if d else "", "questions": sum(len(x["questions"]) for x in d["rounds"]) if d else 0,
+                       "preparing": bool(_prep_job(r["id"]))})
+    return {"apps": rows}
+
+
+@app.get("/api/apps/{app_id}/interview")
+def interview_get(app_id: str):
+    from . import interview
+    _app_dir(app_id)
+    job = _prep_job(app_id)
+    return {"prep": interview.load(app_id), "job": job["id"] if job else None}
+
+
+@app.post("/api/apps/{app_id}/interview")
+def interview_start(app_id: str, body: dict = Body(default={})):
+    from . import interview
+    _app_dir(app_id)
+    if _prep_job(app_id):
+        return {"job": INTERVIEW_JOBS[app_id]}
+    engine = _prefs(load_profile())["defaults"].get("engine", "claude:opus")
+    jid = start_job("interview", lambda a, o, e, progress: interview.generate(a, o, e, progress), app_id, body, engine)
+    INTERVIEW_JOBS[app_id] = jid
+    return {"job": jid}
+
+
+CODE_JOBS: dict[str, str] = {}   # app id -> the coding-test job running for it
+
+
+def _code_job(app_id: str) -> dict | None:
+    job = JOBS.get(CODE_JOBS.get(app_id, ""))
+    return job if job and job["status"] == "running" else None
+
+
+@app.get("/api/apps/{app_id}/codetest")
+def codetest_get(app_id: str):
+    from . import interview
+    _app_dir(app_id)
+    job = _code_job(app_id)
+    return {"test": interview.load_codetest(app_id), "job": job["id"] if job else None}
+
+
+@app.post("/api/apps/{app_id}/codetest")
+def codetest_start(app_id: str, body: dict = Body(default={})):
+    """Write the test, or with {"level": n} two more problems at that level."""
+    from . import interview
+    _app_dir(app_id)
+    if _code_job(app_id):
+        return {"job": CODE_JOBS[app_id]}
+    engine = _prefs(load_profile())["defaults"].get("engine", "claude:opus")
+    level = int(body.get("level") or 0)
+    if 1 <= level <= 5:
+        jid = start_job("codetest-more", lambda a, l, e, progress: interview.more_problems(a, l, e, progress), app_id, level, engine)
+    else:
+        jid = start_job("codetest", lambda a, e, progress: interview.generate_codetest(a, e, progress), app_id, engine)
+    CODE_JOBS[app_id] = jid
+    return {"job": jid}
+
+
+@app.get("/apps/{app_id}/interview.md")
+def interview_md(app_id: str):
+    p = _app_dir(app_id) / "interview.md"
+    if not p.exists():
+        raise HTTPException(404, "No interview notes yet")
+    return FileResponse(p, media_type="text/markdown", filename=f"{app_id}_interview.md")
+
+
 # ---------- career map ----------
 
 @app.get("/api/career")
