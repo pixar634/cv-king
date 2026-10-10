@@ -1481,6 +1481,7 @@ function ctShow(p) {
       <section class="code-test__work">
         <div class="code-test__editor" id="ctEditor"></div>
         <div class="code-test__console" id="ctOut"><span class="text-3">Run the examples to check your approach, then submit against every test. <span class="kbd">Ctrl</span> <span class="kbd">Enter</span> submits.</span></div>
+        <div class="code-test__solution" id="ctSol" hidden></div>
       </section></div>`, 1);
   CT.cm = CodeMirror($("#ctEditor", el), {
     value: s.drafts[draftKey] ?? p.starter[lang], mode: lang === "python" ? "python" : "javascript", theme: "pop",
@@ -1498,6 +1499,7 @@ function ctShow(p) {
   $("#ctSubmit").onclick = () => ctRun(true);
   $("#ctSkip").onclick = () => ctMiss(p, "skipped");
   $("#ctSolution").onclick = () => ctReveal(p);
+  if (s.peeked === p.id) ctReveal(p);
   const hint = $("#ctHint");
   if (hint) { let k = 0; hint.onclick = () => { if (k < p.hints.length) { $("#ctHints").insertAdjacentHTML("beforeend", `<li>${esc(p.hints[k++])}</li>`); FX.pulse($("#ctHints").lastElementChild); } if (k >= p.hints.length) hint.disabled = true; }; }
 }
@@ -1530,6 +1532,12 @@ async function ctRun(submit) {
     FX.pulse(out);
     return;
   }
+  if (CT.st.peeked === p.id) {
+    out.innerHTML = `<div class="ct-pass"><b>Accepted · ${passed} / ${rows.length} tests passed</b></div><div class="text-3">Written after viewing the solution, so it doesn't score. The next problem is a level easier.</div>
+      <button class="btn btn--sm btn--primary" id="ctAfter2" style="margin-top:10px">Next problem ${ICON.arrow}</button>`;
+    $("#ctAfter2").onclick = () => ctMiss(p, "revealed");
+    return;
+  }
   ctSolved(p, took);
 }
 
@@ -1555,11 +1563,18 @@ function ctMiss(p, result) {
   ctInterstitial(result === "skipped" ? "Skipped" : "Solution viewed", down ? `Level ${pad2(s.level)}` : "Level 01", down ? "Easing off a level." : "Staying at the first level.");
 }
 
+// The solution opens in its own panel and the editor stays yours: type it out, change it, run it. Having looked,
+// the problem can no longer score: a passing submit is accepted without points and the next one eases off.
 function ctReveal(p) {
-  const s = CT.st, out = $("#ctOut");
-  out.innerHTML = `<div class="hud-mono" style="margin-bottom:8px">Reference solution · ${esc(p.complexity)}</div><pre class="code" style="border:0;padding:0;background:none">${esc(p.solution[s.lang])}</pre>
-    <button class="btn btn--sm btn--primary" id="ctAfter" style="margin-top:10px">Next problem ${ICON.arrow}</button>`;
-  CT.cm.setOption("readOnly", true);
+  const s = CT.st, box = $("#ctSol");
+  s.peeked = p.id; ctSave();
+  box.hidden = false;
+  box.innerHTML = `<div class="report__row"><span class="hud-mono">Reference solution · ${esc(LANG[s.lang])} · ${esc(p.complexity)}</span>
+      <button class="btn btn--sm btn--primary" id="ctAfter">Next problem ${ICON.arrow}</button></div>
+    <pre class="code">${esc(p.solution[s.lang])}</pre>
+    <p class="type-meta">You've seen the solution, so this one won't score. Try writing it yourself in the editor and run it; the next problem is a level easier.</p>`;
+  FX.flowReveal(box);
+  $("#ctSolution").disabled = true;
   $("#ctAfter").onclick = () => ctMiss(p, "revealed");
 }
 
