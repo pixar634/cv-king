@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CV Tailor</title>
+<link rel="stylesheet" href="/static/vendor/reactflow.css">
+<link rel="stylesheet" href="/static/app.css?v=14">
+</head>
+<body>
+<header class="bar">
+  <div class="brand"><span class="mark" aria-hidden="true"></span>CV Tailor</div>
+  <nav class="nav" id="nav">
+    <button data-view="tailor" class="on">Tailor</button>
+    <button data-view="discover">Discover</button>
+    <button data-view="pipeline">Pipeline <span class="live" id="liveCount" hidden></span></button>
+    <button data-view="career">Career</button>
+  </nav>
+  <div class="bar-right">
+  <div class="seg" id="engineSeg" title="Which AI writes and reads for you, everywhere in the app">
+    <button data-e="claude">Claude</button><button data-e="gemini">Gemini</button>
+  </div>
+  <button class="icon-btn" id="openSettings" aria-label="Settings" title="Settings">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-1.7-1L15 3.5h-4l-.4 2.5a7.4 7.4 0 0 0-1.7 1l-2.4-1-2 3.4L6.6 11a7.6 7.6 0 0 0 0 2l-2 1.6 2 3.4 2.4-1c.5.4 1.1.7 1.7 1l.4 2.5h4l.4-2.5c.6-.3 1.2-.6 1.7-1l2.4 1 2-3.4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+  </button>
+  </div>
+</header>
+
+<main>
+<!-- ================= TAILOR ================= -->
+<section class="view on" id="v-tailor">
+  <div class="studio">
+    <div class="side" id="side">
+      <div class="capsule" id="capsule">
+        <textarea id="cmd" rows="1" spellcheck="false" aria-label="Job link or description"
+          placeholder="Paste a job link or the job description"></textarea>
+        <button class="go" id="cmdGo" aria-label="Read it" title="Enter">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="sweep" aria-hidden="true"></div>
+      </div>
+      <div class="cmd-status" id="cmdStatus" role="status"></div>
+
+      <div id="jobCard"></div>
+      <div id="insights"></div>
+      <div id="emptyState"></div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-bar">
+        <div class="stage-title" id="pvTitle"></div>
+        <button class="btn ghost" id="editToggle" hidden title="Edit every section next to the PDF">Edit sections</button>
+        <div class="seg" id="modeSeg">
+          <button data-v="pdf" class="on">PDF</button><button data-v="changes">Changes</button>
+        </div>
+        <div class="menu-wrap"><button class="chip" id="designChip"></button><div class="menu" id="designMenu" hidden></div></div>
+        <div class="menu-wrap"><button class="chip" id="lengthChip"></button><div class="menu" id="lengthMenu" hidden></div></div>
+        <button class="btn ghost" id="markApplied" hidden>Mark applied</button>
+        <a class="btn primary" id="download" hidden>Download</a>
+      </div>
+      <div class="stage-body">
+        <aside class="editor" id="editor" hidden aria-label="Edit sections">
+          <div class="ed-head"><b>Edit sections</b><span class="ed-state" id="edState"></span>
+            <button class="icon-btn" id="edClose" aria-label="Close the editor" title="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
+          <div class="ed-body" id="edBody"></div>
+          <div class="ed-foot"><span class="hint">**double asterisks** make bold</span><span class="sp"></span>
+            <button class="btn ghost" id="edDiscard">Discard</button><button class="btn primary" id="edSave" title="Ctrl+S">Update PDF</button></div>
+        </aside>
+        <div class="pv" id="pv">
+          <iframe id="frame" title="CV preview"></iframe>
+          <div class="busy"><div class="busy-box"><span class="spinner"></span><span id="busyMsg">Rendering</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= DISCOVER ================= -->
+<section class="view" id="v-discover">
+  <div class="page">
+    <div class="page-head">
+      <div>
+        <h1>Discover</h1>
+        <p class="lede" id="discoverLede">Fresh postings from your sources, ranked against your profile.</p>
+      </div>
+      <div class="controls">
+        <select id="days" aria-label="Posted within">
+          <option value="1">Last 24 hours</option><option value="3">Last 3 days</option><option value="7">Last 7 days</option>
+          <option value="14" selected>Last 14 days</option><option value="30">Last 30 days</option>
+        </select>
+        <select id="minMatch" aria-label="Minimum match">
+          <option value="0">Any match</option><option value="40">Match 40%+</option><option value="50" selected>Match 50%+</option><option value="60">Match 60%+</option><option value="70">Match 70%+</option>
+        </select>
+        <select id="sortBy" aria-label="Sort"><option value="match">Best match</option><option value="newest">Newest</option></select>
+        <button class="btn primary" id="scanAll">Scan sources</button>
+      </div>
+    </div>
+    <div class="area-bar" id="areaBar"></div>
+    <div class="scan-line" id="scanLine" hidden></div>
+    <div id="foundList"></div>
+  </div>
+  <div class="dock" id="dock" hidden>
+    <span id="dockText"></span>
+    <button class="btn ghost" id="dockClear">Clear</button>
+    <button class="btn primary" id="dockGo">Tailor</button>
+  </div>
+</section>
+
+<!-- ================= PIPELINE ================= -->
+<section class="view" id="v-pipeline">
+  <div class="page wide">
+    <div class="page-head">
+      <div>
+        <h1>Pipeline</h1>
+        <p class="lede" id="pipeLede"></p>
+      </div>
+      <div class="controls">
+        <a class="btn ghost" href="/api/export.xlsx" id="exportBtn">Export to Excel</a>
+      </div>
+    </div>
+    <div class="board" id="board"></div>
+    <div id="closed"></div>
+  </div>
+</section>
+<!-- ================= CAREER ================= -->
+<section class="view" id="v-career">
+  <div class="career">
+    <div class="page-head career-head">
+      <div>
+        <h1>Career map</h1>
+        <p class="lede" id="careerLede">Your history, and the routes it opens over the next five years.</p>
+      </div>
+      <div class="controls"><span class="hint" id="careerStamp"></span><button class="btn primary" id="careerGen">Map my routes</button></div>
+    </div>
+    <div class="career-body">
+      <div class="flow-wrap">
+        <div id="flow"></div>
+        <div class="busy" id="careerBusy" hidden><div class="busy-box"><span class="spinner"></span><span id="careerBusyMsg">Mapping</span></div></div>
+      </div>
+      <aside class="career-side">
+        <div id="stepPanel" class="step-panel"></div>
+        <div class="growth">
+          <h3>Your goal</h3>
+          <div class="goal-form">
+            <input type="text" id="goalRole" placeholder="e.g. VP of Engineering" aria-label="Goal role">
+            <input type="text" id="goalYear" inputmode="numeric" placeholder="By year, e.g. 2036" aria-label="Goal year">
+            <input type="text" id="goalSalary" inputmode="decimal" placeholder="Yearly pay, e.g. 120" aria-label="Goal salary">
+            <select id="goalUnit" aria-label="Unit"><option>LPA</option><option>USD</option><option>GBP</option><option>EUR</option><option>AED</option><option>SGD</option></select>
+            <button class="btn" id="goalSave">Save goal</button>
+          </div>
+        </div>
+        <div class="growth">
+          <h3>Salary</h3>
+          <div id="salaryChart"></div>
+          <p class="note" id="salaryNote"></p>
+          <div class="salary-form">
+            <input type="text" id="salYear" inputmode="numeric" placeholder="Year" aria-label="Year">
+            <input type="text" id="salAmount" inputmode="decimal" placeholder="Yearly CTC" aria-label="Yearly CTC">
+            <select id="salUnit" aria-label="Unit"><option>LPA</option><option>USD</option><option>GBP</option><option>EUR</option><option>AED</option><option>SGD</option></select>
+            <button class="btn" id="salAdd">Add</button>
+          </div>
+          <div id="salaryList"></div>
+        </div>
+        <div class="growth" id="trendsBox"></div>
+        <div class="growth">
+          <h3>Growth log <span class="hint" id="logHint"></span></h3>
+          <p class="note">What you've done, are doing, learned or want next. The map reads all of it each time you map your routes. Only skills and certifications you mark for CVs reach your profile.</p>
+          <div class="log-form">
+            <select id="logKind" aria-label="Kind"></select>
+            <input type="date" id="logDate" aria-label="Date">
+            <textarea id="logText" rows="2" placeholder="e.g. Built an evals harness for Lighthouse search answers"></textarea>
+            <label class="toggle-line" id="logCvLine"><input type="checkbox" id="logCv"> Use on my CVs (it's a skill I can talk about in an interview)</label>
+            <button class="btn" id="logAdd">Add to log</button>
+          </div>
+          <div id="logList"></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- ================= SETTINGS ================= -->
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" aria-label="Settings" hidden>
+  <div class="drawer-head"><h2>Settings</h2><button class="icon-btn" id="closeSettings" aria-label="Close">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
+  <div class="drawer-body">
+    <section class="set">
+      <h3>Every new CV</h3>
+      <label class="f"><span>Market</span><select id="dMarket"></select></label>
+      <label class="f"><span>Career track</span><select id="dTrack"></select></label>
+      <label class="f"><span>Design</span><select id="dVariant"></select></label>
+      <label class="f"><span>Length</span><select id="dPages"><option value="auto">Market default (2 pages)</option><option value="1">1 page</option><option value="2">2 pages</option></select></label>
+      <label class="f"><span>Writer</span><select id="dEngine"></select></label>
+      <label class="f"><span>Jobs tailored at once</span><select id="dConc"><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+      <label class="f"><span>Availability, shown on every CV</span><input type="text" id="dAvail" placeholder="Serving notice, available from 15 Nov 2026"></label>
+    </section>
+    <section class="set">
+      <h3>Discover only shows</h3>
+      <div class="toggles" id="rankTracks"></div>
+      <label class="toggle-line"><input type="checkbox" id="dSenior"> Include Senior-level titles (below Lead)</label>
+      <label class="f"><span>Hide jobs that ask for more than</span>
+        <select id="dMaxYears"><option value="9">9 years</option><option value="10">10 years</option><option value="11">11 years</option><option value="12">12 years</option><option value="15">15 years</option></select></label>
+      <div class="f"><span>Skip jobs that need</span>
+        <div class="toggles" id="excludeList"></div>
+        <div class="add-row"><input type="text" id="excludeAdd" placeholder="Add a skill, e.g. Angular"><button class="btn ghost" id="excludeBtn">Add</button></div>
+      </div>
+    </section>
+    <section class="set">
+      <h3>Company offices</h3>
+      <p class="note">Most postings only say "Bengaluru". Note where a company sits and its jobs get that area in Discover. One per line: company | area, e.g. <code>Atlan | HSR Layout</code> or <code>Okta | Embassy Tech Village</code>.</p>
+      <textarea id="offices" rows="4" placeholder="Atlan | HSR Layout"></textarea>
+      <button class="btn ghost" id="saveOffices">Save offices</button>
+    </section>
+    <section class="set">
+      <h3>Sources</h3>
+      <div id="sourceList"></div>
+      <div class="add-row"><input type="url" id="srcUrl" placeholder="Careers page or job board search URL"><button class="btn ghost" id="addUrl">Add</button></div>
+      <div class="add-row"><input type="text" id="srcQuery" placeholder="Web search, e.g. lead full-stack Bengaluru"><button class="btn ghost" id="addQuery">Add</button></div>
+      <div class="err" id="srcErr" hidden></div>
+      <p class="note">Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Recruitee and Personio boards are read through their public APIs. LinkedIn, Naukri, Indeed and Glassdoor are refused: their terms forbid automated access.</p>
+    </section>
+    <section class="set">
+      <h3>People to watch</h3>
+      <p class="note">Hiring managers you follow, one per line: name | company | LinkedIn URL. A bare profile URL works too. Each scan looks for their recent public hiring posts. For instant alerts, also switch on the bell (All posts) on their LinkedIn profiles.</p>
+      <textarea id="people" rows="5" placeholder="Priya Sharma | Razorpay | https://www.linkedin.com/in/…"></textarea>
+      <button class="btn ghost" id="savePeople">Save list</button>
+    </section>
+    <section class="set">
+      <h3>Skills you've confirmed</h3>
+      <div class="toggles" id="confirmed"></div>
+      <p class="note">Added from Gaps. Every CV may use them, so keep only what you can talk about in an interview.</p>
+    </section>
+  </div>
+</aside>
+
+<div class="toast" id="toast" role="status"></div>
+<script src="/static/vendor/react.production.min.js"></script>
+<script src="/static/vendor/react-dom.production.min.js"></script>
+<script src="/static/vendor/reactflow.umd.js"></script>
+<script src="/static/career.js?v=3"></script>
+<script src="/static/app.js?v=18"></script>
+</body>
+</html>

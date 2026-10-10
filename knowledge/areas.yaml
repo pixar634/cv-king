@@ -1,0 +1,43 @@
+# Office areas, grouped into commute zones. A job is tagged with a zone when its location or its
+# description names one of these places, or when the company is listed under "Company offices" in
+# Settings. Matching is case-insensitive and whole-word. Add places freely.
+
+Bengaluru:
+  "Whitefield & ITPL":
+    [Whitefield, ITPL, International Tech Park, International Technology Park, EPIP, EPIP Zone, Brookefield,
+     Brookfield, Hoodi, Kundalahalli, Mahadevapura, KR Puram, K R Puram, Graphite India, Prestige Shantiniketan,
+     Bagmane Constellation, Varthur, Kadugodi, Pattandur Agrahara]
+  "Outer Ring Road (Marathahalli–Bellandur)":
+    [Outer Ring Road, ORR, Marathahalli, Bellandur, Embassy Tech Village, ETV, RMZ Ecoworld, RMZ Eco World,
+     Ecospace, RMZ Ecospace, Prestige Tech Park, Kadubeesanahalli, Devarabeesanahalli, Sarjapur Road,
+     Sarjapur, Cessna Business Park, Cessna Tech Park, Kariyammana Agrahara, Doddanekundi, Panathur]
+  "Electronic City & HSR":
+    [Electronic City, Electronics City, E-City, E City, Hosur Road, HSR Layout, HSR, Bommanahalli, BTM Layout,
+     Koramangala, Agara, Silk Board, Infosys Electronic City, Wipro Electronic City, Konappana Agrahara]
+  "Central (MG Road, Domlur, Indiranagar)":
+    [MG Road, M G Road, Brigade Road, Residency Road, Richmond Road, Lavelle Road, Cubbon Road, CBD, Domlur,
+     Embassy Golf Links, EGL, Indiranagar, Ulsoor, Halasuru, Old Airport Road, Diamond District, Vittal Mallya Road]
+  "CV Raman Nagar & Bagmane":
+    [CV Raman Nagar, C V Raman Nagar, Bagmane Tech Park, Bagmane Tech, Byrasandra, Kaggadasapura]
+  "North (Manyata, Hebbal)":
+    [Manyata, Manyata Tech Park, Manyata Embassy, Hebbal, Nagawara, Thanisandra, Yelahanka, Kalyani Magnum,
+     Kirloskar Business Park, Bellary Road, Kempapura, Kodigehalli, Hennur]
+  "West (Yeshwanthpur, Malleshwaram)":
+    [Yeshwanthpur, Yeshwantpur, Rajajinagar, Malleshwaram, WTC Malleshwaram, Brigade Gateway, Peenya, Tumkur Road]
+  "South (JP Nagar, Bannerghatta)":
+    [JP Nagar, J P Nagar, Jayanagar, Bannerghatta Road, Bannerghatta, Kanakapura Road, Arekere, Banashankari]
+
+Hyderabad:
+  "HITEC City & Gachibowli":
+    [HITEC City, Hitech City, Hi-Tech City, Madhapur, Gachibowli, Financial District, Nanakramguda, Kondapur,
+     Raidurg, Mindspace, Knowledge City, Kokapet, Manikonda]
+Pune:
+  "Hinjewadi & Baner": [Hinjewadi, Hinjawadi, Rajiv Gandhi Infotech Park, Baner, Balewadi, Wakad, Aundh]
+  "Kharadi & Viman Nagar": [Kharadi, EON IT Park, Viman Nagar, Yerawada, Kalyani Nagar, Magarpatta, Hadapsar]
+NCR:
+  "Gurugram (Cyber City, Golf Course Rd)": [Cyber City, DLF Cyber City, Golf Course Road, Udyog Vihar, Sohna Road, Cyber Hub]
+  "Noida (Sectors 62, 125–135)": [Noida Sector, Sector 62, Sector 125, Sector 126, Sector 132, Sector 135, Noida Expressway]
+Chennai:
+  "OMR & Guindy": [OMR, Old Mahabalipuram Road, Sholinganallur, Perungudi, Thoraipakkam, Taramani, Guindy, DLF IT Park Chennai, Tidel Park]
+Mumbai:
+  "BKC & Powai": [BKC, Bandra Kurla Complex, Powai, Hiranandani, Andheri East, Lower Parel, Vikhroli, Goregaon East, Malad]

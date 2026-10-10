@@ -1,0 +1,75 @@
+# Cover-letter voices. Each is a register a real professional writes in, not a gimmick.
+# The facts never change between voices; only how they are said.
+
+plainspoken:
+  label: Plainspoken
+  best_for: Product companies and engineering-led teams
+  brief: >-
+    Write like a senior engineer writing to another engineer. Short sentences, concrete nouns,
+    zero ceremony. First sentence names the role and the single strongest match. Contractions are
+    fine (I've, I'd). No adjectives that the facts don't earn. 150 to 200 words.
+
+storyteller:
+  label: Storyteller
+  best_for: Startups, founders, product-minded teams
+  brief: >-
+    Open with one specific piece of work from the profile, told in two or three sentences as a
+    small story: the problem, what the candidate did, what changed (with the profile's own number).
+    Then connect it to what the JD says this team needs. Keep the story true to the bullet it comes
+    from; do not dramatise. 180 to 240 words.
+
+formal:
+  label: Formal
+  best_for: MNCs, banks, consulting, the UAE, government-tech
+  brief: >-
+    Classic professional register: complete sentences, no contractions, courteous but not stiff.
+    Structure: role and fit; two proof points mapped to the JD's stated requirements; availability
+    and a polite close. Avoid every cliche opener. British spelling. 180 to 230 words.
+
+warm:
+  label: Warm
+  best_for: Early-stage startups, small teams, a named hiring manager
+  brief: >-
+    Friendly and human, as if writing to a person the candidate respects, without being casual or
+    gushing. One line on what in the JD (only what the JD itself says) made the candidate want this
+    role. Contractions are fine. No exclamation marks. 150 to 200 words.
+
+proof_points:
+  label: Proof points
+  best_for: Busy recruiters, agencies, high-volume roles
+  brief: >-
+    Two-sentence opening, then exactly three bullet lines starting with "- ", each pairing one JD
+    requirement with the matching proof from the profile (with its number where the profile has
+    one), then a one-sentence close with availability. Skimmable in ten seconds. 120 to 170 words.
+
+# Phrases that make a letter read as a template or as AI-written. Prompt bans them; code flags them.
+banned_phrases:
+  - I am writing to express my interest
+  - I am writing to apply
+  - I am excited to apply
+  - I am thrilled
+  - I believe I would be a great fit
+  - I am confident that
+  - perfect fit
+  - ideal candidate
+  - I would welcome the opportunity
+  - Thank you for considering my application
+  - In today's fast-paced
+  - fast-paced environment
+  - proven track record
+  - extensive experience
+  - strong background in
+  - passion for
+  - passionate about
+  - eager to
+  - align with
+  - aligns perfectly
+  - furthermore
+  - moreover
+  - additionally
+  - leverage my
+  - hit the ground running
+  - value I can bring
+  - look forward to the opportunity to
+  - dynamic team
+  - unique blend

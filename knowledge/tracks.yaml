@@ -1,0 +1,116 @@
+# Career tracks: what the CV leads with when the target is the step above Tech Lead.
+# The facts never change between tracks; the order and framing do. Titles never overstate:
+# a headline may name a direction ("Engineering Leadership"), never a title not held ("Engineering Manager").
+
+ic_lead:
+  label: IC Lead
+  brief: >-
+    Target: hands-on Lead / Tech Lead / Senior-to-Lead individual-contributor roles. Lead with
+    technical depth and shipped systems, then the leadership that came with them.
+  headline_examples: ["Lead Full-Stack Engineer", "Lead Software Engineer (Python)", "Lead Frontend Engineer"]
+
+engineering_manager:
+  label: Engineering Manager
+  brief: >-
+    Target: Engineering Manager, Tech Lead Manager, Associate EM, or Lead-with-path-to-EM roles.
+    Hiring managers screen for people leadership, delivery and cross-functional work before tech.
+    In each role, lead with the bullets that show it: mentoring 10+ engineers, running the
+    bi-weekly frontend chapter for ~20+ engineers, sprint planning and delivery across client
+    implementations, Architecture Review Boards, working with Customer Success on requirements,
+    tech-vs-feature trade-offs. Keep one or two strong technical bullets per role as credibility.
+    The summary's last sentence may state the direction truthfully, e.g. "now looking to lead an
+    engineering team end to end". Never imply direct reports, hiring, appraisals or budget
+    ownership: the profile does not show them. List any the JD requires under gaps.
+  headline_examples: ["Lead Software Engineer · Engineering Leadership", "Lead Engineer · Teams & Delivery"]
+
+product_manager:
+  label: Product Manager
+  brief: >-
+    Target: Technical Product Manager, Product Manager (platform / B2B / analytics), APM-to-PM
+    switches. Lead with product evidence: owning modules from scoping requirements to
+    implementation plans, translating client needs with Customer Success Managers into features,
+    tech-vs-feature trade-offs that shaped roadmap feasibility, analytics products for Fortune 500
+    clients, the Business Analytics certification (ISI Kolkata). Express engineering work by user
+    and business outcome (export without UI lock-up across 100+ dashboards; ~30% faster frontend
+    delivery). The summary may state the switch truthfully, e.g. "moving from engineering
+    leadership into product management". Never claim PM titles, PRDs, roadmap ownership, pricing,
+    user research or experiments the profile does not show; list them under gaps.
+    Senior and Lead PM JDs: lead with the decisions, not the code. Each bullet answers "what did this
+    person decide, for whom, and what changed": scoping, trade-offs, client problems turned into
+    features, adoption across clients and dashboards. AI PM JDs: add AI fluency from the profile
+    (AI-assisted development pipelines, prompt architectures, context management, cost control) as
+    the candidate's understanding of how AI features are built and what they cost.
+    The Lighthouse project (in PROFILE projects) is the strongest product evidence: a product taken
+    from nothing to live, with its own business model, pricing economics, go-to-market and compliance
+    work. Name it in the summary. It has no user or revenue numbers; never imply any.
+  headline_examples: ["Lead Product Engineer · Technical Product", "Lead Software Engineer · Product-minded", "Lead Engineer · Product & AI"]
+
+forward_deployed:
+  label: Forward Deployed / Applied AI
+  brief: >-
+    Target: Forward Deployed Engineer, Forward Deployed Architect, Deployment Engineer, Applied AI
+    Engineer or Architect, Implementation Lead, Resident or Field Engineer, Customer Engineer. These
+    teams hire engineers who ship working software inside a customer's environment: they read for
+    customer-embedded delivery, integration with messy real systems, speed from prototype to
+    production, and judgement in front of a client. The profile has this directly: the current role
+    is engineering embedded with a client (Applied Materials), automating their factory-floor
+    workflows and integrating their MATLAB and proprietary SEMVision Java systems, with zero-
+    dependency deployments on their floor; MathCo adds 4+ client implementations for Fortune 500
+    clients and turning Customer Success requirements into features. Lead each role with that
+    client-embedded framing, then the integration and deployment work, then AI: AI-assisted
+    development pipelines, prompt architectures, context-management controls and the 70% cost cut.
+    The Lighthouse project (in PROFILE projects) is the proof of LLMs in production: Gemini in live
+    search and content with code-computed guardrails, a pgvector retrieval layer, many third-party
+    integrations, all shipped end to end. Name it in the summary's second sentence. Never claim agents,
+    evals, fine-tuning or anything beyond what the profile and its projects show; list them under gaps.
+  headline_examples: ["Lead Software Engineer · Forward Deployed", "Lead Engineer · Client-Embedded Delivery", "Lead Engineer · Applied AI & Automation"]
+
+solutions_gtm:
+  label: Solutions / GTM Engineer
+  brief: >-
+    Target: Solutions Engineer, Solutions Architect, Pre-sales or Partner Solutions, AI Solutions
+    Engineer, GTM Engineer, Growth Engineer, Developer Advocate. These teams read for a builder who can
+    explain: scoping a client's problem, designing an integration, building the proof of concept, and
+    presenting it to technical and non-technical people. Lead with requirement scoping with Customer
+    Success and clients, Architecture Review Boards, API and third-party integrations, technical
+    documentation and specifications, running the bi-weekly frontend chapter for ~20+ engineers
+    (explaining to a room), and measurable outcomes delivered for clients. The Lighthouse project shows
+    integrations shipped end to end (Google Maps imports, a Reddit app, OpenStreetMap pipelines). Never claim quota, sales
+    cycles, demos to buyers, CRM or outbound tooling (Salesforce, HubSpot, Clay) the profile does not
+    show; list them under gaps.
+  headline_examples: ["Lead Software Engineer · Solutions", "Lead Engineer · Solutions & Integrations"]
+
+ai_engineer:
+  label: AI Engineer
+  brief: >-
+    Target: AI Engineer, Agentic AI Engineer, Full-Stack AI Engineer, AI Platform Engineer. Lead with
+    the full-stack Python + React systems that AI features sit inside (FastAPI services with async
+    processing and OpenAPI, React UIs rendered from backend schemas, microservices with queues), then
+    the AI work the profile does show: AI-assisted development pipelines, prompt architectures,
+    context-management controls, the 70% API cost reduction, and the Lighthouse project's production
+    LLM work (Gemini with deterministic guardrails, pgvector retrieval). Never claim model training,
+    agents or evals the profile does not show; list them under gaps.
+  headline_examples: ["Lead Full-Stack Engineer · AI", "Lead Software Engineer (Python, AI)"]
+
+delivery_lead:
+  label: Project / Delivery Lead
+  brief: >-
+    Target: Project Lead, Delivery Lead, Technical Program Manager, Scrum-led delivery roles.
+    Lead with delivery: sprint planning and delivery across 3+ client implementations, ownership
+    from scoping to implementation plans, coordination of cross-functional teams (12+ people on the
+    core team), client-facing requirement work, strict SLAs and enterprise security compliance
+    (Veracode Level 5 + SCA). Never claim certifications (PMP, CSM/Scrum Master, PRINCE2) or budget
+    ownership the profile lacks; list them under gaps.
+  headline_examples: ["Lead Software Engineer · Delivery Lead", "Lead Engineer · Delivery & Execution"]
+
+staff:
+  label: Staff / Architect track
+  brief: >-
+    Target: Staff Engineer, Principal-track, Solutions/Software Architect roles. Lead with
+    architecture and cross-team technical scope: the schema-driven architecture of NucliOS that
+    removed frontend code duplication, the microservices export system used across 100+
+    dashboards, the Flask-to-FastAPI migration (40% faster APIs), Architecture Review Boards across
+    implementations, security compliance across the whole codebase, the zero-dependency deployment
+    pipeline. Write for impact across teams, not tasks. The headline still says Lead: Staff and
+    Architect are titles not held.
+  headline_examples: ["Lead Software Engineer · Architecture", "Lead Full-Stack Engineer · Systems Design"]
