@@ -128,7 +128,7 @@
   --tone: var(--text-2);
   display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 28px; padding: 3px 10px;
   border: 1px solid color-mix(in srgb, var(--tone) 35%, transparent); border-radius: 0; background: none;
-  color: var(--tone); font-weight: 600; font-size: 12px; line-height: 1.3; text-decoration: none;
+  color: var(--tone); font-weight: 600; font-size: 12px; line-height: 1.3; text-decoration: none; text-align: left;
   transition: border-color var(--dur), background-color var(--dur), color var(--dur);
 }
 .chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

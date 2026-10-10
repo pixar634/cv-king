@@ -43,6 +43,7 @@ You know the drill: you find a role you'd be great at, spend an evening rewordin
 - 🛰️ **Scans all your sources in parallel** (careers pages, job-board searches, web searches) in under a minute.
 - 🗓️ **Only fresh postings**, inside a window you choose (24 hours to 30 days).
 - 🏆 **Ranked against your profile** by the same match score tailoring reaches.
+- 🃏 **Every job as a card** with all its details (posted date, location, area, match bar and why it fits), filters in a column on the left, and cards across the rest of the screen.
 - 🎚️ **Smart filters:** seniority (Lead and above, Senior optional), maximum years asked, and skills to skip (for example Java, .NET or C#).
 - 📍 **Region and neighbourhood filters**, plus company office locations so "Bengaluru" becomes "HSR Layout".
 - 👀 **People to watch:** each scan looks for recent public hiring posts from hiring managers you follow.

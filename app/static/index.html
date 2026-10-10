@@ -7,9 +7,9 @@
 <link rel="preload" href="/static/fonts/PlusJakartaSans-Variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/vendor/reactflow.css">
 <link rel="stylesheet" href="/static/css/tokens.css?v=1">
-<link rel="stylesheet" href="/static/css/base.css?v=1">
-<link rel="stylesheet" href="/static/css/components.css?v=5">
-<link rel="stylesheet" href="/static/css/views.css?v=4">
+<link rel="stylesheet" href="/static/css/base.css?v=2">
+<link rel="stylesheet" href="/static/css/components.css?v=7">
+<link rel="stylesheet" href="/static/css/views.css?v=5">
 </head>
 <body>
 <header class="topbar">
@@ -84,28 +84,33 @@
 
 <!-- ================= DISCOVER ================= -->
 <section class="view" id="v-discover">
-  <div class="page">
+  <div class="page page--wide">
     <header class="page__head">
       <div class="page__intro">
         <span class="eyebrow">Discover</span>
         <h1 class="type-h1">Fresh jobs, ranked for you</h1>
         <p class="page__lede" id="discoverLede">Fresh postings from your sources, ranked against your profile.</p>
       </div>
-      <div class="page__controls">
-        <select id="days" class="control--sm" aria-label="Posted within">
-          <option value="1">Last 24 hours</option><option value="3">Last 3 days</option><option value="7">Last 7 days</option>
-          <option value="14" selected>Last 14 days</option><option value="30">Last 30 days</option>
-        </select>
-        <select id="minMatch" class="control--sm" aria-label="Minimum match">
-          <option value="0">Any match</option><option value="40">Match 40%+</option><option value="50" selected>Match 50%+</option><option value="60">Match 60%+</option><option value="70">Match 70%+</option>
-        </select>
-        <select id="sortBy" class="control--sm" aria-label="Sort"><option value="match">Best match</option><option value="newest">Newest</option></select>
-        <button class="btn btn--accent" id="scanAll">Scan sources</button>
-      </div>
     </header>
-    <div class="filters" id="areaBar"></div>
-    <div class="scan-line" id="scanLine" hidden></div>
-    <div id="foundList"></div>
+    <div class="split">
+      <aside class="split__nav">
+        <button class="btn btn--accent btn--block" id="scanAll">Scan sources</button>
+        <div id="scanLine" hidden></div>
+        <label class="field"><span class="eyebrow">Posted within</span>
+          <select id="days" class="control--sm">
+            <option value="1">Last 24 hours</option><option value="3">Last 3 days</option><option value="7">Last 7 days</option>
+            <option value="14" selected>Last 14 days</option><option value="30">Last 30 days</option>
+          </select></label>
+        <label class="field"><span class="eyebrow">Match</span>
+          <select id="minMatch" class="control--sm">
+            <option value="0">Any match</option><option value="40">40% and up</option><option value="50" selected>50% and up</option><option value="60">60% and up</option><option value="70">70% and up</option>
+          </select></label>
+        <label class="field"><span class="eyebrow">Sort</span>
+          <select id="sortBy" class="control--sm"><option value="match">Best match</option><option value="newest">Newest</option></select></label>
+        <div class="filters" id="areaBar"></div>
+      </aside>
+      <section class="split__main" id="foundList"></section>
+    </div>
   </div>
   <div class="dock" id="dock" hidden>
     <span class="dock__text" id="dockText"></span>
@@ -124,13 +129,13 @@
         <p class="page__lede" id="pipeLede"></p>
       </div>
     </header>
-    <div class="pipeline">
-      <aside class="pipeline__nav">
+    <div class="split">
+      <aside class="split__nav">
         <nav class="side-nav" id="stageNav" aria-label="Stages"></nav>
         <a class="btn btn--sm btn--ghost" href="/api/export.xlsx" id="exportBtn">Export to Excel</a>
       </aside>
-      <section class="pipeline__main">
-        <div class="pipeline__head" id="stageHead"></div>
+      <section class="split__main">
+        <div class="split__head" id="stageHead"></div>
         <div class="card-grid" id="board"></div>
       </section>
     </div>
@@ -257,8 +262,8 @@
 <script src="/static/vendor/reactflow.umd.js"></script>
 <script src="/static/vendor/motion-11.18.2.js"></script>
 <script src="/static/vendor/gsap-3.12.5.min.js"></script>
-<script src="/static/fx.js?v=2"></script>
+<script src="/static/fx.js?v=3"></script>
 <script src="/static/career.js?v=4"></script>
-<script src="/static/app.js?v=22"></script>
+<script src="/static/app.js?v=23"></script>
 </body>
 </html>

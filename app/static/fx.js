@@ -13,7 +13,7 @@
   const STAGGER = 0.035, MAX_STAGGERED = 14, MAX_ANIMATED = 40;
 
   // What rises in when it renders. Only the outermost match animates, so a card's insides move with it.
-  const ENTERS = [".card", ".item", ".job-row", ".notice", ".score", ".kv", ".diff", ".gap", ".letter", ".checklist",
+  const ENTERS = [".card", ".item", ".notice", ".score", ".kv", ".diff", ".gap", ".letter", ".checklist",
     ".board__none", ".empty", ".hero > *", ".report__panel > *", ".step > *", ".career__block > *", ".career__canvas",
     ".drawer__section", ".filters", ".chip-row", ".textbox", ".disclosure"].join(",");
   const HEADINGS = ".type-display, .type-h1";
@@ -156,7 +156,7 @@
   function enterView(view = document.querySelector(".view.on")) {
     if (!view || reduced()) return;
     view.querySelectorAll(".page__intro .type-h1, .hero .type-display").forEach((h) => words(h));
-    const intro = [...view.querySelectorAll(".page__intro > :not(.type-h1), .page__controls, .composer, .stage__bar, .pipeline__nav, .pipeline__head")];
+    const intro = [...view.querySelectorAll(".page__intro > :not(.type-h1), .page__controls, .composer, .stage__bar, .split__nav, .split__head")];
     const content = outermost([...view.querySelectorAll(ENTERS)]).filter((el) => !el.matches(HEADINGS) && visible(el) && onScreen(el));
     rise([...intro, ...content]);
     view.querySelectorAll(".score .stat__value").forEach((n, i) => count(n, 0.2 + i * 0.08));

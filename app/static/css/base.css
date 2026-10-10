@@ -5,6 +5,9 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; }
+/* The scrollbar's space is always kept, so switching between short and long screens never shifts the page sideways. */
+html { scrollbar-gutter: stable; }
+body { overflow-x: clip; }
 body {
   background: var(--bg); color: var(--text);
   font: 450 14px/1.5 var(--font-sans); letter-spacing: .005em;

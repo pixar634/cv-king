@@ -731,11 +731,11 @@ function renderAreaBar() {
   const sel = new Set(store.get("cv.areas", []));
   const strict = store.get("cv.areasStrict", false);
   const regions = new Set(S.prefs.regions || REGIONS.map((r) => r[0]));
-  $("#areaBar").innerHTML = `<span class="eyebrow">Region</span>
-    ${REGIONS.map(([k, label]) => `<button data-reg="${k}" class="chip ${regions.has(k) ? "on" : ""}" ${k === "world" ? 'title="UK, EU, the Gulf and Singapore: your visa targets. US roles stay out."' : ""}>${label}</button>`).join("")}
-    ${regions.has("bengaluru") ? `<span class="eyebrow">Bengaluru area</span>
-      ${(S.state.areas.Bengaluru || []).map((z) => `<button data-z="${esc(z)}" class="chip ${sel.has(z) ? "on" : ""}">${esc(z)}</button>`).join("")}
-      ${sel.size ? `<label class="check"><input type="checkbox" id="areaStrict" ${strict ? "checked" : ""}> Hide Bengaluru jobs that don't say where</label>` : ""}` : ""}`;
+  $("#areaBar").innerHTML = `<div class="filter-group"><span class="eyebrow">Region</span><div class="chip-row">
+    ${REGIONS.map(([k, label]) => `<button data-reg="${k}" class="chip ${regions.has(k) ? "on" : ""}" ${k === "world" ? 'title="UK, EU, the Gulf and Singapore: your visa targets. US roles stay out."' : ""}>${label}</button>`).join("")}</div></div>
+    ${regions.has("bengaluru") ? `<div class="filter-group"><span class="eyebrow">Bengaluru area</span><div class="chip-row">
+      ${(S.state.areas.Bengaluru || []).map((z) => `<button data-z="${esc(z)}" class="chip ${sel.has(z) ? "on" : ""}">${esc(z)}</button>`).join("")}</div>
+      ${sel.size ? `<label class="check"><input type="checkbox" id="areaStrict" ${strict ? "checked" : ""}> Hide Bengaluru jobs that don't say where</label>` : ""}</div>` : ""}`;
   $$("#areaBar [data-reg]").forEach((b) => (b.onclick = async () => {
     regions.has(b.dataset.reg) ? regions.delete(b.dataset.reg) : regions.add(b.dataset.reg);
     if (!regions.size) { toast("Keep at least one region."); return; }
@@ -773,16 +773,22 @@ async function loadFound() {
     ? `${jobs.length} fresh posting${jobs.length === 1 ? "" : "s"} from ${sources.length} sources. Match is the share of each job's keywords your profile can truthfully cover, the same number tailoring reaches.${last ? ` Last scanned ${last.slice(11, 16)}.` : ""}${all.length > jobs.length ? ` ${all.length - jobs.length} more below ${min}%.` : ""}`
     : "Add a careers page or job board in Settings, then scan.";
   const isNew = (j) => lastScan && (j.first_seen || "") >= lastScan.at.slice(0, 16) && scanLog.length > 1;
-  const row = (j) => {
+  const card = (j) => {
     const d = daysAgo(j.posted);
-    return `<div class="job-row ${S.selected.has(j.id) ? "sel" : ""}" data-id="${j.id}">
-      <input type="checkbox" ${S.selected.has(j.id) ? "checked" : ""} aria-label="Select ${esc(j.title)}">
-      <span class="logo logo--sm">${initial(j.company || j.source)}</span>
-      <span class="item__body"><span class="item__title">${isNew(j) ? `<span class="tag tag--accent tag--solid" style="margin-right:8px;vertical-align:2px">New</span>` : ""}${esc(j.title)}</span><span class="item__meta">${esc(j.company || j.source)}${j.location ? `, ${esc(j.location)}` : ""}${j.remote ? ", remote" : ""}${(j.areas || []).length ? `, <span class="zone">${esc(j.areas.join(" or "))}</span>` : ""}</span></span>
-      <span class="job-row__when"><span class="tag ${d === null ? "tag--warn" : d <= 3 ? "tag--ok" : ""}">${d === null ? "Date unknown" : ago(j.posted)}</span></span>
-      <span class="job-row__match ${tone(j.match)}" title="Keyword match your profile can reach for this job (the same measure as after tailoring)"><span class="meter meter--sm"><span class="meter__fill" style="width:${j.match}%"></span></span><span class="num">${j.match}%</span></span>
-      <a class="icon-btn icon-btn--sm" href="${esc(j.url)}" target="_blank" rel="noopener" title="Open the posting" aria-label="Open the posting">${ICON.out}</a>
-      <span class="job-row__why">${esc((j.reasons || []).join(", "))}, via ${esc(j.source)}</span>
+    const where = [j.company || j.source, j.location, j.remote ? "remote" : ""].filter(Boolean).map(esc).join(" · ");
+    return `<div class="card card--interactive job-card ${S.selected.has(j.id) ? "sel" : ""}" data-id="${j.id}">
+      <div class="job-card__top">
+        <input type="checkbox" ${S.selected.has(j.id) ? "checked" : ""} aria-label="Select ${esc(j.title)}">
+        <span class="logo logo--sm">${initial(j.company || j.source)}</span>
+        <span class="tag ${d === null ? "tag--warn" : d <= 3 ? "tag--ok" : ""}">${d === null ? "Date unknown" : ago(j.posted)}</span>
+        ${isNew(j) ? `<span class="tag tag--accent tag--solid">New</span>` : ""}
+        <a class="icon-btn icon-btn--sm" href="${esc(j.url)}" target="_blank" rel="noopener" title="Open the posting" aria-label="Open the posting">${ICON.out}</a>
+      </div>
+      <div><div class="job-card__title">${esc(j.title)}</div>
+        <div class="job-card__where">${where}${(j.areas || []).length ? ` · <span class="zone">${esc(j.areas.join(" or "))}</span>` : ""}</div></div>
+      <div class="job-card__match ${tone(j.match)}" title="Keyword match your profile can reach for this job (the same measure as after tailoring)">
+        <span class="eyebrow">Match</span><span class="meter meter--sm"><span class="meter__fill" style="width:${j.match}%"></span></span><span class="num">${j.match}%</span></div>
+      <div class="job-card__why" title="${esc((j.reasons || []).join(", "))}">${esc((j.reasons || []).join(", "))}, via ${esc(j.source)}</div>
     </div>`;
   };
   // Sections by the day the app first found each job, newest first; each says which scan it came from.
@@ -803,11 +809,11 @@ async function loadFound() {
         const list = groups[d];
         const dated = list.filter((j) => j.posted), unknown = list.filter((j) => !j.posted);
         return `<details class="disclosure disclosure--lg day" ${i === 0 ? "open" : ""}><summary><span>${dayLabel(d)}</span><span class="disclosure__sub num">${list.length} job${list.length === 1 ? "" : "s"}</span><span class="disclosure__aside">${meta}</span></summary>
-          <div>${dated.map(row).join("")}</div>
-          ${unknown.length ? `<div class="eyebrow group-title">Posting date unknown. Check the posting before you spend time on it.</div><div>${unknown.map(row).join("")}</div>` : ""}</details>`;
+          ${dated.length ? `<div class="card-grid">${dated.map(card).join("")}</div>` : ""}
+          ${unknown.length ? `<div class="eyebrow group-title">Posting date unknown. Check the posting before you spend time on it.</div><div class="card-grid">${unknown.map(card).join("")}</div>` : ""}</details>`;
       }).join("")
     : `<div class="empty">${sources.length ? "Nothing fresh at this match level. Widen the window or lower the match, or scan again." : "No sources yet. Open <b>Settings</b> and add a careers page, like https://jobs.lever.co/cred."}</div>`;
-  $$(".job-row").forEach((el) => {
+  $$(".job-card").forEach((el) => {
     el.onclick = (e) => {
       if (e.target.closest("a")) return;
       const id = el.dataset.id;
