@@ -6,7 +6,7 @@ You know the drill: you find a role you'd be great at, spend an evening rewordin
 
 **CV King fixes that in one paste.** Drop in a job link and you get back a CV rewritten for that exact role, checked line by line the way an ATS reads it, scored before and after, with a cover letter ready to send. It's written **only from your real experience**, so every line still holds up in the interview.
 
-> 🖤 A dark, sharp interface inspired by CRED's NeoPOP design system. Built to feel fast, focused and a little premium, because job hunting is stressful enough.
+> 🖤 A dark, sharp interface inspired by CRED's NeoPOP design system, with award-site page transitions and motion on every screen. Built to feel fast, focused and a little premium, because job hunting is stressful enough.
 
 ---
 
@@ -49,7 +49,7 @@ You know the drill: you find a role you'd be great at, spend an evening rewordin
 - 📦 **Batch tailoring:** tick the jobs you like and tailor them all, a few at a time, in the background.
 
 ### 📋 Pipeline: every application, one board
-- 🗂️ **Kanban board:** Tailoring (with live progress), Tailored, Applied and Interviews, with closed ones folded away.
+- 🗂️ **Stages in one column, cards across the rest:** All, Tailoring (with live progress), Tailored, Applied, Interviews and Closed, each with a count. Pick one and its applications fill the screen in a wrapping grid, with no long scroll.
 - 🔄 **Change status from the card**, or click any card to reopen its CV.
 - 📈 **Export to Excel** with one click.
 
@@ -61,6 +61,12 @@ You know the drill: you find a role you'd be great at, spend an evening rewordin
 - 🎯 **Set a goal** (for example VP level by a year, at a target pay) and see which routes reach it.
 - 💰 **Salary tracker:** log your pay by year to see your growth, where your pace leads, and the yearly growth your goal needs.
 - 🌱 **Growth log:** record what you've done, learned or want next. The next map reads all of it, and skills you mark for CVs join your profile.
+
+### 🎬 Motion
+- 🌊 **Page transitions** with a two-panel curtain and the screen's name, built on GSAP.
+- ✨ **Everything arrives with intent:** cards, lists and panels rise in, headings reveal word by word, and scores count up, built on Motion (the framework-free Framer Motion).
+- 🚪 **Smooth exits** for the settings drawer, menus and the selection dock.
+- ♿ **Respects reduced motion:** if your system asks for less motion, everything appears instantly.
 
 ### ⚙️ Writers and settings
 - 🧠 **Claude or Gemini**, switched from the top bar. Choose Claude Opus (best writing) or Claude Sonnet (faster).
@@ -95,6 +101,7 @@ Keep the `start.bat` window open while you work; closing it stops the app.
 |---|---|
 | `app/` | The FastAPI server, tailoring engine and web UI |
 | `app/static/css/` | The design system: `tokens.css` → `base.css` → `components.css` → `views.css` |
+| `app/static/fx.js` | All motion in one place: Motion for components and text, GSAP for page transitions |
 | `knowledge/playbook.md` | The writing brief: how ATS and recruiters read a CV, and the rules |
 | `knowledge/markets.yaml` | Market conventions for each region |
 | `knowledge/tracks.yaml` | Career tracks and what each one leads with |

@@ -8,8 +8,8 @@
 <link rel="stylesheet" href="/static/vendor/reactflow.css">
 <link rel="stylesheet" href="/static/css/tokens.css?v=1">
 <link rel="stylesheet" href="/static/css/base.css?v=1">
-<link rel="stylesheet" href="/static/css/components.css?v=2">
-<link rel="stylesheet" href="/static/css/views.css?v=3">
+<link rel="stylesheet" href="/static/css/components.css?v=5">
+<link rel="stylesheet" href="/static/css/views.css?v=4">
 </head>
 <body>
 <header class="topbar">
@@ -120,15 +120,20 @@
     <header class="page__head">
       <div class="page__intro">
         <span class="eyebrow">Pipeline</span>
-        <h1 class="type-h1">Every application, one board</h1>
+        <h1 class="type-h1">Every application, one place</h1>
         <p class="page__lede" id="pipeLede"></p>
       </div>
-      <div class="page__controls">
-        <a class="btn" href="/api/export.xlsx" id="exportBtn">Export to Excel</a>
-      </div>
     </header>
-    <div class="board" id="board"></div>
-    <div id="closed"></div>
+    <div class="pipeline">
+      <aside class="pipeline__nav">
+        <nav class="side-nav" id="stageNav" aria-label="Stages"></nav>
+        <a class="btn btn--sm btn--ghost" href="/api/export.xlsx" id="exportBtn">Export to Excel</a>
+      </aside>
+      <section class="pipeline__main">
+        <div class="pipeline__head" id="stageHead"></div>
+        <div class="card-grid" id="board"></div>
+      </section>
+    </div>
   </div>
 </section>
 
@@ -145,7 +150,7 @@
     </header>
     <div class="career__body">
       <div class="career__canvas">
-        <div id="flow"></div>
+        <div id="flow" data-fx-skip></div>
         <div class="busy" id="careerBusy" hidden><div class="busy__box plunk"><span class="spinner"></span><span id="careerBusyMsg">Mapping</span></div></div>
       </div>
       <aside class="career__side">
@@ -246,11 +251,14 @@
   </div>
 </aside>
 
-<div class="toast plunk" id="toast" role="status"></div>
+<div class="toast plunk" id="toast" role="status" data-fx-skip></div>
 <script src="/static/vendor/react.production.min.js"></script>
 <script src="/static/vendor/react-dom.production.min.js"></script>
 <script src="/static/vendor/reactflow.umd.js"></script>
+<script src="/static/vendor/motion-11.18.2.js"></script>
+<script src="/static/vendor/gsap-3.12.5.min.js"></script>
+<script src="/static/fx.js?v=2"></script>
 <script src="/static/career.js?v=4"></script>
-<script src="/static/app.js?v=20"></script>
+<script src="/static/app.js?v=22"></script>
 </body>
 </html>

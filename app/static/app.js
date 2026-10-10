@@ -90,12 +90,20 @@ function wireNav() {
   $("#nav").onclick = (e) => { const b = e.target.closest("button"); if (b) showView(b.dataset.view); };
 }
 
+const VIEWS = ["tailor", "discover", "pipeline", "career"];
 function showView(v) {
+  const from = $(".view.on")?.id.slice(2);
   $$("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.view === v));
-  $$(".view").forEach((s) => s.classList.toggle("on", s.id === `v-${v}`));
-  if (v === "discover") loadFound();
-  if (v === "pipeline") loadPipeline();
-  if (v === "career") loadCareer();
+  const swap = () => {
+    $$(".view").forEach((s) => s.classList.toggle("on", s.id === `v-${v}`));
+    window.scrollTo(0, 0);
+    if (v === "discover") loadFound();
+    if (v === "pipeline") loadPipeline();
+    if (v === "career") loadCareer();
+    renderDock();
+  };
+  if (from === v) return swap();
+  FX.page(VIEWS.indexOf(v), $(`#nav [data-view=${v}]`).firstChild.textContent.trim(), swap);
 }
 
 const D = () => S.prefs.defaults;
@@ -319,8 +327,8 @@ function wireStage() {
   $("#lengthChip").onclick = () => toggleMenu("#lengthMenu");
 }
 
-function closeMenus() { $$(".menu").forEach((m) => (m.hidden = true)); }
-function toggleMenu(sel) { const m = $(sel); const was = m.hidden; closeMenus(); m.hidden = !was; }
+function closeMenus() { $$(".menu").forEach((m) => FX.hide(m, "menu")); }
+function toggleMenu(sel) { const m = $(sel); const open = FX.isOpen(m); closeMenus(); if (!open) FX.show(m, "menu"); }
 
 function currentVariant() { return S.app ? S.app.options.variant : D().variant; }
 function currentPages() { return S.app ? String(S.app.options.max_pages) : String(D().max_pages); }
@@ -516,12 +524,13 @@ async function openApp(id) {
 // ================= report: score + tabs =================
 const flagsHtml = (list) => (list || []).map((f) => `<div class="notice ${f.level === "error" ? "notice--bad" : ""}">${esc(f.text)}</div>`).join("");
 
-function setTab(name) {
+function setTab(name, animate = true) {
   const btns = $$("#reportTabs [data-tab]");
   if (!btns.some((b) => b.dataset.tab === name)) name = "changes";
   S.tab = name; store.set("cv.tab", name);
   btns.forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
   $$("#insights [data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== name));
+  if (animate) FX.rise($(`#insights [data-panel=${name}]`).children, { y: 10 });
 }
 
 function renderInsights() {
@@ -584,7 +593,7 @@ function renderInsights() {
       </div>
     </section>`;
   $("#reportTabs").onclick = (e) => { const b = e.target.closest("[data-tab]"); if (b) setTab(b.dataset.tab); };
-  setTab(S.tab);
+  setTab(S.tab, false);
   const cn = $("#copyNote"); if (cn) cn.onclick = () => copy(a.recruiter_note);
   const cg = $("#confirmGaps"); if (cg) cg.onclick = confirmGaps;
   renderLetters();
@@ -813,7 +822,7 @@ async function loadFound() {
 
 function renderDock() {
   const n = S.selected.size;
-  $("#dock").hidden = !n || !$("#v-discover").classList.contains("on");
+  FX.toggle($("#dock"), !!n && $("#v-discover").classList.contains("on"), "dock");
   $("#dockText").textContent = `${n} selected`;
   $("#dockGo").textContent = `Tailor ${n} job${n === 1 ? "" : "s"}`;
 }
@@ -839,20 +848,30 @@ function renderPipeline() {
   const rows = S.apps || [];
   const inflight = S.batch.filter((b) => b.status !== "done");
   const by = (sts) => rows.filter((r) => sts.includes(r.status));
-  const cols = [
-    ["Tailoring", inflight, "Jobs you send from Tailor or Discover appear here while they're written."],
-    ["Tailored", by(["Generated"]), "Ready to send. Mark one applied when you do."],
-    ["Applied", by(["Applied"]), "Nothing applied yet."],
-    ["Interviews", by(["Recruiter call", "Interviewing", "Offer"]), "Calls and interviews land here."],
+  const closedSts = ["Rejected", "No response", "Withdrawn"];
+  const stages = [
+    ["all", "All", [...inflight, ...rows.filter((r) => !closedSts.includes(r.status))], "Nothing here yet. Tailor a CV from the Tailor screen or Discover."],
+    ["tailoring", "Tailoring", inflight, "Jobs you send from Tailor or Discover appear here while they're written."],
+    ["tailored", "Tailored", by(["Generated"]), "Ready to send. Mark one applied when you do."],
+    ["applied", "Applied", by(["Applied"]), "Nothing applied yet."],
+    ["interviews", "Interviews", by(["Recruiter call", "Interviewing", "Offer"]), "Calls and interviews land here."],
+    ["closed", "Closed", by(closedSts), "Rejected, withdrawn and unanswered applications fold away here."],
   ];
-  const closed = by(["Rejected", "No response", "Withdrawn"]);
+  const cur = stages.find((x) => x[0] === store.get("cv.stage", "all")) || stages[0];
   const applied = rows.filter((r) => r.status !== "Generated").length;
   const writing = inflight.filter((b) => b.status !== "error").length;
   $("#pipeLede").textContent = `${rows.length} CV${rows.length === 1 ? "" : "s"} tailored, ${applied} applied${writing ? `, ${writing} being written now` : ""}.`;
+  const navHtml = stages.map(([k, label, list]) => `<button data-stage="${k}" class="${k === cur[0] ? "on" : ""}">
+      <span class="side-nav__label">${label}${k === "tailoring" && writing ? `<span class="spinner" style="width:10px;height:10px"></span>` : ""}</span><span class="side-nav__count">${list.length}</span></button>`).join("");
+  $("#stageNav").onclick = (e) => {
+    const b = e.target.closest("[data-stage]");
+    if (b) { store.set("cv.stage", b.dataset.stage); renderPipeline(); FX.rise($("#board").children); }
+  };
+  const headHtml = `<h2 class="type-h2">${cur[1]}</h2><span class="type-meta num">${cur[2].length} ${cur[2].length === 1 ? "application" : "applications"}</span>`;
   const statusSel = (r) => `<select class="control--sm" data-status="${esc(r.id)}" aria-label="Status">${S.state.statuses.map((s) => `<option ${s === r.status ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>`;
   const appCard = (r) => `<div class="card card--interactive app-card" data-open="${esc(r.id)}">
       <div class="item">${logoTile(r.id, r.logo, r.company)}
-        <span class="item__body"><span class="item__title">${esc(r.company)}</span><span class="item__meta">${esc(r.role)}</span></span>
+        <span class="item__body"><span class="item__title">${esc(r.company)}</span><span class="item__meta" title="${esc(r.role)}">${esc(r.role)}</span></span>
         <span class="item__aside">${scoreNum(r.score_after)}</span></div>
       <div class="app-card__meta"><span class="num">${esc(r.applied_on || r.created.slice(0, 10))}</span><span class="app-card__host" title="${esc(r.job_url || "")}${r.job_id ? `, ID ${esc(r.job_id)}` : ""}">${esc(host(r.job_url || ""))}</span>${statusSel(r)}</div>
       <div class="app-card__acts">
@@ -860,14 +879,19 @@ function renderPipeline() {
         <a class="btn btn--sm btn--ghost" href="/apps/${esc(r.id)}/pdf?download=1" data-stop title="${esc(r.pdf)}">PDF</a>
         ${r.status === "Generated" ? `<button class="btn btn--sm btn--ghost" data-applied="${esc(r.id)}" data-stop>Mark applied</button>` : ""}
       </div></div>`;
-  const flightCard = (b) => `<div class="card app-card ${b.status === "error" ? "err" : ""}">
-      <div class="item"><span class="logo logo--sm">${initial(b.company || b.role)}</span><span class="item__body"><span class="item__title">${esc(b.company || "Reading the posting")}</span><span class="item__meta">${esc(b.role || "")}</span></span></div>
+  const flightCard = (b) => `<div class="card app-card ${b.status === "error" ? "err" : ""}" data-flight="${esc(b.id)}">
+      <div class="item"><span class="logo logo--sm">${initial(b.company || b.role)}</span><span class="item__body"><span class="item__title">${esc(b.company || "Reading the posting")}</span><span class="item__meta">${esc(b.role || "")}</span></span><span class="tag ${b.status === "error" ? "tag--bad" : "tag--accent"}">${b.status === "error" ? "Failed" : "Writing"}</span></div>
       ${b.status === "error" ? "" : `<div class="progress"></div>`}
       <div class="progress__text" style="margin-top:0">${esc(b.status === "queued" ? "Waiting for a free slot" : b.stage || "Working")}</div>
       ${b.status === "error" ? `<div class="app-card__acts"><button class="btn btn--sm btn--primary" data-retry="${esc(b.id)}">Try again</button><button class="btn btn--sm btn--ghost" data-remove="${esc(b.id)}">Remove</button></div>` : ""}</div>`;
-  $("#board").innerHTML = cols.map(([name, list, none], i) => `<div class="board__col"><div class="board__head"><span class="eyebrow">${name}</span><span class="tag num">${list.length}</span></div>
-      <div class="board__lane">${list.length ? list.map(i === 0 ? flightCard : appCard).join("") : `<div class="board__none">${none}</div>`}</div></div>`).join("");
-  $("#closed").innerHTML = closed.length ? `<details class="disclosure closed"><summary>Closed<span class="disclosure__aside num">${closed.length}</span></summary><div class="closed__list">${closed.map(appCard).join("")}</div></details>` : "";
+  // queue items (still being written) and tracker rows (finished CVs) share the grid
+  const isFlight = (x) => inflight.includes(x);
+  const boardHtml = cur[2].length ? cur[2].map((x) => (isFlight(x) ? flightCard(x) : appCard(x))).join("") : `<div class="board__none">${cur[3]}</div>`;
+  // Polling re-renders every few seconds; leave the DOM alone when nothing changed (an open status menu stays open).
+  const sig = navHtml + headHtml + boardHtml;
+  if (sig === renderPipeline.sig) return;
+  renderPipeline.sig = sig;
+  $("#stageNav").innerHTML = navHtml; $("#stageHead").innerHTML = headHtml; $("#board").innerHTML = boardHtml;
   $$("[data-open]").forEach((el) => (el.onclick = (e) => { if (!e.target.closest("select, [data-stop]")) openApp(el.dataset.open); }));
   $$("[data-applied]").forEach((b) => (b.onclick = async () => {
     const r = await api(`/api/apps/${b.dataset.applied}/track`, { body: { status: "Applied" } });
@@ -1107,8 +1131,8 @@ async function generateCareer() {
 }
 
 // ================= settings drawer =================
-function openDrawer() { $("#drawer").hidden = false; $("#scrim").hidden = false; fillDrawer(); }
-function closeDrawer() { $("#drawer").hidden = true; $("#scrim").hidden = true; }
+function openDrawer() { FX.show($("#scrim"), "scrim"); FX.show($("#drawer"), "drawer"); fillDrawer(); }
+function closeDrawer() { FX.hide($("#drawer"), "drawer"); FX.hide($("#scrim"), "scrim"); }
 
 function wireDrawer() {
   $("#openSettings").onclick = openDrawer;

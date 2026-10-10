@@ -97,6 +97,20 @@
 .tabs__count { color: var(--text-3); font-weight: 700; letter-spacing: .04em; }
 .tabs > button.on .tabs__count { color: var(--accent); }
 
+/* Vertical list of stages or filters, one per row, with a count. */
+.side-nav { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+.side-nav > button {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: 14px 14px 14px 16px;
+  border: 0; border-bottom: 1px solid var(--line); border-left: 2px solid transparent; background: none; text-align: left;
+  color: var(--text-3); font-weight: 800; font-size: 11px; letter-spacing: var(--caps-tracking); text-transform: uppercase;
+  transition: color var(--dur), background-color var(--dur);
+}
+.side-nav > button:hover { color: var(--text); background: var(--surface); }
+.side-nav > button.on { color: var(--white); background: var(--surface); border-left-color: var(--accent); }
+.side-nav__label { display: inline-flex; align-items: center; gap: 8px; }
+.side-nav__count { font-size: 14px; letter-spacing: 0; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.side-nav > button.on .side-nav__count { color: var(--accent); }
+
 /* ======================================================================
    Tags (status labels, CAPS) and chips (data values, filters)
    ====================================================================== */
@@ -322,7 +336,7 @@
 .drawer__section:first-child { border-top: 0; }
 
 .dock {
-  position: fixed; left: 50%; bottom: 28px; z-index: 25; transform: translateX(-50%);
+  position: fixed; left: 0; right: 0; bottom: 28px; z-index: 25; width: max-content; margin: 0 auto;
   display: flex; align-items: center; gap: var(--s-3); padding: 10px 10px 10px 22px;
   background: var(--surface-2); border: 1px solid var(--line-2); box-shadow: 0 24px 60px rgba(0, 0, 0, .6);
 }
@@ -331,3 +345,21 @@
   .progress::after, .spinner { animation: none; }
   .progress::after { background-position: 50% 0; }
 }
+
+/* ======================================================================
+   Motion hooks (fx.js drives them; these only set up the shapes)
+   ====================================================================== */
+.fx-word { display: inline-block; overflow: hidden; vertical-align: top; padding-bottom: .12em; margin-bottom: -.12em; }
+.fx-word > span { display: inline-block; }
+.meter__fill, .meter__ceil { transform-origin: left center; }
+
+/* Page transition: two panels and the next screen's name, between the top bar and the page. */
+.curtain { position: fixed; inset: var(--topbar) 0 0 0; z-index: 50; overflow: hidden; visibility: hidden; }
+.curtain__panel { position: absolute; inset: 0; will-change: transform; }   /* GSAP owns its transform */
+.curtain__panel--accent { background: var(--accent); }
+.curtain__panel--ink { background: var(--surface); border-top: 1px solid var(--line-2); }
+.curtain__label { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
+.curtain__mask { overflow: hidden; padding-bottom: .1em; }
+.curtain__index, .curtain__name { display: block; will-change: transform; }
+.curtain__index { font-weight: 800; font-size: 12px; letter-spacing: .3em; color: var(--accent); }
+.curtain__name { font-family: var(--font-serif); font-weight: 700; font-size: clamp(64px, 10vw, 150px); line-height: 1; letter-spacing: -.02em; color: var(--white); }

@@ -165,11 +165,13 @@
 .dock__text { font-weight: 700; font-size: 13px; color: var(--text-2); margin-right: var(--s-2); }
 
 /* pipeline */
-.board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s-4); align-items: start; }
-.board__col { min-width: 0; }
-.board__head { display: flex; align-items: center; gap: 10px; margin-bottom: var(--s-3); padding-bottom: var(--s-3); border-bottom: 2px solid var(--line-2); }
-.board__col:first-child .board__head { border-bottom-color: var(--accent); }
-.board__lane { display: flex; flex-direction: column; gap: var(--s-3); min-height: 90px; }
+.pipeline { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: var(--s-8); align-items: start; }
+.pipeline__nav { position: sticky; top: calc(var(--topbar) + var(--s-6)); display: flex; flex-direction: column; gap: var(--s-4); align-items: flex-start; }
+.pipeline__nav .side-nav { align-self: stretch; }
+.pipeline__main { min-width: 0; display: flex; flex-direction: column; gap: var(--s-5); }
+.pipeline__head { display: flex; align-items: baseline; gap: var(--s-4); flex-wrap: wrap; padding-bottom: var(--s-4); border-bottom: 1px solid var(--line); }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--s-4); align-items: start; }
+.card-grid > .board__none { grid-column: 1 / -1; }
 .board__none { padding: var(--s-5) var(--s-3); border: 1px dashed var(--line-2); text-align: center; font-size: 12.5px; color: var(--text-3); }
 .app-card { display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); }
 .app-card .item { padding: 0; }
@@ -177,8 +179,6 @@
 .app-card__host { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .app-card__acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .app-card.err .progress__text { color: var(--bad); }
-.closed { margin-top: var(--s-8); border-top: 1px solid var(--line); }
-.closed__list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--s-3); }
 
 /* ======================================================================
    Career
@@ -247,7 +247,11 @@
   .report .tabs { top: var(--topbar); }
   .stage { height: 85vh; border-top: 1px solid var(--line); }
   .stage__bar { flex-wrap: wrap; }
-  .board { grid-template-columns: 1fr 1fr; }
+  .pipeline { grid-template-columns: 1fr; gap: var(--s-5); }
+  .pipeline__nav { position: static; flex-direction: row; align-items: center; flex-wrap: wrap; }
+  .pipeline__nav .side-nav { flex-direction: row; overflow-x: auto; border-top: 0; border-bottom: 1px solid var(--line); }
+  .pipeline__nav .side-nav > button { flex: none; border-bottom: 0; border-left: 0; border-top: 2px solid transparent; }
+  .pipeline__nav .side-nav > button.on { border-top-color: var(--accent); }
   .career { height: auto; }
   .career__body { grid-template-columns: 1fr; }
   .career__canvas { height: 70vh; }
@@ -260,7 +264,6 @@
   .topbar { height: auto; padding-top: 10px; row-gap: 6px; }
   .brand b, .brand { letter-spacing: .18em; }
   .page { padding: var(--s-6) var(--s-4) 120px; }
-  .board { grid-template-columns: 1fr; }
   .steps { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
