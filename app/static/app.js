@@ -719,19 +719,21 @@ function wireDiscover() {
   $("#days").onchange = async () => { await savePrefs({ days: +$("#days").value }); loadFound(); };
   $("#minMatch").onchange = () => { store.set("cv.minMatch", +$("#minMatch").value); loadFound(); };
   $("#sortBy").onchange = () => { store.set("cv.sortBy", $("#sortBy").value); loadFound(); };
-  $("#scanAll").onclick = () => scanNow(false);
-  $("#scanFav").onclick = () => scanNow(true);
+  $("#scanAll").onclick = () => scanNow("all");
+  $("#scanFav").onclick = () => scanNow("favourites");
+  $("#scanIndeed").onclick = () => scanNow("indeed");
   $("#dockClear").onclick = () => { S.selected.clear(); loadFound(); };
   $("#dockGo").onclick = tailorSelected;
 }
 
-async function scanNow(favourites) {
-  const line = $("#scanLine"), btns = [$("#scanAll"), $("#scanFav")];
+// mode: "all" (every source but Indeed), "favourites", or "indeed" (one Indeed search per career track)
+async function scanNow(mode) {
+  const line = $("#scanLine"), btns = [$("#scanAll"), $("#scanFav"), $("#scanIndeed")];
   line.hidden = false;
-  line.innerHTML = `<div class="progress"></div><div class="progress__text">${favourites ? "Scanning your favourite companies" : "Scanning your sources, favourites first"}</div>`;
+  line.innerHTML = `<div class="progress"></div><div class="progress__text">${{ favourites: "Scanning your favourite companies", indeed: "Searching Indeed for each of your career tracks, about a minute" }[mode] || "Scanning your sources, favourites first"}</div>`;
   btns.forEach((b) => (b.disabled = true));
   try {
-    const { job } = await api("/api/scan", { body: { days: +$("#days").value, favourites: !!favourites } });
+    const { job } = await api("/api/scan", { body: { days: +$("#days").value, favourites: mode === "favourites", indeed: mode === "indeed" } });
     const res = await pollJob(job, (l) => ($(".progress__text", line).textContent = l.msg));
     await loadFound();
     toast(`${res.jobs.length} fresh jobs found`);

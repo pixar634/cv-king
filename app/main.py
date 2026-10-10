@@ -596,6 +596,8 @@ def scan_start(body: dict = Body(...)):
     prefs = _prefs(load_profile())
     days = int(body.get("days") or prefs["days"])
     ids = body.get("source_ids")
+    if body.get("indeed"):
+        ids = [s["id"] for s in discover.ensure_indeed_sources(prefs)]
     if body.get("favourites"):
         ids = [s["id"] for s in discover.load_sources() if s.get("favourite")]
         if not ids:

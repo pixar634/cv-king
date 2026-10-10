@@ -312,6 +312,68 @@ def from_websearch(query: str, days: int) -> tuple[str, list[dict]]:
     return "web search", out
 
 
+# ---------- Indeed, through Indeed's own Claude connector ----------
+# Search results carry job IDs that only live inside one Claude run, so the details are read in the same run.
+# The run may use just these two Indeed tools: never get_resume (the candidate's own Indeed profile) or anything else.
+INDEED_TOOLS = ["mcp__claude_ai_Indeed__search_jobs", "mcp__claude_ai_Indeed__get_job_details"]
+INDEED_BRIEF = """Use the Indeed tools to find and read jobs.
+1. Call search_jobs once with: search "{query}", location "{location}", country_code "{cc}", job_type "fulltime".
+2. For each of the first {n} results, call get_job_details with that result's Job Id.
+3. Reply with JSON only:
+{{"jobs": [{{"title": "", "company": "", "location": "", "posted": "the Posted on value", "url": "the View Job URL",
+            "compensation": "", "description": "the full description from get_job_details, up to 4000 characters, copied word for word, not summarised"}}]}}
+Copy every value from the tools' results. Never invent or fill in a value; leave it empty if the tool didn't give it.
+Skip a job whose details fail to load. Use no other tools."""
+# Search terms for each career track: what Indeed's titles look like for it.
+INDEED_QUERIES = {"ic_lead": "Lead Software Engineer", "engineering_manager": "Engineering Manager",
+                  "product_manager": "Senior Product Manager", "delivery_lead": "Delivery Manager",
+                  "staff": "Staff Software Engineer", "forward_deployed": "Forward Deployed Engineer",
+                  "ai_engineer": "AI Engineer", "solutions_gtm": "Solutions Architect"}
+
+
+def _indeed_date(raw: str) -> str:
+    for fmt in ("%B %d, %Y", "%b %d, %Y", "%Y-%m-%d"):
+        try:
+            return dt.datetime.strptime(raw.strip(), fmt).date().isoformat()
+        except (ValueError, AttributeError):
+            pass
+    return parse_posted(raw or "")
+
+
+def from_indeed(value: str, days: int) -> tuple[str, list[dict]]:
+    """value is "query | location" (location defaults to Bengaluru)."""
+    query, _, location = (x.strip() for x in value.partition("|"))
+    eng = ENGINES["claude:sonnet"]
+    raw = parse_json_reply(eng.run(INDEED_BRIEF.format(query=query, location=location or "Bengaluru", cc="IN", n=8),
+                                   timeout=420, tools=INDEED_TOOLS))
+    out = []
+    for j in raw.get("jobs") or []:
+        if not (j.get("title") and str(j.get("url", "")).startswith("http")):
+            continue
+        job = _job(j["title"], j.get("company"), j.get("location"), j["url"], _indeed_date(j.get("posted", "")),
+                   j.get("posted", ""), description=j.get("description", ""), method="indeed")
+        # Indeed's links change every run: key the posting on what it is, so a rescan doesn't make it "new" again
+        job["id"] = hashlib.sha1(f"indeed|{job['title']}|{job['company']}|{job['location']}".lower().encode()).hexdigest()[:12]
+        if j.get("compensation") and j["compensation"] != "N/A":
+            job["compensation"] = str(j["compensation"])
+        out.append(job)
+    return "Indeed connector", out
+
+
+def ensure_indeed_sources(prefs: dict) -> list[dict]:
+    """One Indeed search per career track you rank for, in your city, created the first time you scan Indeed."""
+    rows = load_sources()
+    have = [r for r in rows if r["kind"] == "indeed"]
+    if have:
+        return have
+    location = "Bengaluru" if "bengaluru" in (prefs.get("regions") or ["bengaluru"]) else "India"
+    queries = list(dict.fromkeys(INDEED_QUERIES[t] for t in (prefs.get("tracks") or ["ic_lead"]) if t in INDEED_QUERIES))
+    new = [{"id": hashlib.sha1(f"indeed:{q}|{location}".encode()).hexdigest()[:10], "kind": "indeed",
+            "value": f"{q} | {location}", "label": f"Indeed: {q}, {location}", "last_scan": "", "last_count": 0} for q in queries]
+    save_sources(rows + new)
+    return new
+
+
 PEOPLE_BRIEF = """These are hiring managers and leaders the candidate follows. Use web search to find what each has
 posted publicly in the LAST {days} DAYS announcing open roles in their team or company ("hiring", "join my team",
 "we're looking for"), and the matching opening on the company's careers page if you can find it.
@@ -559,7 +621,7 @@ def add_source(value: str, kind: str = "url", label: str = "") -> dict:
     rows = load_sources()
     if any(r["value"] == value for r in rows):
         raise ValueError("That source is already in the list.")
-    default_label = {"url": _host(value) if kind == "url" else "", "websearch": value[:60],
+    default_label = {"url": _host(value) if kind == "url" else "", "websearch": value[:60], "indeed": f"Indeed: {value[:50]}",
                      "people": f"People to watch ({len(parse_people(value))})"}[kind]
     row = {"id": hashlib.sha1(value.encode()).hexdigest()[:10], "kind": kind, "value": value,
            "label": label or default_label, "last_scan": "", "last_count": 0}
@@ -701,6 +763,8 @@ def scan_one(src: dict, days: int) -> dict:
     try:
         if src["kind"] == "websearch":
             method, jobs = from_websearch(src["value"], days)
+        elif src["kind"] == "indeed":
+            method, jobs = from_indeed(src["value"], days)
         elif src["kind"] == "people":
             method, jobs = from_people(src["value"], days)
         else:
@@ -732,9 +796,11 @@ def _save_jobs(state: dict) -> None:
 
 
 def scan(source_ids: list[str] | None, days: int, prefs: dict, budget_s: int = 60, progress=lambda m: None) -> dict:
-    sources = [s for s in load_sources() if not source_ids or s["id"] in source_ids]
+    # Indeed searches run only when asked for by id (Discover's Scan Indeed button), not on every scan.
+    every = load_sources()
+    sources = [s for s in every if s["id"] in source_ids] if source_ids else [s for s in every if s["kind"] != "indeed"]
     url_sources = [s for s in sources if s["kind"] == "url"]
-    web_sources = [s for s in sources if s["kind"] in ("websearch", "people")]
+    web_sources = [s for s in sources if s["kind"] in ("websearch", "people", "indeed")]
     progress(f"Scanning {len(sources)} source{'s' if len(sources) != 1 else ''} in parallel")
     profile = load_profile()
     evidence = strong_skills(profile)
