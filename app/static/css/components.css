@@ -95,6 +95,9 @@
 .tabs > button.on { color: var(--white); }
 .tabs > button.on::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--accent); }
 .tabs__count { color: var(--text-3); font-weight: 700; letter-spacing: .04em; }
+.tabs__label { min-width: 0; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Wrapping tabs: every tab stays reachable on a second line instead of hiding past the edge. */
+.tabs--wrap { flex-wrap: wrap; column-gap: var(--s-6); row-gap: 0; overflow: visible; }
 .tabs > button.on .tabs__count { color: var(--accent); }
 
 /* Vertical list of stages or filters, one per row, with a count. */

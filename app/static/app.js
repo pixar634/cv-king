@@ -62,6 +62,14 @@ const ICON = {
 
 const S = { state: null, prefs: null, app: null, job: null, item: null, mode: "pdf", batch: [], selected: new Set(), tab: store.get("cv.tab", "changes") };
 
+// A tab row wider than its space scrolls sideways with an ordinary (vertical) mouse wheel.
+document.addEventListener("wheel", (e) => {
+  const row = e.target.closest?.(".tabs:not(.tabs--wrap)");
+  if (!row || row.scrollWidth <= row.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+  e.preventDefault();
+  row.scrollLeft += e.deltaY;
+}, { passive: false });
+
 // ================= boot =================
 async function boot() {
   S.state = await api("/api/state");
@@ -1101,7 +1109,7 @@ function renderIv() {
       <div class="iv-head__acts"><a class="btn btn--sm" href="/apps/${esc(IV.sel)}/interview.md" download>Download notes</a><button class="btn btn--sm btn--ghost" id="ivAgain">Prepare again</button></div>
     </header>
     ${d.overview ? `<p class="type-body iv-overview" id="ivOverview" title="Click to read it all">${esc(d.overview)}</p>` : ""}
-    <div class="tabs" id="ivTabs">${tabs.map(([k, l, n]) => `<button data-tab="${k}" class="${k === IV.tab ? "on" : ""}">${esc(l)}${n ? ` <span class="tabs__count num">${n}</span>` : ""}</button>`).join("")}</div>
+    <div class="tabs tabs--wrap" id="ivTabs">${tabs.map(([k, l, n]) => `<button data-tab="${k}" class="${k === IV.tab ? "on" : ""}" title="${esc(l)}"><span class="tabs__label">${esc(l)}</span>${n ? ` <span class="tabs__count num">${n}</span>` : ""}</button>`).join("")}</div>
     <div class="iv-panel" id="ivPanel"></div>`;
   $("#ivAgain").onclick = () => renderIvSetup(true);
   const ov = $("#ivOverview"); if (ov) ov.onclick = () => ov.classList.toggle("open");
