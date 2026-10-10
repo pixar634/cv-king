@@ -941,7 +941,14 @@ const hud = (inner, controls = "") => `<div class="hud" data-fx-skip><div class=
 function openInterview(id) { IV.sel = id; store.set("cv.iv", id); IV.tab = ""; showView("interview"); }
 
 async function loadInterview() {
-  const r = await api("/api/interview");
+  let r;
+  try { r = await api("/api/interview"); }
+  catch (e) {
+    $("#ivList").innerHTML = "";
+    $("#ivMain").innerHTML = `<div class="notice notice--bad">Couldn't load your applications (${esc(e.message)}).
+      ${/not found/i.test(e.message) ? "The app's server is older than this page: close the start.bat window and run start.bat again." : "Is the app running? Start it with start.bat."}</div>`;
+    return;
+  }
   IV.list = r.apps;
   if (!IV.list.some((a) => a.id === IV.sel)) IV.sel = IV.list[0]?.id || "";
   renderIvList();
