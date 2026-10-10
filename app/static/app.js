@@ -57,6 +57,7 @@ const ICON = {
   out: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6" fill="none" stroke="currentColor" stroke-width="2"/></svg>`,
   x: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2"/></svg>`,
   up: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2"/></svg>`,
+  star: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="currentColor"/></svg>`,
   arrow: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/></svg>`,
 };
 
@@ -717,23 +718,24 @@ function wireDiscover() {
   $("#days").onchange = async () => { await savePrefs({ days: +$("#days").value }); loadFound(); };
   $("#minMatch").onchange = () => { store.set("cv.minMatch", +$("#minMatch").value); loadFound(); };
   $("#sortBy").onchange = () => { store.set("cv.sortBy", $("#sortBy").value); loadFound(); };
-  $("#scanAll").onclick = scanNow;
+  $("#scanAll").onclick = () => scanNow(false);
+  $("#scanFav").onclick = () => scanNow(true);
   $("#dockClear").onclick = () => { S.selected.clear(); loadFound(); };
   $("#dockGo").onclick = tailorSelected;
 }
 
-async function scanNow() {
-  const line = $("#scanLine"), btn = $("#scanAll");
+async function scanNow(favourites) {
+  const line = $("#scanLine"), btns = [$("#scanAll"), $("#scanFav")];
   line.hidden = false;
-  line.innerHTML = `<div class="progress"></div><div class="progress__text">Scanning your sources</div>`;
-  btn.disabled = true;
+  line.innerHTML = `<div class="progress"></div><div class="progress__text">${favourites ? "Scanning your favourite companies" : "Scanning your sources, favourites first"}</div>`;
+  btns.forEach((b) => (b.disabled = true));
   try {
-    const { job } = await api("/api/scan", { body: { days: +$("#days").value } });
+    const { job } = await api("/api/scan", { body: { days: +$("#days").value, favourites: !!favourites } });
     const res = await pollJob(job, (l) => ($(".progress__text", line).textContent = l.msg));
     await loadFound();
     toast(`${res.jobs.length} fresh jobs found`);
   } catch (e) { toast(e.message, 4000); }
-  finally { btn.disabled = false; line.hidden = true; }
+  finally { btns.forEach((b) => (b.disabled = false)); line.hidden = true; }
 }
 
 // Area filter: a per-browser convenience, so it lives in local storage.
@@ -774,10 +776,17 @@ function areaFilter(jobs) {
 let FOUND = [];
 async function loadFound() {
   if (!$("#areaBar").innerHTML) renderAreaBar();
-  const [all, sources, scanLog] = await Promise.all([api(`/api/found?days=${$("#days").value}`), api("/api/sources"), api("/api/scans")]);
+  // Favourites look back over the longest window the app keeps (30 days), whatever Posted within says.
+  const [all, sources, scanLog, month] = await Promise.all([api(`/api/found?days=${$("#days").value}`), api("/api/sources"), api("/api/scans"), api("/api/found?days=30")]);
   const lastScan = scanLog.length ? scanLog[scanLog.length - 1] : null;
   const min = +$("#minMatch").value;
-  const jobs = areaFilter(all.filter((j) => j.match >= min));
+  // Favourite companies: their jobs ignore the match slider and sit pinned at the top.
+  const favs = sources.filter((s) => s.favourite);
+  const favNames = favs.map((s) => (s.company || s.label || "").toLowerCase()).filter(Boolean);
+  const isFav = (j) => !!j.favourite || favNames.some((n) => (j.company || "").toLowerCase().includes(n));
+  $("#scanFav").hidden = !favs.length;
+  const jobs = areaFilter(all.filter((j) => j.match >= min && !isFav(j)));
+  const pinned = areaFilter(month.filter(isFav));
   if ($("#sortBy").value === "newest") jobs.sort((a, b) => (b.posted || "").localeCompare(a.posted || "") || b.match - a.match);
   FOUND = jobs;
   const last = sources.map((s) => s.last_scan).filter(Boolean).sort().pop();
@@ -794,6 +803,7 @@ async function loadFound() {
         <span class="logo logo--sm">${initial(j.company || j.source)}</span>
         <span class="tag ${d === null ? "tag--warn" : d <= 3 ? "tag--ok" : ""}">${d === null ? "Date unknown" : ago(j.posted)}</span>
         ${isNew(j) ? `<span class="tag tag--accent tag--solid">New</span>` : ""}
+        ${isFav(j) ? `<span class="tag tag--accent" title="One of your favourite companies">${ICON.star.replace("<svg", "<svg style=\"width:9px;height:9px\"")}Favourite</span>` : ""}
         <a class="icon-btn icon-btn--sm" href="${esc(j.url)}" target="_blank" rel="noopener" title="Open the posting" aria-label="Open the posting">${ICON.out}</a>
       </div>
       <div><div class="job-card__title">${esc(j.title)}</div>
@@ -804,8 +814,13 @@ async function loadFound() {
     </div>`;
   };
   // Sections by the day the app first found each job, newest first; each says which scan it came from.
+  const rest = jobs;
+  const favHtml = favs.length ? `<details class="disclosure disclosure--lg day day--fav" open><summary><span class="day__star">${ICON.star}</span><span>Your favourite companies</span>
+      <span class="disclosure__sub num">${pinned.length} job${pinned.length === 1 ? "" : "s"} · last 30 days</span><span class="disclosure__aside">${favs.length} compan${favs.length === 1 ? "y" : "ies"}</span></summary>
+      ${pinned.length ? `<div class="card-grid">${pinned.map(card).join("")}</div>`
+        : `<p class="type-meta" style="margin-bottom:16px">Nothing open from ${esc(favs.map((f) => f.company || f.label).join(", "))} in the last 30 days that fits your roles and regions. Press Scan favourites to check now.</p>`}</details>` : "";
   const groups = {};
-  for (const j of jobs) (groups[(j.first_seen || "").slice(0, 10) || "earlier"] ||= []).push(j);
+  for (const j of rest) (groups[(j.first_seen || "").slice(0, 10) || "earlier"] ||= []).push(j);
   const dayLabel = (d) => {
     if (d === "earlier") return "Found earlier";
     const today = new Date().toISOString().slice(0, 10), y = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
@@ -814,17 +829,17 @@ async function loadFound() {
   };
   const scansOn = (d) => scanLog.filter((s) => s.at.slice(0, 10) === d);
   const days = Object.keys(groups).sort().reverse();
-  $("#foundList").innerHTML = jobs.length
+  $("#foundList").innerHTML = favHtml + (rest.length
     ? days.map((d, i) => {
         const sc = scansOn(d);
         const meta = sc.length ? `${sc.length} scan${sc.length > 1 ? "s" : ""}, last at ${sc[sc.length - 1].at.slice(11, 16)}, ${sc.reduce((n, s) => n + s.new, 0)} new` : "";
         const list = groups[d];
         const dated = list.filter((j) => j.posted), unknown = list.filter((j) => !j.posted);
-        return `<details class="disclosure disclosure--lg day" ${i === 0 ? "open" : ""}><summary><span>${dayLabel(d)}</span><span class="disclosure__sub num">${list.length} job${list.length === 1 ? "" : "s"}</span><span class="disclosure__aside">${meta}</span></summary>
+        return `<details class="disclosure disclosure--lg day" ${i === 0 && !pinned.length ? "open" : ""}><summary><span>${dayLabel(d)}</span><span class="disclosure__sub num">${list.length} job${list.length === 1 ? "" : "s"}</span><span class="disclosure__aside">${meta}</span></summary>
           ${dated.length ? `<div class="card-grid">${dated.map(card).join("")}</div>` : ""}
           ${unknown.length ? `<div class="eyebrow group-title">Posting date unknown. Check the posting before you spend time on it.</div><div class="card-grid">${unknown.map(card).join("")}</div>` : ""}</details>`;
       }).join("")
-    : `<div class="empty">${sources.length ? "Nothing fresh at this match level. Widen the window or lower the match, or scan again." : "No sources yet. Open <b>Settings</b> and add a careers page, like https://jobs.lever.co/cred."}</div>`;
+    : pinned.length ? "" : `<div class="empty">${sources.length ? "Nothing fresh at this match level. Widen the window or lower the match, or scan again." : "No sources yet. Open <b>Settings</b> and add a favourite company or a careers page, like https://jobs.lever.co/cred."}</div>`);
   $$(".job-card").forEach((el) => {
     el.onclick = (e) => {
       if (e.target.closest("a")) return;
@@ -1888,6 +1903,8 @@ function wireDrawer() {
     S.state = await api("/api/state"); S.prefs = S.state.profile.preferences;
     toast("Availability saved. New CVs use it.");
   };
+  $("#favBtn").onclick = addFavourite;
+  $("#favAdd").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); addFavourite(); } };
   $("#addUrl").onclick = () => addSource("url", $("#srcUrl"));
   $("#addQuery").onclick = () => addSource("websearch", $("#srcQuery"));
   $("#savePeople").onclick = savePeople;
@@ -1932,11 +1949,30 @@ async function fillDrawer() {
   const people = rows.find((r) => r.kind === "people");
   $("#people").value = people ? people.value : "";
   $("#people").dataset.sid = people ? people.id : "";
-  $("#sourceList").innerHTML = rows.filter((r) => r.kind !== "people").map((r) => `<div class="item"><span class="item__body"><span class="item__title">${esc(r.label)}</span>
+  $("#favList").innerHTML = rows.filter((r) => r.favourite).map((r) => `<div class="item"><span class="day__star">${ICON.star}</span>
+      <span class="item__body"><span class="item__title">${esc(r.company || r.label)}</span>
+      <span class="item__meta ${r.last_error ? "item__meta--bad" : ""}" title="${esc(r.value)}">${r.last_error ? esc(r.last_error) : `Read from ${esc(r.found_via || "its careers page")}${r.last_scan ? `, ${r.last_count} jobs at the last scan` : ""}`}</span></span>
+      <button class="icon-btn icon-btn--sm" data-del="${r.id}" aria-label="Remove ${esc(r.company || r.label)}" title="Remove">${ICON.x}</button></div>`).join("")
+    || `<p class="type-meta">None yet.</p>`;
+  $("#sourceList").innerHTML = rows.filter((r) => r.kind !== "people" && !r.favourite).map((r) => `<div class="item"><span class="item__body"><span class="item__title">${esc(r.label)}</span>
       <span class="item__meta ${r.last_error ? "item__meta--bad" : ""}" title="${esc(r.value)}">${r.last_error ? esc(r.last_error) : r.last_scan ? `${r.last_count} jobs, ${esc(r.method || "")}` : esc(r.value)}</span></span>
       <button class="icon-btn icon-btn--sm" data-del="${r.id}" aria-label="Remove ${esc(r.label)}" title="Remove">${ICON.x}</button></div>`).join("")
     || `<p class="type-meta">No sources yet.</p>`;
-  $$("[data-del]", $("#sourceList")).forEach((b) => (b.onclick = async () => { await api(`/api/sources/${b.dataset.del}`, { method: "DELETE" }); fillDrawer(); }));
+  $$("#sourceList [data-del], #favList [data-del]").forEach((b) => (b.onclick = async () => { await api(`/api/sources/${b.dataset.del}`, { method: "DELETE" }); fillDrawer(); }));
+}
+
+async function addFavourite() {
+  const input = $("#favAdd"), v = input.value.trim(), btn = $("#favBtn");
+  $("#favErr").hidden = true;
+  if (!v) { input.focus(); return; }
+  btn.disabled = true; btn.textContent = "Finding its jobs…";
+  try {
+    const r = await api("/api/favourites", { body: { value: v } });
+    input.value = ""; fillDrawer();
+    toast(`${r.company} added. Its jobs come from ${r.found_via}, scanned first on every run.`, 4500);
+    if ($("#v-discover").classList.contains("on")) loadFound();
+  } catch (e) { $("#favErr").textContent = e.message; $("#favErr").hidden = false; }
+  finally { btn.disabled = false; btn.textContent = "Add"; }
 }
 
 async function addSource(kind, input) {

@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="/static/css/tokens.css?v=1">
 <link rel="stylesheet" href="/static/css/base.css?v=4">
 <link rel="stylesheet" href="/static/css/components.css?v=12">
-<link rel="stylesheet" href="/static/css/views.css?v=8">
+<link rel="stylesheet" href="/static/css/views.css?v=9">
 </head>
 <body>
 <header class="topbar">
@@ -97,6 +97,7 @@
     <div class="split">
       <aside class="split__nav">
         <button class="btn btn--accent btn--block" id="scanAll">Scan sources</button>
+        <button class="btn btn--block" id="scanFav" hidden title="Only your favourite companies: quick">Scan favourites</button>
         <div id="scanLine" hidden></div>
         <label class="field"><span class="eyebrow">Posted within</span>
           <select id="days" class="control--sm">
@@ -254,6 +255,13 @@
       <div><button class="btn btn--sm" id="saveOffices">Save offices</button></div>
     </section>
     <section class="drawer__section">
+      <h3 class="eyebrow">Favourite companies</h3>
+      <p class="type-meta">Scanned first on every Discover run, and their openings are pinned at the top of Discover whatever their match. Type a name and the app finds its job board (Greenhouse, Lever, Ashby, SmartRecruiters or Workable); if it has none, its openings are found by web search. A careers-page link works too.</p>
+      <div class="list" id="favList"></div>
+      <div class="field-row"><input type="text" id="favAdd" placeholder="e.g. Stripe, or a careers page link"><button class="btn" id="favBtn">Add</button></div>
+      <div class="notice notice--bad" id="favErr" hidden></div>
+    </section>
+    <section class="drawer__section">
       <h3 class="eyebrow">Sources</h3>
       <div class="list" id="sourceList"></div>
       <div class="field-row"><input type="url" id="srcUrl" placeholder="Careers page or job board search URL"><button class="btn" id="addUrl">Add</button></div>
@@ -288,6 +296,6 @@
 <script src="/static/vendor/codemirror-5.65.16/closebrackets.min.js"></script>
 <script src="/static/fx.js?v=5"></script>
 <script src="/static/career.js?v=4"></script>
-<script src="/static/app.js?v=31"></script>
+<script src="/static/app.js?v=33"></script>
 </body>
 </html>

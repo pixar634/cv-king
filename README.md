@@ -40,6 +40,7 @@ You know the drill: you find a role you'd be great at, spend an evening rewordin
 - 📥 **One-click download** as `Company_Position_Your_Name.pdf`, then **Mark applied**.
 
 ### 🔭 Discover: fresh jobs, ranked for you
+- ⭐ **Favourite companies**: add them in Settings by name. The app finds their job board (Greenhouse, Lever, Ashby, SmartRecruiters, Workable) or searches the web for their openings. They're scanned first, have their own **Scan favourites** button, and their openings from the last 30 days are pinned at the top of Discover whatever the match.
 - 🛰️ **Scans all your sources in parallel** (careers pages, job-board searches, web searches) in under a minute.
 - 🗓️ **Only fresh postings**, inside a window you choose (24 hours to 30 days).
 - 🏆 **Ranked against your profile** by the same match score tailoring reaches.

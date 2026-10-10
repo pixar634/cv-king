@@ -586,6 +586,93 @@ def update_source(source_id: str, value: str | None = None, label: str | None = 
     raise KeyError(source_id)
 
 
+# ---------- favourite companies: scanned first, pinned at the top of Discover ----------
+
+# Where a company's jobs live when it uses a public job board: (board, API to probe, board page to scan).
+ATS_BOARDS = [
+    ("Greenhouse", "https://boards-api.greenhouse.io/v1/boards/{s}/jobs", "https://boards.greenhouse.io/{s}"),
+    ("Lever", "https://api.lever.co/v0/postings/{s}?mode=json&limit=1", "https://jobs.lever.co/{s}"),
+    ("Ashby", "https://api.ashbyhq.com/posting-api/job-board/{s}", "https://jobs.ashbyhq.com/{s}"),
+    ("SmartRecruiters", "https://api.smartrecruiters.com/v1/companies/{s}/postings?limit=1", "https://careers.smartrecruiters.com/{s}"),
+    ("Workable", "https://apply.workable.com/api/v1/widget/accounts/{s}", "https://apply.workable.com/{s}"),
+]
+
+
+def _board_answers(api: str, name: str) -> bool:
+    """A board counts only if it lists openings now and, where it names its company, the name matches.
+    Boards answer for placeholder accounts too (Workable has empty "samsung" and "akamai" accounts), so an
+    answer alone proves nothing."""
+    try:
+        data = _json(api, timeout=8)
+    except Exception:
+        return False
+    want = re.sub(r"[^a-z0-9]", "", name.lower())
+    def same(n) -> bool:
+        n = re.sub(r"[^a-z0-9]", "", str(n or "").lower())
+        return not n or n in want or want in n
+    if isinstance(data, list):                      # Lever: the postings themselves
+        return len(data) > 0
+    if not isinstance(data, dict):
+        return False
+    if "totalFound" in data:                        # SmartRecruiters answers for any name
+        posts = data.get("content") or []
+        return data["totalFound"] > 0 and same((posts[0].get("company") or {}).get("name") if posts else "")
+    jobs = data.get("jobs")                         # Greenhouse, Ashby, Workable
+    return isinstance(jobs, list) and len(jobs) > 0 and same(data.get("name"))
+
+
+def find_board(name: str) -> tuple[str, str] | None:
+    """Probe the public job boards for a company by name (e.g. "Eleven Labs" -> elevenlabs, eleven-labs)."""
+    base = re.sub(r"[^a-z0-9]+", " ", name.lower()).strip()
+    slugs = list(dict.fromkeys(x for x in (base.replace(" ", ""), base.replace(" ", "-")) if x))
+    cands = [(board, api.format(s=sl), page.format(s=sl)) for sl in slugs for board, api, page in ATS_BOARDS]
+    with cf.ThreadPoolExecutor(max_workers=10) as pool:
+        hits = list(pool.map(lambda c: c if _board_answers(c[1], name) else None, cands))
+    hit = next((h for h in hits if h), None)
+    return (hit[0], hit[2]) if hit else None
+
+
+def _company_from_url(url: str) -> str:
+    h = _host(url)
+    if any(b in h for b in ("greenhouse.io", "lever.co", "ashbyhq.com", "smartrecruiters.com", "workable.com")):
+        slug = _slug_after(url, "") or h.split(".")[0]
+    else:
+        parts = [x for x in h.split(".") if x not in ("www", "careers", "jobs", "apply", "boards", "com", "io", "co", "in", "org", "net", "ai")]
+        slug = parts[0] if parts else h
+    return slug.replace("-", " ").title()
+
+
+def add_favourite(value: str) -> dict:
+    """A company to watch: its job board if it has a public one, else a web search for its openings."""
+    value = value.strip()
+    if not value:
+        raise ValueError("Type a company name, or paste its careers page link.")
+    looks_like_link = value.startswith("http") or (" " not in value and re.search(r"\.[a-z]{2,}(/|$)", value))
+    if looks_like_link:
+        url = value if value.startswith("http") else "https://" + value
+        why = refused_reason(url)
+        if why:
+            raise ValueError(why)
+        company, kind, found_via = _company_from_url(url), "url", "its careers page"
+    else:
+        company = value
+        board = find_board(value)
+        if board:
+            kind, url, found_via = "url", board[1], f"its {board[0]} board"
+        else:
+            kind, url, found_via = "websearch", f"open roles at {value} (any team), from its own careers page or job board", "a web search"
+    rows = load_sources()
+    for r in rows:
+        if r["value"] == url or (r.get("favourite") and r.get("company", "").lower() == company.lower()):
+            r.update(favourite=True, company=r.get("company") or company, found_via=r.get("found_via") or found_via)
+            save_sources(rows)
+            return r
+    row = {"id": hashlib.sha1(url.encode()).hexdigest()[:10], "kind": kind, "value": url, "label": company,
+           "favourite": True, "company": company, "found_via": found_via, "last_scan": "", "last_count": 0}
+    save_sources(rows + [row])
+    return row
+
+
 def saved(days: int, prefs: dict) -> list[dict]:
     """Jobs from earlier scans, re-ranked and re-filtered, without touching the network."""
     state = _load_jobs()
@@ -628,6 +715,8 @@ def scan_one(src: dict, days: int) -> dict:
             method, jobs = got
         for j in jobs:
             j["source"] = src["label"]
+            if src.get("favourite"):
+                j["favourite"] = True
         return {"source": src["id"], "method": method, "jobs": jobs, "seconds": round(time.time() - t, 1)}
     except (EngineError, Exception) as e:  # one bad source must not sink the scan
         return {"source": src["id"], "error": f"{type(e).__name__}: {str(e)[:300]}", "jobs": [], "seconds": round(time.time() - t, 1)}
@@ -651,7 +740,9 @@ def scan(source_ids: list[str] | None, days: int, prefs: dict, budget_s: int = 6
     evidence = strong_skills(profile)
     results = []
     with cf.ThreadPoolExecutor(max_workers=12) as pool:
-        futs = {pool.submit(scan_one, s, days): s for s in url_sources + web_sources}
+        # Favourite companies go to the front of the queue.
+        ordered = sorted(url_sources + web_sources, key=lambda s: not s.get("favourite"))
+        futs = {pool.submit(scan_one, s, days): s for s in ordered}
         deadline = time.time() + budget_s + (120 if web_sources else 0)
         for fut in cf.as_completed(futs, timeout=None):
             s = futs[fut]

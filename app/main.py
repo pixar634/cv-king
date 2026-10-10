@@ -458,12 +458,25 @@ def source_delete(sid: str):
     return {"ok": True}
 
 
+@app.post("/api/favourites")
+def favourite_add(body: dict = Body(...)):
+    try:
+        return discover.add_favourite(body.get("value", ""))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.post("/api/scan")
 def scan_start(body: dict = Body(...)):
     prefs = _prefs(load_profile())
     days = int(body.get("days") or prefs["days"])
+    ids = body.get("source_ids")
+    if body.get("favourites"):
+        ids = [s["id"] for s in discover.load_sources() if s.get("favourite")]
+        if not ids:
+            raise HTTPException(400, "Add a favourite company in Settings first.")
     return {"job": start_job("scan", lambda ids, d, p, progress: discover.scan(ids, d, p, progress=progress),
-                             body.get("source_ids"), days, prefs)}
+                             ids, days, prefs)}
 
 
 @app.get("/api/found")

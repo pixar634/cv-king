@@ -152,6 +152,9 @@
 .day .disclosure__sub { font-size: 13px; color: var(--text-2); font-weight: 600; }
 .group-title { margin: var(--s-6) 0 var(--s-2); }
 .day > summary { margin-bottom: var(--s-4); }
+.day__star { display: inline-grid; place-items: center; flex: none; color: var(--accent); }
+.day__star svg { width: 16px; height: 16px; }
+.day--fav > summary { border-bottom-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 .day .card-grid + .group-title { margin-top: var(--s-6); }
 .job-card { display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); }
 .job-card__top { display: flex; align-items: center; gap: 10px; }
