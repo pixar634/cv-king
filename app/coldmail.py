@@ -79,50 +79,76 @@ BODY>>>
 After the tool returns, reply with JSON only: {{"draft_id": "the draft's id", "view_url": "the draft's viewUrl"}}"""
 
 
-def _path(app_id: str):
-    return OUTPUT / app_id / FILE
+CUSTOM = "custom"   # emails to people you found yourself (a post, an event), not tied to an application
 
 
-def load(app_id: str) -> dict:
-    p = _path(app_id)
+def _path(owner: str):
+    if owner == CUSTOM:
+        folder = OUTPUT / "_coldmail"
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder / "custom.json"
+    return OUTPUT / owner / FILE
+
+
+def load(owner: str) -> dict:
+    p = _path(owner)
     return json.loads(p.read_text("utf-8")) if p.exists() else {"mails": []}
 
 
-def _save(app_id: str, data: dict) -> None:
-    _path(app_id).write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
+def _save(owner: str, data: dict) -> None:
+    _path(owner).write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
 
 
-def _flags(app_id: str, text: str, where: str) -> list[dict]:
+def _job(owner: str, mail_or_req: dict) -> dict:
+    """What the email is about: an application's saved job, or what you gave for a custom one."""
+    if owner != CUSTOM:
+        folder = OUTPUT / owner
+        report = json.loads((folder / "report.json").read_text("utf-8"))
+        prep = folder / "interview.json"
+        return {"company": report["company"], "role": report["role"], "jd": (folder / "jd.txt").read_text("utf-8"),
+                "jd_meta": report.get("jd_meta") or {}, "job_id": (report.get("job") or {}).get("job_id", ""),
+                "plan": json.loads((folder / "plan.json").read_text("utf-8")),
+                "research": json.loads(prep.read_text("utf-8")).get("research", {}) if prep.exists() else {},
+                "header_line": report["options"]["header_line"], "years": report["experience_years"]}
+    from .profile import experience_years_label
+    from .tailor import default_header_line
+    profile = load_profile()
+    return {"company": mail_or_req.get("company", ""), "role": mail_or_req.get("role", "") or "the role they posted",
+            "jd": mail_or_req.get("job_text", ""), "jd_meta": {}, "job_id": "", "plan": None, "research": {},
+            "header_line": default_header_line("india", profile), "years": experience_years_label(profile)}
+
+
+def _flags(owner: str, mail: dict, text: str, where: str) -> list[dict]:
     from .tailor import _allowed_numbers, _text_flags, soften   # avoid an import cycle
-    folder = OUTPUT / app_id
-    report = json.loads((folder / "report.json").read_text("utf-8"))
-    kws = jd_keywords((folder / "jd.txt").read_text("utf-8"), report["jd_meta"].get("must_have"), report["jd_meta"].get("nice_to_have"))
-    allowed = _allowed_numbers(report["options"]["header_line"], report["experience_years"])
+    job = _job(owner, mail)
+    kws = jd_keywords(job["jd"], job["jd_meta"].get("must_have"), job["jd_meta"].get("nice_to_have"))
+    allowed = _allowed_numbers(job["header_line"], job["years"])
     profile = load_profile()
     # Not claims: the LinkedIn URL in the sign-off and the job's own ID are the candidate's and the employer's.
     allowed |= set(re.findall(r"\d+", profile["basics"].get("linkedin", "")))
-    allowed |= set(re.findall(r"\d+", str((report.get("job") or {}).get("job_id", ""))))
+    allowed |= set(re.findall(r"\d+", str(job["job_id"])))
     # nor is the length of the call being asked for ("a 15-minute call")
     checked = re.sub(r"\b\d{1,2}[- ]min(ute)?s?\b", "", text, flags=re.I)
     return soften(_text_flags(checked, profile_text(profile), allowed, kws, where)) + phrase_flags(text)
 
 
-def _check(app_id: str, mail: dict) -> dict:
-    mail["flags"] = _flags(app_id, mail["body"], "Email") + (_flags(app_id, mail["follow_up"]["body"], "Follow-up") if mail.get("follow_up", {}).get("body") else [])
+def _check(owner: str, mail: dict) -> dict:
+    mail["flags"] = _flags(owner, mail, mail["body"], "Email") + (
+        _flags(owner, mail, mail["follow_up"]["body"], "Follow-up") if mail.get("follow_up", {}).get("body") else [])
     mail["words"] = len(mail["body"].split())
     return mail
 
 
-def write(app_id: str, req: dict, engine_id: str = "claude:opus", progress=lambda m: None) -> dict:
+def write(owner: str, req: dict, engine_id: str = "claude:opus", progress=lambda m: None) -> dict:
     to_email = str(req.get("to_email") or "").strip()
     if not EMAIL_RE.match(to_email):
         raise ValueError("Give the recipient's email address.")
-    folder = OUTPUT / app_id
-    report = json.loads((folder / "report.json").read_text("utf-8"))
-    plan = json.loads((folder / "plan.json").read_text("utf-8"))
-    jd = (folder / "jd.txt").read_text("utf-8")
-    prep = folder / "interview.json"
-    research = json.loads(prep.read_text("utf-8")).get("research", {}) if prep.exists() else {}
+    custom = {}
+    if owner == CUSTOM:
+        custom = {k: str(req.get(k) or "").strip() for k in ("company", "role", "job_url", "job_text")}
+        if not custom["company"]:
+            raise ValueError("Give the company's name.")
+    job = _job(owner, custom)
     profile = load_profile()
     b = profile["basics"]
     role_key = req.get("to_role") if req.get("to_role") in ROLES else "hiring_manager"
@@ -130,28 +156,30 @@ def write(app_id: str, req: dict, engine_id: str = "claude:opus", progress=lambd
     v = voices()[tone]
     to_name = str(req.get("to_name") or "").strip() or "the hiring team"
     context = str(req.get("context") or "").strip()
-    job_id = (report.get("job") or {}).get("job_id", "")
-    progress(f"Writing to {to_name} at {report['company']}")
+    progress(f"Writing to {to_name} at {job['company']}")
+    jd = job["jd"] or "Not given: the candidate only knows the company and that this person is hiring. Keep the email about fit with the company and ask what they're hiring for."
     brief = BRIEF.format(
-        name=b["name"], to_name=to_name, to_role=ROLES[role_key], company=report["company"], role=report["role"],
-        job_id=f" (job ID {job_id})" if job_id else "",
+        name=b["name"], to_name=to_name, to_role=ROLES[role_key], company=job["company"], role=job["role"],
+        job_id=f" (job ID {job['job_id']})" if job["job_id"] else "",
         context=f"CONTEXT FROM THE CANDIDATE: {context}" if context else "No shared context: this is a genuinely cold email.",
         human=HUMAN_RULES, banned="; ".join(banned_phrases()), voice=f"{v['label']}: {v['brief']}",
         linkedin=b.get("linkedin", ""), availability=b.get("availability", ""),
-        research=json.dumps(research, ensure_ascii=False)[:8000], jd=jd[:10000],
-        plan=json.dumps(plan, ensure_ascii=False)[:10000], profile=json.dumps(brief_view(profile), ensure_ascii=False)[:18000])
+        research=json.dumps(job["research"], ensure_ascii=False)[:8000], jd=jd[:10000],
+        plan=json.dumps(job["plan"], ensure_ascii=False)[:10000] if job["plan"] else
+             "None tailored yet: write from the PROFILE, leading with what matches this job, and say a CV is attached.",
+        profile=json.dumps(brief_view(profile), ensure_ascii=False)[:18000])
     raw = parse_json_reply(get_engine(engine_id).run(brief, timeout=300))
     fu = raw.get("follow_up") or {}
     mail = {"id": uuid.uuid4().hex[:8], "created": dt.datetime.now().isoformat(timespec="seconds"),
             "to_name": to_name if req.get("to_name") else "", "to_email": to_email, "to_role": role_key, "context": context,
             "tone": tone, "subject": str(raw.get("subject") or "").strip(), "body": str(raw.get("body") or "").strip(),
             "follow_up": {"subject": str(fu.get("subject") or "").strip(), "body": str(fu.get("body") or "").strip()},
-            "drafts": {}, "sent_at": ""}
+            "drafts": {}, "sent_at": ""} | custom
     if not mail["body"]:
         raise RuntimeError("The model returned no email. Try again.")
-    data = load(app_id)
-    data["mails"].insert(0, _check(app_id, mail))
-    _save(app_id, data)
+    data = load(owner)
+    data["mails"].insert(0, _check(owner, mail))
+    _save(owner, data)
     return mail
 
 
@@ -162,8 +190,8 @@ def _find(data: dict, mail_id: str) -> dict:
     return mail
 
 
-def update(app_id: str, mail_id: str, body: dict) -> dict:
-    data = load(app_id)
+def update(owner: str, mail_id: str, body: dict) -> dict:
+    data = load(owner)
     mail = _find(data, mail_id)
     for k in ("subject", "body"):
         if isinstance(body.get(k), str):
@@ -174,20 +202,20 @@ def update(app_id: str, mail_id: str, body: dict) -> dict:
                 mail["follow_up"][k] = body["follow_up"][k].strip()
     if "sent" in body:
         mail["sent_at"] = dt.date.today().isoformat() if body["sent"] else ""
-    _check(app_id, mail)
-    _save(app_id, data)
+    _check(owner, mail)
+    _save(owner, data)
     return mail
 
 
-def remove(app_id: str, mail_id: str) -> None:
-    data = load(app_id)
+def remove(owner: str, mail_id: str) -> None:
+    data = load(owner)
     data["mails"] = [m for m in data["mails"] if m["id"] != mail_id]
-    _save(app_id, data)
+    _save(owner, data)
 
 
-def save_draft(app_id: str, mail_id: str, which: str = "first", progress=lambda m: None) -> dict:
+def save_draft(owner: str, mail_id: str, which: str = "first", progress=lambda m: None) -> dict:
     """Put the email (or its follow-up) into Gmail Drafts. Claude only: the Gmail connector is signed in there."""
-    data = load(app_id)
+    data = load(owner)
     mail = _find(data, mail_id)
     part = mail["follow_up"] if which == "follow_up" else mail
     if not part.get("body"):
@@ -205,5 +233,5 @@ def save_draft(app_id: str, mail_id: str, which: str = "first", progress=lambda 
                            f"({reply.strip()[:200]})")
     mail["drafts"][which] = {"id": str(got.get("draft_id") or ""), "url": url if url.startswith("https://mail.google.com/") else "",
                              "at": dt.datetime.now().isoformat(timespec="seconds")}
-    _save(app_id, data)
+    _save(owner, data)
     return mail

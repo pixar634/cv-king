@@ -331,6 +331,29 @@ def interview_md(app_id: str):
     return FileResponse(p, media_type="text/markdown", filename=f"{app_id}_interview.md")
 
 
+# ---------- contacts: who to write to about an application ----------
+CONTACT_JOBS: dict[str, str] = {}   # app id -> the contact search running for it
+
+
+@app.get("/api/contacts")
+def contacts_all():
+    from . import contacts
+    running = {a: j for a, j in CONTACT_JOBS.items() if JOBS.get(j, {}).get("status") == "running"}
+    return {"contacts": contacts.load_all(), "running": running}
+
+
+@app.post("/api/apps/{app_id}/contacts")
+def contacts_find(app_id: str):
+    from . import contacts
+    _app_dir(app_id)
+    job = JOBS.get(CONTACT_JOBS.get(app_id, ""))
+    if job and job["status"] == "running":
+        return {"job": job["id"]}
+    jid = start_job("contacts", lambda a, progress: contacts.find(a, progress), app_id)
+    CONTACT_JOBS[app_id] = jid
+    return {"job": jid}
+
+
 # ---------- cold mail ----------
 
 @app.get("/api/coldmail")
@@ -345,6 +368,47 @@ def coldmail_list():
                     | {"mails": len(mails), "sent": sum(1 for x in mails if x.get("sent_at"))})
     from .letters import voices
     return {"apps": rows, "roles": coldmail.ROLES, "tones": {k: v["label"] for k, v in voices().items() if k in coldmail.TONES}}
+
+
+# Emails to people you found yourself: the same calls, owned by "custom" instead of an application.
+@app.get("/api/coldmail/custom")
+def coldmail_custom_get():
+    from . import coldmail
+    return coldmail.load(coldmail.CUSTOM)
+
+
+@app.post("/api/coldmail/custom")
+def coldmail_custom_write(body: dict = Body(...)):
+    from . import coldmail
+    if not coldmail.EMAIL_RE.match(str(body.get("to_email") or "").strip()):
+        raise HTTPException(400, "Give the recipient's email address.")
+    if not str(body.get("company") or "").strip():
+        raise HTTPException(400, "Give the company's name.")
+    engine = _prefs(load_profile())["defaults"].get("engine", "claude:opus")
+    return {"job": start_job("coldmail", lambda b, e, progress: coldmail.write(coldmail.CUSTOM, b, e, progress), body, engine)}
+
+
+@app.put("/api/coldmail/custom/{mail_id}")
+def coldmail_custom_update(mail_id: str, body: dict = Body(...)):
+    from . import coldmail
+    try:
+        return coldmail.update(coldmail.CUSTOM, mail_id, body)
+    except KeyError:
+        raise HTTPException(404, "No such email")
+
+
+@app.delete("/api/coldmail/custom/{mail_id}")
+def coldmail_custom_delete(mail_id: str):
+    from . import coldmail
+    coldmail.remove(coldmail.CUSTOM, mail_id)
+    return {"ok": True}
+
+
+@app.post("/api/coldmail/custom/{mail_id}/draft")
+def coldmail_custom_draft(mail_id: str, body: dict = Body(default={})):
+    from . import coldmail
+    which = "follow_up" if body.get("which") == "follow_up" else "first"
+    return {"job": start_job("coldmail-draft", lambda m, w, progress: coldmail.save_draft(coldmail.CUSTOM, m, w, progress), mail_id, which)}
 
 
 @app.get("/api/apps/{app_id}/coldmail")

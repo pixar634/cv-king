@@ -72,6 +72,8 @@ You know the drill: you find a role you'd be great at, spend an evening rewordin
 - ✍️ **A short email and its follow-up** (90 to 150 words, then 40 to 70), built from your tailored CV, your real numbers and what the company actually builds. The same checks as your CV flag anything your profile doesn't support.
 - 📝 **Edit in place**, then **save to Gmail drafts** through the Gmail connector in Claude. The app never sends: you attach the CV and send from Gmail.
 - ⏰ **Follow-up reminders**: mark an email sent and the follow-up is ready when it's due.
+- ➕ **Someone new**: for a hiring post or a person you found yourself. Give their name, email and company, plus the job link (read for you) or the post's text. Written from your profile, with a one-click **Tailor a CV for this job**.
+- 🔎 **Find contacts** (on every Pipeline card): a web search for the hiring manager, product and engineering leads, HR heads and recruiters for that role, saved under a Contacts accordion with sources. An email is shown only when it's published somewhere, with the page it's on; none are guessed. Each contact has a **Cold email** button that opens Cold mail with their details filled in.
 
 ### 🧭 Career: where your next five years can go
 - 🗺️ **Your history as an interactive map**, built from your profile.
@@ -122,6 +124,7 @@ Keep the `start.bat` window open while you work; closing it stops the app.
 | `app/` | The FastAPI server, tailoring engine and web UI |
 | `app/static/css/` | The design system: `tokens.css` → `base.css` → `components.css` → `views.css` |
 | `app/static/fx.js` | All motion in one place: Motion for components and text, GSAP for page transitions and the interview flow |
+| `app/contacts.py` | Finding the people who hire for a role (published emails only, with sources) |
 | `app/coldmail.py` | Cold emails and their follow-ups, saved to Gmail drafts (never sent) |
 | `app/interview.py` | Company research, the three-round interview plan and the adaptive coding test |
 | `app/static/runner.js` | The coding-test sandbox: a network-free worker running JavaScript and Python (Pyodide) |

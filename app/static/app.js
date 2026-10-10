@@ -875,6 +875,7 @@ async function tailorSelected() {
 async function loadPipeline() {
   S.apps = await api("/api/apps");
   S.batch = await api("/api/batch");
+  await loadContacts();
   renderPipeline();
 }
 
@@ -914,7 +915,8 @@ function renderPipeline() {
         ${r.status === "Generated" ? `<button class="btn btn--sm btn--ghost" data-applied="${esc(r.id)}" data-stop>Mark applied</button>` : ""}
         <button class="btn btn--sm btn--ghost" data-prep="${esc(r.id)}" data-stop title="Interview questions for this job">Interview</button>
         <button class="btn btn--sm btn--ghost" data-cold="${esc(r.id)}" data-stop title="Write a cold email for this job">Cold mail</button>
-      </div></div>`;
+        <button class="btn btn--sm btn--ghost" data-findc="${esc(r.id)}" data-stop title="Search the web for the people who hire for this role" ${PC.running[r.id] ? "disabled" : ""}>${PC.data[r.id] ? "Find contacts again" : "Find contacts"}</button>
+      </div>${contactsHtml(r)}</div>`;
   const flightCard = (b) => `<div class="card app-card ${b.status === "error" ? "err" : ""}" data-flight="${esc(b.id)}">
       <div class="item"><span class="logo logo--sm">${initial(b.company || b.role)}</span><span class="item__body"><span class="item__title">${esc(b.company || "Reading the posting")}</span><span class="item__meta">${esc(b.role || "")}</span></span><span class="tag ${b.status === "error" ? "tag--bad" : "tag--accent"}">${b.status === "error" ? "Failed" : "Writing"}</span></div>
       ${b.status === "error" ? "" : `<div class="progress"></div>`}
@@ -928,7 +930,10 @@ function renderPipeline() {
   if (sig === renderPipeline.sig) return;
   renderPipeline.sig = sig;
   $("#stageNav").innerHTML = navHtml; $("#stageHead").innerHTML = headHtml; $("#board").innerHTML = boardHtml;
-  $$("[data-open]").forEach((el) => (el.onclick = (e) => { if (!e.target.closest("select, [data-stop]")) openApp(el.dataset.open); }));
+  $$("[data-open]").forEach((el) => (el.onclick = (e) => { if (!e.target.closest("select, [data-stop], details")) openApp(el.dataset.open); }));
+  $$("[data-findc]").forEach((b) => (b.onclick = () => findContacts(b.dataset.findc)));
+  $$("[data-coldto]").forEach((b) => (b.onclick = () => contactToColdMail(b.dataset.coldto, b)));
+  $$("[data-contacts-of]").forEach((d) => d.addEventListener("toggle", () => (d.open ? PC.open.add(d.dataset.contactsOf) : PC.open.delete(d.dataset.contactsOf))));
   $$("[data-prep]").forEach((b) => (b.onclick = () => openInterview(b.dataset.prep)));
   $$("[data-cold]").forEach((b) => (b.onclick = () => openColdMail(b.dataset.cold)));
   $$("[data-applied]").forEach((b) => (b.onclick = async () => {
@@ -1661,11 +1666,23 @@ function ivCompany(d) {
 }
 
 // ================= cold mail =================
-// One application at a time: say who you're writing to, get an email and its follow-up from your real facts,
-// edit them, and save either to Gmail drafts. The app never sends; you send from Gmail.
-const CM = { list: [], roles: {}, tones: {}, sel: store.get("cv.cm", ""), data: null, token: 0, role: "hiring_manager", tone: "plainspoken", part: {} };
+// For an application, or for someone you found yourself ("Someone new": a post, an event). Say who you're
+// writing to, get an email and its follow-up from your real facts, edit them, and save either to Gmail drafts.
+// The app never sends; you send from Gmail.
+const CM = { list: [], roles: {}, tones: {}, sel: store.get("cv.cm", ""), data: null, token: 0, role: "hiring_manager", tone: "plainspoken", part: {}, prefill: null };
+const CM_NEW = "custom";
+const cmBase = () => (CM.sel === CM_NEW ? "/api/coldmail/custom" : `/api/apps/${CM.sel}/coldmail`);
+const cmRoleLabel = (k) => ({ hiring_manager: "Hiring manager", recruiter: "Recruiter", engineer: "Engineer on the team", leader: "Founder or leader", other: "Other" }[k] || k);
+// From a contact's title, the closest of the email's recipient roles.
+const cmRoleFor = (title) => /recruit|talent|\bhr\b|people|human resources/i.test(title) ? "recruiter"
+  : /founder|ceo|cto|coo|chief|president|\bvp\b|vice president/i.test(title) ? "leader"
+  : /manager|director|head|lead/i.test(title) ? "hiring_manager" : /engineer|developer|scientist/i.test(title) ? "engineer" : "other";
 
-function openColdMail(id) { CM.sel = id; store.set("cv.cm", id); showView("outreach"); }
+function openColdMail(id, prefill) {
+  CM.sel = id; store.set("cv.cm", id); CM.prefill = prefill || null;
+  if ($("#v-outreach").classList.contains("on")) return selectCm(id);
+  showView("outreach");
+}
 
 async function loadColdMail() {
   let r;
@@ -1677,14 +1694,18 @@ async function loadColdMail() {
     return;
   }
   CM.list = r.apps; CM.roles = r.roles; CM.tones = r.tones;
-  if (!CM.list.some((a) => a.id === CM.sel)) CM.sel = CM.list[0]?.id || "";
+  if (CM.sel !== CM_NEW && !CM.list.some((a) => a.id === CM.sel)) CM.sel = CM.list[0]?.id || CM_NEW;
   renderCmList();
-  if (CM.sel) selectCm(CM.sel);
-  else $("#cmMain").innerHTML = `<div class="empty">Tailor a CV first. Every application you tailor shows up here.</div>`;
+  selectCm(CM.sel);
 }
 
 function renderCmList() {
-  $("#cmList").innerHTML = CM.list.map((a) => `<div class="item item--link item--nav ${a.id === CM.sel ? "on" : ""}" data-cm="${esc(a.id)}">${logoTile(a.id, a.logo, a.company)}
+  const custom = CM.customCount || 0;
+  $("#cmList").innerHTML = `<div class="item item--link item--nav ${CM.sel === CM_NEW ? "on" : ""}" data-cm="${CM_NEW}">
+      <span class="logo logo--sm" style="color:var(--accent)">+</span>
+      <span class="item__body"><span class="item__title">Someone new</span><span class="item__meta">A post or a person you found yourself</span></span>
+      <span class="item__aside">${custom ? `<span class="tag num">${custom}</span>` : ""}</span></div>`
+    + CM.list.map((a) => `<div class="item item--link item--nav ${a.id === CM.sel ? "on" : ""}" data-cm="${esc(a.id)}">${logoTile(a.id, a.logo, a.company)}
       <span class="item__body"><span class="item__title">${esc(a.company)}</span><span class="item__meta" title="${esc(a.role)}">${esc(a.role)}</span></span>
       <span class="item__aside">${a.sent ? `<span class="tag tag--ok num" title="${a.sent} sent">${a.sent} sent</span>` : a.mails ? `<span class="tag num" title="${a.mails} written">${a.mails}</span>` : ""}</span></div>`).join("");
   $$("#cmList [data-cm]").forEach((el) => (el.onclick = () => el.dataset.cm !== CM.sel && selectCm(el.dataset.cm)));
@@ -1693,45 +1714,61 @@ function renderCmList() {
 async function selectCm(id) {
   CM.sel = id; store.set("cv.cm", id); renderCmList();
   const token = ++CM.token;
-  const d = await api(`/api/apps/${id}/coldmail`);
+  const d = await api(id === CM_NEW ? "/api/coldmail/custom" : `/api/apps/${id}/coldmail`);
   if (token !== CM.token) return;
   CM.data = d;
+  if (id === CM_NEW) { CM.customCount = d.mails.length; renderCmList(); }
   renderCm();
 }
 
 function renderCm() {
-  const a = CM.list.find((x) => x.id === CM.sel) || {}, d = CM.data;
+  const custom = CM.sel === CM_NEW, a = custom ? {} : CM.list.find((x) => x.id === CM.sel) || {}, d = CM.data;
+  const pre = CM.prefill || {};
+  if (pre.to_role) CM.role = pre.to_role;
   $("#cmMain").innerHTML = `
-    <header class="iv-head">${logoTile(a.id, a.logo, a.company, "logo--lg")}
-      <div class="iv-head__titles"><span class="eyebrow">Cold mail</span><h2 class="type-h2">${esc(a.role)}</h2>
-        <span class="type-meta">${esc(a.company)} · ${d.mails.length} email${d.mails.length === 1 ? "" : "s"} written</span></div></header>
+    <header class="iv-head">${custom ? `<span class="logo logo--lg" style="color:var(--accent);font-size:26px">+</span>` : logoTile(a.id, a.logo, a.company, "logo--lg")}
+      <div class="iv-head__titles"><span class="eyebrow">Cold mail</span><h2 class="type-h2">${custom ? "Someone new" : esc(a.role)}</h2>
+        <span class="type-meta">${custom ? "For a hiring post or a person you found yourself. Paste their job link or the post itself." : esc(a.company)} · ${d.mails.length} email${d.mails.length === 1 ? "" : "s"} written</span></div></header>
     <div class="cm-grid">
       <section class="card plunk cm-form">
         <span class="eyebrow">Who are you writing to?</span>
         <div class="cm-form__row">
-          <label class="field"><span class="type-meta">Name</span><input type="text" id="cmName" placeholder="e.g. Priya Sharma"></label>
-          <label class="field"><span class="type-meta">Email</span><input type="text" id="cmEmail" inputmode="email" autocomplete="off" placeholder="name@company.com"></label>
+          <label class="field"><span class="type-meta">Name</span><input type="text" id="cmName" placeholder="e.g. Priya Sharma" value="${esc(pre.to_name || "")}"></label>
+          <label class="field"><span class="type-meta">Email</span><input type="text" id="cmEmail" inputmode="email" autocomplete="off" placeholder="name@company.com" value="${esc(pre.to_email || "")}"></label>
         </div>
+        ${custom ? `<div class="cm-form__row">
+          <label class="field"><span class="type-meta">Company</span><input type="text" id="cmCompany" placeholder="e.g. Razorpay"></label>
+          <label class="field"><span class="type-meta">Role, if known</span><input type="text" id="cmRoleTitle" placeholder="e.g. Senior Product Manager"></label>
+        </div>
+        <label class="field"><span class="type-meta">Job link, if the post has one</span><input type="url" id="cmLink" placeholder="Their careers page or job board link"></label>
+        <label class="field"><span class="type-meta">The post or job description</span>
+          <textarea id="cmPost" rows="4" placeholder="Paste the LinkedIn post or the job description. LinkedIn links can't be read, so paste the post's text."></textarea></label>` : ""}
         <div class="field"><span class="type-meta">Their role</span><div class="chip-row" id="cmRole">
-          ${Object.entries(CM.roles).map(([k, l]) => `<button class="chip ${k === CM.role ? "on" : ""}" data-role="${k}" title="${esc(l)}">${esc({ hiring_manager: "Hiring manager", recruiter: "Recruiter", engineer: "Engineer on the team", leader: "Founder or leader", other: "Other" }[k] || k)}</button>`).join("")}</div></div>
+          ${Object.keys(CM.roles).map((k) => `<button class="chip ${k === CM.role ? "on" : ""}" data-role="${k}" title="${esc(CM.roles[k])}">${esc(cmRoleLabel(k))}</button>`).join("")}</div></div>
         <label class="field"><span class="type-meta">Context, if any</span>
-          <textarea id="cmContext" rows="2" placeholder="e.g. Saw their post about growing the payments team; we met at PyCon Bengaluru"></textarea></label>
+          <textarea id="cmContext" rows="2" placeholder="e.g. Saw their post about growing the payments team; we met at PyCon Bengaluru">${esc(pre.context || "")}</textarea></label>
         <div class="field"><span class="type-meta">Tone</span><div class="seg" id="cmTone">${Object.entries(CM.tones).map(([k, l]) => `<button data-tone="${k}" class="${k === CM.tone ? "on" : ""}">${esc(l)}</button>`).join("")}</div></div>
         <button class="btn btn--accent btn--block" id="cmWrite">Write the email ${ICON.arrow}</button>
         <div id="cmBusy"></div>
-        <p class="type-meta">${d.has_research ? "Uses the company research from your interview prep, so it can mention what they actually build." : "Prepare this interview first and the email can mention what the company actually builds."}
+        <p class="type-meta">${custom ? "Written from your profile. Tailor a CV for the job afterwards to attach a matching one."
+          : d.has_research ? "Uses the company research from your interview prep, so it can mention what they actually build."
+          : "Prepare this interview first and the email can mention what the company actually builds."}
           Only an address you have: a public one or one they gave you. The app never guesses emails.</p>
       </section>
-      <section class="cm-mails" id="cmMails">${d.mails.length ? d.mails.map(cmCard).join("") : `<div class="board__none">Your emails for ${esc(a.company)} appear here, ready to edit and save to Gmail.</div>`}</section>
+      <section class="cm-mails" id="cmMails">${d.mails.length ? d.mails.map(cmCard).join("") : `<div class="board__none">Your emails ${custom ? "to people you found yourself" : `for ${esc(a.company)}`} appear here, ready to edit and save to Gmail.</div>`}</section>
     </div>`;
+  CM.prefill = null;
   $("#cmRole").onclick = (e) => { const b = e.target.closest("[data-role]"); if (b) { CM.role = b.dataset.role; $$("#cmRole .chip").forEach((x) => x.classList.toggle("on", x === b)); } };
   $("#cmTone").onclick = (e) => { const b = e.target.closest("[data-tone]"); if (b) { CM.tone = b.dataset.tone; $$("#cmTone button").forEach((x) => x.classList.toggle("on", x === b)); } };
   $("#cmWrite").onclick = cmWrite;
+  if (pre.to_email) FX.pulse($(".cm-form"));
   wireCmCards();
 }
 
-const cmRoleLabel = (k) => ({ hiring_manager: "Hiring manager", recruiter: "Recruiter", engineer: "Engineer", leader: "Founder or leader", other: "Other" }[k] || k);
 const cmFollowDue = (m) => { if (!m.sent_at) return ""; const d = new Date(m.sent_at + "T00:00:00"); d.setDate(d.getDate() + 6); return d; };
+const cmCvLink = () => (CM.sel === CM_NEW
+  ? `/api/preview.pdf?${new URLSearchParams({ variant: D().variant, max_pages: D().max_pages, market: D().market === "auto" ? "india" : D().market })}`
+  : `/apps/${CM.sel}/pdf?download=1`);
 
 function cmCard(m) {
   const part = CM.part[m.id] || "first", p = part === "follow_up" ? m.follow_up : m, draft = m.drafts?.[part];
@@ -1739,6 +1776,7 @@ function cmCard(m) {
   return `<article class="card cm-mail" data-mail="${esc(m.id)}">
     <div class="cm-mail__head">
       <div class="cm-mail__to"><span class="type-meta">To</span><b>${esc(m.to_name || m.to_email)}</b>${m.to_name ? `<span class="type-meta">${esc(m.to_email)}</span>` : ""}
+        ${m.company ? `<span class="type-meta">· ${esc(m.company)}${m.role ? `, ${esc(m.role)}` : ""}</span>` : ""}
         <span class="tag">${esc(cmRoleLabel(m.to_role))}</span><span class="tag">${esc(CM.tones[m.tone] || m.tone)}</span>
         ${m.sent_at ? `<span class="tag tag--ok">Sent ${esc(m.sent_at)}</span>` : draft ? `<span class="tag tag--info">In Gmail drafts</span>` : ""}</div>
       <button class="icon-btn icon-btn--sm" data-act="del" title="Delete this email" aria-label="Delete">${ICON.x}</button>
@@ -1753,7 +1791,8 @@ function cmCard(m) {
       <span class="type-meta num" data-words>${p.body.split(/\s+/).filter(Boolean).length} words</span><span class="sp"></span>
       <button class="btn btn--sm btn--ghost" data-act="copy">Copy</button>
       ${part === "first" ? `<button class="btn btn--sm btn--ghost" data-act="sent">${m.sent_at ? "Not sent yet" : "I sent it"}</button>` : ""}
-      <a class="btn btn--sm" href="/apps/${esc(CM.sel)}/pdf?download=1" title="${esc(CM.data.pdf)}">Download CV to attach</a>
+      ${m.job_text ? `<button class="btn btn--sm btn--ghost" data-act="tailor" title="Send this job to the Tailor screen">Tailor a CV for this job</button>` : ""}
+      <a class="btn btn--sm" href="${esc(cmCvLink())}" download title="${CM.sel === CM_NEW ? "Your profile CV, in your default design" : esc(CM.data.pdf || "")}">Download CV to attach</a>
       ${draft?.url ? `<a class="btn btn--sm" href="${esc(draft.url)}" target="_blank" rel="noopener">Open draft in Gmail</a>` : ""}
       <button class="btn btn--sm btn--primary" data-act="draft">${draft ? "Save again to Gmail" : "Save to Gmail drafts"}</button>
     </div>
@@ -1783,15 +1822,22 @@ function wireCmCards() {
       const m = mail();
       if (b.dataset.act === "part") { CM.part[id] = b.dataset.part; return cmRerender(id); }
       if (b.dataset.act === "copy") { const p = part() === "follow_up" ? m.follow_up : m; return copy(`Subject: ${p.subject}\n\n${p.body}`); }
+      if (b.dataset.act === "tailor") {
+        showView("tailor");
+        setJob({ role: m.role || "", company: m.company || "", location: "", job_id: "", posted: "", url: m.job_url || "", description: m.job_text, method: "pasted", market: "auto" });
+        return toast("The job is on the Tailor screen. Press Tailor my CV.", 3500);
+      }
       if (b.dataset.act === "del") {
         if (!confirm("Delete this email? Any Gmail draft you saved stays in Gmail.")) return;
-        await api(`/api/apps/${CM.sel}/coldmail/${id}`, { method: "DELETE" });
+        await api(`${cmBase()}/${id}`, { method: "DELETE" });
         CM.data.mails = CM.data.mails.filter((x) => x.id !== id);
-        return renderCm();
+        if (CM.sel === CM_NEW) CM.customCount = CM.data.mails.length;
+        renderCm(); cmRefreshList();
+        return;
       }
       if (b.dataset.act === "sent") {
         if (card._pending) await card._pending();
-        const r = await api(`/api/apps/${CM.sel}/coldmail/${id}`, { method: "PUT", body: { sent: !m.sent_at } });
+        const r = await api(`${cmBase()}/${id}`, { method: "PUT", body: { sent: !m.sent_at } });
         Object.assign(m, r); cmRerender(id); cmRefreshList();
         if (r.sent_at) toast("Marked sent. The follow-up is ready when you need it.");
         return;
@@ -1803,7 +1849,7 @@ function wireCmCards() {
 
 async function cmPersist(id) {
   const m = CM.data.mails.find((x) => x.id === id); if (!m) return;
-  const r = await api(`/api/apps/${CM.sel}/coldmail/${id}`, { method: "PUT", body: { subject: m.subject, body: m.body, follow_up: m.follow_up } });
+  const r = await api(`${cmBase()}/${id}`, { method: "PUT", body: { subject: m.subject, body: m.body, follow_up: m.follow_up } });
   m.flags = r.flags; m.words = r.words;
 }
 
@@ -1820,17 +1866,40 @@ async function cmRefreshList() {
 }
 
 async function cmWrite() {
+  const custom = CM.sel === CM_NEW;
   const email = $("#cmEmail").value.trim();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { $("#cmEmail").classList.add("invalid"); $("#cmEmail").focus(); toast("Give their email address."); return; }
   $("#cmEmail").classList.remove("invalid");
-  const btn = $("#cmWrite"), busy = $("#cmBusy"), token = CM.token, app = CM.sel;
+  const body = { to_name: $("#cmName").value, to_email: email, to_role: CM.role, context: $("#cmContext").value, tone: CM.tone };
+  const btn = $("#cmWrite"), busy = $("#cmBusy"), token = CM.token, owner = CM.sel;
+  const say = (msg) => { busy.innerHTML = `<div class="progress"></div><div class="progress__text">${esc(msg)}</div>`; };
   btn.disabled = true;
-  busy.innerHTML = `<div class="progress"></div><div class="progress__text">Writing your email and its follow-up, about half a minute</div>`;
   try {
-    const { job } = await api(`/api/apps/${app}/coldmail`, { body: { to_name: $("#cmName").value, to_email: email, to_role: CM.role, context: $("#cmContext").value, tone: CM.tone } });
-    const mail = await pollJob(job, (l) => { const t = $(".progress__text", busy); if (t) t.textContent = l.msg; });
-    if (token !== CM.token || app !== CM.sel) return;
+    if (custom) {
+      Object.assign(body, { company: $("#cmCompany").value.trim(), role: $("#cmRoleTitle").value.trim(), job_url: $("#cmLink").value.trim(), job_text: $("#cmPost").value.trim() });
+      if (!body.company && !body.job_url) { $("#cmCompany").classList.add("invalid"); $("#cmCompany").focus(); throw new Error("Give the company's name."); }
+      // A job link with nothing pasted: read it the way the Tailor box does.
+      if (body.job_url && body.job_text.length < 200) {
+        say("Reading the job link");
+        try {
+          const { job } = await api("/api/extract", { body: { url: body.job_url } });
+          const got = await pollJob(job, (l) => say(l.msg));
+          body.job_text = [body.job_text, got.description].filter(Boolean).join("\n\n");
+          body.company = body.company || got.company || "";
+          body.role = body.role || got.role || "";
+          if ($("#cmCompany")) { $("#cmCompany").value = body.company; $("#cmRoleTitle").value = body.role; }
+        } catch (e) {
+          if (!body.job_text) throw new Error(`${e.message} Paste the post or the job description instead.`);
+        }
+      }
+      if (!body.company) throw new Error("Give the company's name.");
+    }
+    say("Writing your email and its follow-up, about half a minute");
+    const { job } = await api(cmBase(), { body });
+    const mail = await pollJob(job, (l) => say(l.msg));
+    if (token !== CM.token || owner !== CM.sel) return;
     CM.data.mails.unshift(mail);
+    if (custom) CM.customCount = CM.data.mails.length;
     renderCm(); cmRefreshList();
     const errs = (mail.flags || []).filter((f) => f.level === "error").length;
     toast(errs ? `Written. ${errs} check${errs > 1 ? "s" : ""} flagged; read it before you save it.` : "Written. Edit anything, then save it to Gmail drafts.", 4000);
@@ -1844,12 +1913,67 @@ async function cmDraft(id, card) {
   btn.disabled = true;
   busy.innerHTML = `<div class="progress"></div><div class="progress__text">Saving to your Gmail drafts</div>`;
   try {
-    const { job } = await api(`/api/apps/${CM.sel}/coldmail/${id}/draft`, { body: { which } });
+    const { job } = await api(`${cmBase()}/${id}/draft`, { body: { which } });
     const m = await pollJob(job, () => {});
     Object.assign(CM.data.mails.find((x) => x.id === id), m);
     cmRerender(id);
     toast("Saved to your Gmail drafts. Attach the CV there, then send it.", 4500);
   } catch (e) { busy.innerHTML = `<div class="notice notice--bad">${esc(e.message)}</div>`; btn.disabled = false; }
+}
+
+// ---------- contacts, on the Pipeline cards ----------
+// Who to write to about an application, found by web search. Emails appear only when published, with their page.
+const PC = { data: {}, running: {}, open: new Set() };
+
+async function loadContacts() {
+  const r = await api("/api/contacts").catch(() => null);
+  if (r) { PC.data = r.contacts; PC.running = r.running; }
+}
+
+function contactsHtml(r) {
+  const id = r.id, c = PC.data[id], running = PC.running[id];
+  if (running) return `<div class="app-card__contacts-run"><div class="progress"></div><div class="progress__text" style="margin-top:6px">Finding the people who hire for this role</div></div>`;
+  if (!c) return "";
+  const n = c.people.length + c.inboxes.length;
+  const link = (u, l) => (u ? `<a class="btn btn--link" href="${esc(u)}" target="_blank" rel="noopener" data-stop>${l}</a>` : "");
+  const person = (p, i) => `<div class="contact">
+      <div class="contact__who"><b>${esc(p.name)}</b><span class="tag ${p.confidence === "high" ? "tag--ok" : p.confidence === "low" ? "tag--warn" : ""}" title="How sure the sources are that this is current">${esc(p.confidence)}</span></div>
+      <div class="type-meta">${esc(p.title)}${p.location ? ` · ${esc(p.location)}` : ""}</div>
+      ${p.why ? `<div class="type-meta contact__why">${esc(p.why)}</div>` : ""}
+      <div class="contact__acts">${p.email ? `<span class="contact__email" title="Published on ${esc(p.email_source)}">${esc(p.email)}</span>${link(p.email_source, "where it's published")}` : `<span class="type-meta">No public email</span>`}
+        ${link(p.profile_url, "Profile")}${link(p.source, "Source")}<span class="sp"></span>
+        <button class="btn btn--sm ${p.email ? "btn--primary" : ""}" data-coldto="${esc(id)}" data-i="${i}" data-stop title="${p.email ? "Open Cold mail with their details filled in" : "No public email: Cold mail opens with their name, add an address you have"}">Cold email</button></div></div>`;
+  const inbox = (b, i) => `<div class="contact"><div class="contact__who"><b>${esc(b.email)}</b><span class="tag">inbox</span></div>
+      <div class="type-meta">${esc(b.what)}</div><div class="contact__acts">${link(b.source, "Source")}<span class="sp"></span>
+      <button class="btn btn--sm btn--primary" data-coldto="${esc(id)}" data-inbox="${i}" data-stop>Cold email</button></div></div>`;
+  return `<details class="disclosure app-card__contacts" data-contacts-of="${esc(id)}" ${PC.open.has(id) ? "open" : ""}>
+      <summary>Contacts<span class="disclosure__aside num">${n ? `${n} · ${c.people.filter((p) => p.email).length + c.inboxes.length} with email` : "none found"}</span></summary>
+      <div class="app-card__contacts-body">${n ? c.people.map(person).join("") + c.inboxes.map(inbox).join("")
+        : `<p class="type-meta">The search found nobody it could source for this role. Try again later, or write to someone you know there.</p>`}
+        <p class="type-meta">Found ${esc(c.found_at.slice(0, 10))}. Emails appear only when published; none are guessed.</p></div></details>`;
+}
+
+async function findContacts(id) {
+  try {
+    const { job } = await api(`/api/apps/${id}/contacts`, { method: "POST", body: {} });
+    PC.running[id] = job; renderPipeline();
+    await pollJob(job, () => {});
+    toast("Contacts found. Open Contacts on the card.", 3000);
+  } catch (e) { toast(e.message, 5000); }
+  delete PC.running[id];
+  await loadContacts();
+  PC.open.add(id);
+  renderPipeline();
+}
+
+function contactToColdMail(appId, el) {
+  const c = PC.data[appId]; if (!c) return;
+  if (el.dataset.inbox !== undefined) {
+    const b = c.inboxes[+el.dataset.inbox];
+    return openColdMail(appId, { to_email: b.email, to_role: "recruiter" });
+  }
+  const p = c.people[+el.dataset.i];
+  openColdMail(appId, { to_name: p.name, to_email: p.email, to_role: cmRoleFor(p.title) });
 }
 
 // ================= global Claude / Gemini switch =================

@@ -219,6 +219,18 @@
 .cm-mail__body { width: 100%; min-height: 180px; resize: none; overflow: hidden; padding: 14px 16px !important; font-size: 14px !important; line-height: 1.7; color: var(--text); background: var(--black) !important; }
 .cm-mail__foot { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
 .cm-mail__busy:empty { display: none; }
+.app-card__contacts { border-top: 1px solid var(--line); margin: 0 calc(-1 * var(--s-4)) calc(-1 * var(--s-4)); padding: 0 var(--s-4); }
+.app-card__contacts > summary { padding: 11px 0; font-size: 12.5px; }
+.app-card__contacts-body { display: flex; flex-direction: column; padding-bottom: var(--s-3); }
+.app-card__contacts-run { border-top: 1px solid var(--line); padding-top: var(--s-3); }
+.contact { display: flex; flex-direction: column; gap: 4px; padding: 10px 0; border-top: 1px solid var(--line); }
+.contact:first-child { border-top: 0; padding-top: 0; }
+.contact__who { display: flex; align-items: center; gap: 8px; }
+.contact__who b { font-weight: 800; font-size: 13.5px; color: var(--text); }
+.contact__why { font-size: 12px; }
+.contact__acts { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+.contact__acts .btn--link { font-size: 12px; }
+.contact__email { font: 600 12.5px/1.3 ui-monospace, "Cascadia Code", Consolas, monospace; color: var(--accent); }
 @media (max-width: 1100px) { .cm-grid { grid-template-columns: 1fr; } .cm-form { position: static; } }
 
 /* ======================================================================
