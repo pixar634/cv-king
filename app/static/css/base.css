@@ -4,9 +4,12 @@
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-html, body { margin: 0; height: 100%; }
-/* The scrollbar's space is always kept, so switching between short and long screens never shifts the page sideways. */
-html { scrollbar-gutter: stable; }
+html { height: 100%; }
+body { margin: 0; min-height: 100%; }   /* min-height, not height: the sticky top bar needs a body as tall as the page */
+/* The page itself scrolls without a visible scrollbar (wheel, trackpad and keys still work), so the page
+   width never changes between short and long screens. Inner panels keep their thin scrollbars. */
+html { scrollbar-width: none; }
+html::-webkit-scrollbar { display: none; }
 body { overflow-x: clip; }
 body {
   background: var(--bg); color: var(--text);
