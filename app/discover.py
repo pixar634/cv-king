@@ -7,6 +7,7 @@ the model reading the rendered page, where every link it returns must be a real 
 Robots.txt is honoured. Sites whose terms forbid automated access are refused outright.
 """
 import concurrent.futures as cf
+import contextvars
 import datetime as dt
 import hashlib
 import html as htmllib
@@ -20,15 +21,24 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
-from .config import DATA, OUTPUT
+from . import strategy
+from .config import data_dir, output_dir
 from .engines import ENGINES, EngineError, parse_json_reply
 from .jd import strip_html
 from .keywords import taxonomy
 from .fit import strong_skills
 from .profile import load_profile, profile_text
 
-SOURCES = DATA / "sources.json"
-JOBS = OUTPUT / "_jobs" / "jobs.json"
+
+
+def _sources_file() -> Path:
+    return data_dir() / "sources.json"
+
+
+def _jobs_file() -> Path:
+    return output_dir() / "_jobs" / "jobs.json"
+
+
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36 cv-tailor/1.0"
 _lock = threading.Lock()
 
@@ -316,6 +326,7 @@ def from_websearch(query: str, days: int) -> tuple[str, list[dict]]:
 # Search results carry job IDs that only live inside one Claude run, so the details are read in the same run.
 # The run may use just these two Indeed tools: never get_resume (the candidate's own Indeed profile) or anything else.
 INDEED_TOOLS = ["mcp__claude_ai_Indeed__search_jobs", "mcp__claude_ai_Indeed__get_job_details"]
+INDEED_DETAILS = 5        # postings read in full per search: Indeed allows only so many calls a minute
 INDEED_BRIEF = """Use the Indeed tools to find and read jobs.
 1. Call search_jobs once with: search "{query}", location "{location}", country_code "{cc}", job_type "fulltime".
 2. For each of the first {n} results, call get_job_details with that result's Job Id.
@@ -323,12 +334,9 @@ INDEED_BRIEF = """Use the Indeed tools to find and read jobs.
 {{"jobs": [{{"title": "", "company": "", "location": "", "posted": "the Posted on value", "url": "the View Job URL",
             "compensation": "", "description": "the full description from get_job_details, up to 4000 characters, copied word for word, not summarised"}}]}}
 Copy every value from the tools' results. Never invent or fill in a value; leave it empty if the tool didn't give it.
-Skip a job whose details fail to load. Use no other tools."""
-# Search terms for each career track: what Indeed's titles look like for it.
-INDEED_QUERIES = {"ic_lead": "Lead Software Engineer", "engineering_manager": "Engineering Manager",
-                  "product_manager": "Senior Product Manager", "delivery_lead": "Delivery Manager",
-                  "staff": "Staff Software Engineer", "forward_deployed": "Forward Deployed Engineer",
-                  "ai_engineer": "AI Engineer", "solutions_gtm": "Solutions Architect"}
+Skip a job whose details fail to load. Use no other tools.
+If the Indeed tools are missing or a tool call fails (for example a rate limit), stop and reply with JSON only:
+{{"jobs": [], "error": "the exact error message you saw"}}"""
 
 
 def _indeed_date(raw: str) -> str:
@@ -341,11 +349,23 @@ def _indeed_date(raw: str) -> str:
 
 
 def from_indeed(value: str, days: int) -> tuple[str, list[dict]]:
-    """value is "query | location" (location defaults to Bengaluru)."""
+    """value is "query | location" (location defaults to the candidate's city). Indeed limits calls per account per
+    minute: when it says to wait, wait (up to 90 seconds) and try once more, then report its message as the error."""
     query, _, location = (x.strip() for x in value.partition("|"))
     eng = ENGINES["claude:sonnet"]
-    raw = parse_json_reply(eng.run(INDEED_BRIEF.format(query=query, location=location or "Bengaluru", cc="IN", n=8),
-                                   timeout=420, tools=INDEED_TOOLS))
+    home = strategy.home()
+    brief = INDEED_BRIEF.format(query=query, location=location or home["city"] or home["country"],
+                                cc=home["country_code"], n=INDEED_DETAILS)
+    for attempt in (1, 2):
+        raw = parse_json_reply(eng.run(brief, timeout=420, tools=INDEED_TOOLS))
+        err = str(raw.get("error") or "")
+        if raw.get("jobs") or not err:
+            break
+        wait = re.search(r"(\d+)\s*seconds?", err)
+        if attempt == 1 and re.search(r"rate limit|429|try again", err, re.I):
+            time.sleep(min(90, int(wait.group(1)) + 3 if wait else 60))
+            continue
+        raise EngineError(f"Indeed: {err[:240]}")
     out = []
     for j in raw.get("jobs") or []:
         if not (j.get("title") and str(j.get("url", "")).startswith("http")):
@@ -366,8 +386,10 @@ def ensure_indeed_sources(prefs: dict) -> list[dict]:
     have = [r for r in rows if r["kind"] == "indeed"]
     if have:
         return have
-    location = "Bengaluru" if "bengaluru" in (prefs.get("regions") or ["bengaluru"]) else "India"
-    queries = list(dict.fromkeys(INDEED_QUERIES[t] for t in (prefs.get("tracks") or ["ic_lead"]) if t in INDEED_QUERIES))
+    home = strategy.home()
+    location = home["city"] if "city" in regions(prefs) and home["city"] else home["country"] or home["city"]
+    titles = strategy.search_titles()
+    queries = list(dict.fromkeys(titles[t][0] for t in (prefs.get("tracks") or list(titles)) if titles.get(t)))
     new = [{"id": hashlib.sha1(f"indeed:{q}|{location}".encode()).hexdigest()[:10], "kind": "indeed",
             "value": f"{q} | {location}", "label": f"Indeed: {q}, {location}", "last_scan": "", "last_count": 0} for q in queries]
     save_sources(rows + new)
@@ -416,36 +438,10 @@ def from_people(value: str, days: int) -> tuple[str, list[dict]]:
 
 # ---------- ranking ----------
 
-TRACK_TITLES = {
-    "ic_lead": r"full[\s-]?stack|product engineer|founding engineer|software engineer|software developer|\bsde\b|"
-               r"front[\s-]?end|back[\s-]?end|react|python|tech(nical)? lead|lead engineer|member of technical staff|web developer",
-    "engineering_manager": r"engineering manager|\bem\b|tech(nical)? lead manager|team lead|engineering lead|head of engineering|development manager",
-    "product_manager": r"product manager|product owner|\bapm\b|technical product|\btpm\b|product lead|ai product",
-    "delivery_lead": r"project lead|delivery lead|delivery manager|program manager|project manager|scrum master|engagement lead",
-    "staff": r"staff engineer|staff software|principal engineer|principal software|architect",
-    "forward_deployed": r"forward[\s-]?deployed|deployment engineer|applied ai|implementation (engineer|lead)|field engineer|"
-                        r"customer engineer|resident (solutions )?architect|ai architect",
-    "solutions_gtm": r"solutions? (engineer|architect)|pre[\s-]?sales|sales engineer|gtm engineer|growth engineer|"
-                     r"developer advocate|devrel|partner (solutions )?engineer",
-    "ai_engineer": r"\bai engineer|agentic|full[\s-]?stack ai|ai platform|llm engineer|genai engineer",
-}
-# Families that are a lateral or upward move from Lead: "Senior" here is not a step down.
-LATERAL = re.compile(r"forward[\s-]?deployed|deployment|solutions?|applied ai|product manager|product owner|product lead|"
-                     r"technical product|gtm|growth|developer advocate|devrel|ai engineer|agentic|ai architect|implementation", re.I)
-NEGATIVE = re.compile(r"\b(intern|internship|junior|graduate|trainee|fresher|apprentice|associate|entry[\s-]level|qa|sdet|test engineer|data scientist|"
-                      r"sales(?![\s-]*(engineer|solutions|architect))|marketing|account executive|recruiter|talent|designer|support engineer|android|ios|embedded|"
-                      r"brand|public relations|pr\b|communications|legal|counsel|content\b|copywriter|"
-                      r"firmware|mechanical|civil|electrical|nurse|teacher|accountant|hr\b)", re.I)
-TECH_TITLE = re.compile(r"engineer|engineering|developer|programmer|architect|\bsde\b|\bswe\b|software|full[\s-]?stack|"
-                        r"forward[\s-]?deployed|deployment|solutions?|applied ai|developer advocate|devrel|"
-                        r"front[\s-]?end|back[\s-]?end|tech(nical)? lead|\bcto\b|product manager|product owner|product lead|"
-                        r"\bapm\b|\btpm\b|program manager|project manager|project lead|delivery (lead|manager)|scrum master|"
-                        r"member of technical staff|\bmts\b", re.I)
 NO_SPONSOR = re.compile(r"(no|not able to|unable to|cannot|can't|do not|don't)\s+(offer\s+|provide\s+)?(visa\s+)?sponsor|"
                         r"must (already )?have (the )?right to work|citizens? only|without (the need for )?sponsorship|"
                         r"permanent residents? only", re.I)
 SPONSOR = re.compile(r"visa sponsorship (is )?(available|offered|provided)|we (can |will )?sponsor|relocation (support|package|assistance)", re.I)
-BENGALURU = re.compile(r"bengaluru|bangalore|blr\b", re.I)
 INDIA = re.compile(r"bengaluru|bangalore|india|hyderabad|pune|mumbai|delhi|gurgaon|gurugram|noida|chennai|kolkata", re.I)
 REMOTE = re.compile(r"\bremote\b|work from home|anywhere|distributed", re.I)
 ABROAD_OK = re.compile(r"united kingdom|\buk\b|england|scotland|london|manchester|edinburgh|cambridge|dublin|ireland|"
@@ -456,13 +452,21 @@ ABROAD_OK = re.compile(r"united kingdom|\buk\b|england|scotland|london|mancheste
                        r"singapore|emea|europe|\beu\b", re.I)
 
 
+def home_country_pattern() -> re.Pattern:
+    """The candidate's own country (and city): India's cities when it's India, else the names themselves."""
+    h = strategy.home()
+    if h["country"].lower() in ("india", ""):
+        return INDIA
+    return strategy.any_of([h["country"], *h["city_names"]]) or INDIA
+
+
 def region(job: dict) -> str:
-    """india | remote | abroad (a target country) | us | other | unknown, from the location field."""
+    """home (the candidate's country) | remote | abroad (a target country) | us | other | unknown, from the location field."""
     where = (job.get("location") or "").strip()
     if not where or where.upper() == "LOCATION":
         return "unknown"
-    if INDIA.search(where):
-        return "india"
+    if home_country_pattern().search(where):
+        return "home"
     if US_ONLY.search(where):
         return "us"
     if ABROAD_OK.search(where):
@@ -477,32 +481,40 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 6
+RANK_VERSION = 7
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "regions")
+# Region filter keys. Older settings said "bengaluru" and "india" for the city and the rest of the country.
+REGION_KEYS = {"bengaluru": "city", "india": "country"}
+
+
+def regions(prefs: dict) -> list[str]:
+    return list(dict.fromkeys(REGION_KEYS.get(r, r) for r in (prefs.get("regions") or ["city", "country", "remote", "world"])))
 
 
 def with_profile(prefs: dict) -> dict:
-    return prefs | {"_ptext": profile_text(load_profile())}
+    profile = load_profile()
+    return prefs | {"_ptext": profile_text(profile), "_held": [r.get("title", "") for r in profile["experience"]]}
 
 
 def rank_signature(prefs: dict, evidence: set[str]) -> str:
-    # RANK_VERSION changes whenever the ranking rules do, so stored ranks never outlive the code that made them.
+    # RANK_VERSION changes whenever the ranking rules do, so stored ranks never outlive the code that made them;
+    # the strategy's own file changes them too (new tracks, a new level).
+    sp = strategy.path()
     blob = json.dumps([RANK_VERSION, {k: prefs.get(k) for k in RANK_KEYS}, sorted(evidence),
-                       hashlib.sha1(prefs.get("_ptext", "").encode()).hexdigest()], sort_keys=True, default=str)
+                       hashlib.sha1(prefs.get("_ptext", "").encode()).hexdigest(),
+                       sp.stat().st_mtime if sp.exists() else 0], sort_keys=True, default=str)
     return hashlib.sha1(blob.encode()).hexdigest()[:12]
 US_ONLY = re.compile(r"remote[\s,-]*(us|usa|united states|canada|amer)\b|\b(us|usa)[\s-]*(remote|only)\b|united states|"
                      r"\bcanada\b|new york|\bnyc\b|san francisco|\bsf\b|seattle|austin|boston|chicago|atlanta|denver|"
                      r"los angeles|bay area|toronto|vancouver|washington|california|texas|colorado", re.I)
 
 
-LEAD_TITLE = re.compile(r"\b(lead|staff|principal|manager|architect|founding)\b", re.I)
 # Words every JD shares (communication, mentoring, scalability...): they say nothing about fit or level.
 GENERIC = {"Communication", "Problem solving", "Ownership", "Product thinking", "Clean code", "Mentoring",
            "Stakeholder management", "Scalability", "Technical documentation", "Agile", "Requirements gathering",
            "Data visualisation", "Enterprise software", "Startup experience", "Technical leadership", "Code review",
            "Performance", "Automation", "Security", "Monitoring"}
-BELOW_LEAD = re.compile(r"\b(senior|sr\.?|mid[\s-]*level)\b|\b(sde|swe|engineer|developer)[\s-]*(i{1,3}|[123])\b", re.I)
 
 
 def needs_skill(job: dict, skill: str) -> bool:
@@ -542,12 +554,14 @@ def rank(job: dict, evidence: set[str], prefs: dict, sig: str | None = None) -> 
 def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     title, desc = job["title"], job.get("description", "")
     reasons, score = [], 0
-    tracks = prefs.get("tracks") or ["ic_lead"]
-    if NEGATIVE.search(title) or not TECH_TITLE.search(title):
+    tracks = prefs.get("tracks") or list(strategy.tracks())
+    relevant, ruled_out = strategy.relevant_pattern(), strategy.excluded_pattern()
+    if (ruled_out and ruled_out.search(title)) or (relevant and not relevant.search(title)):
         return job | {"match": 0, "reasons": ["not a target role"], "excluded": True}
     reg = region(job)
-    wanted = set(prefs.get("regions") or ["remote", "bengaluru", "india", "world"])
-    bucket = {"india": "bengaluru" if BENGALURU.search(job.get("location") or "") else "india",
+    wanted = set(regions(prefs))
+    city = strategy.city_pattern()
+    bucket = {"home": "city" if city and city.search(job.get("location") or "") else "country",
               "abroad": "world", "remote": "remote", "unknown": "unknown"}.get(reg, "excluded")
     if bucket == "excluded" or (bucket != "unknown" and bucket not in wanted):
         return job | {"match": 0, "reasons": [f"outside your regions ({(job.get('location') or '')[:40]})"], "excluded": True}
@@ -555,20 +569,27 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
         if needs_skill(job, skill):
             return job | {"match": 0, "reasons": [f"needs {skill}"], "excluded": True}
     from .fit import level_check
-    level = level_check(title, desc, prefs.get("candidate_years", 7), evidence, prefs.get("max_years_asked", 11))
+    years = prefs.get("candidate_years", 3)
+    level = level_check(title, desc, years, evidence, prefs.get("max_years_asked", years + 4),
+                        {"experience": [{"title": t} for t in prefs.get("_held", [])]})
     if level["verdict"] == "above" and not prefs.get("include_above"):
         return job | {"match": 0, "reasons": ["above your level: " + "; ".join(level["reasons"])], "excluded": True}
-    lead = bool(LEAD_TITLE.search(title))
-    if not lead and BELOW_LEAD.search(title) and not LATERAL.search(title) and not prefs.get("include_senior"):
-        return job | {"match": 0, "reasons": ["below lead level"], "excluded": True}
-    target = any(re.search(TRACK_TITLES[t], title, re.I) for t in tracks if t in TRACK_TITLES)
-    reasons.append("target role" if target else "engineering role")
-    if lead:
-        reasons.append("lead level")
-    elif LATERAL.search(title):
+    # Below the candidate's level only when the title says so; a sideways move into another kind of role isn't a step down.
+    mine = strategy.level()["rank"]
+    named = strategy.title_level(title)
+    sideways = strategy.lateral(title)
+    if named is not None and named < mine and not sideways and not prefs.get("include_senior"):
+        return job | {"match": 0, "reasons": ["below your level"], "excluded": True}
+    target = bool(strategy.matching_tracks(title, tracks))
+    reasons.append("target role" if target else "related role")
+    if named is not None and named == mine:
+        reasons.append("at your level")
+    elif named is not None and named > mine:
+        reasons.append("a step up")
+    elif sideways:
         reasons.append("career move")
-    elif BELOW_LEAD.search(title):
-        reasons.append("senior, below lead")
+    elif named is not None and named < mine:
+        reasons.append("below your level")
     skills = job_skills(job)
     from .keywords import jd_keywords, score as keyword_score
     if len(desc) >= 300:
@@ -583,8 +604,9 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     where = job.get("location", "") or ""
     # The location field decides; the description only when the posting gives no location at all.
     remote = (job.get("remote") or bool(REMOTE.search(where + " " + title))) and not US_ONLY.search(where)
-    if (INDIA.search(where) or (not where.strip() and INDIA.search(loc))) and prefs.get("india", True):
-        reasons.append("India")
+    home = home_country_pattern()
+    if (home.search(where) or (not where.strip() and home.search(loc))) and prefs.get("india", True):
+        reasons.append(strategy.home()["country"] or "home")
     elif remote and prefs.get("remote", True):
         reasons.append("remote")
     elif SPONSOR.search(desc) or reg == "abroad":
@@ -603,11 +625,12 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
 # ---------- sources and scans ----------
 
 def load_sources() -> list[dict]:
-    return json.loads(SOURCES.read_text("utf-8")) if SOURCES.exists() else []
+    f = _sources_file()
+    return json.loads(f.read_text("utf-8")) if f.exists() else []
 
 
 def save_sources(rows: list[dict]) -> None:
-    SOURCES.write_text(json.dumps(rows, indent=2, ensure_ascii=False), "utf-8")
+    _sources_file().write_text(json.dumps(rows, indent=2, ensure_ascii=False), "utf-8")
 
 
 def add_source(value: str, kind: str = "url", label: str = "") -> dict:
@@ -787,12 +810,14 @@ def scan_one(src: dict, days: int) -> dict:
 
 
 def _load_jobs() -> dict:
-    return json.loads(JOBS.read_text("utf-8")) if JOBS.exists() else {"jobs": {}, "dismissed": []}
+    f = _jobs_file()
+    return json.loads(f.read_text("utf-8")) if f.exists() else {"jobs": {}, "dismissed": []}
 
 
 def _save_jobs(state: dict) -> None:
-    JOBS.parent.mkdir(parents=True, exist_ok=True)
-    JOBS.write_text(json.dumps(state, indent=1, ensure_ascii=False), "utf-8")
+    f = _jobs_file()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(state, indent=1, ensure_ascii=False), "utf-8")
 
 
 def scan(source_ids: list[str] | None, days: int, prefs: dict, budget_s: int = 60, progress=lambda m: None) -> dict:
@@ -801,66 +826,45 @@ def scan(source_ids: list[str] | None, days: int, prefs: dict, budget_s: int = 6
     sources = [s for s in every if s["id"] in source_ids] if source_ids else [s for s in every if s["kind"] != "indeed"]
     url_sources = [s for s in sources if s["kind"] == "url"]
     web_sources = [s for s in sources if s["kind"] in ("websearch", "people", "indeed")]
-    progress(f"Scanning {len(sources)} source{'s' if len(sources) != 1 else ''} in parallel")
+    n_indeed = sum(1 for x in sources if x["kind"] == "indeed")
+    if n_indeed == len(sources):
+        progress(f"Searching Indeed for {n_indeed} career track{'s' if n_indeed != 1 else ''}, one after another")
+    else:
+        progress(f"Scanning {len(sources)} source{'s' if len(sources) != 1 else ''} in parallel")
     profile = load_profile()
     evidence = strong_skills(profile)
     results = []
     with cf.ThreadPoolExecutor(max_workers=12) as pool:
-        # Favourite companies go to the front of the queue.
-        ordered = sorted(url_sources + web_sources, key=lambda s: not s.get("favourite"))
-        futs = {pool.submit(scan_one, s, days): s for s in ordered}
-        deadline = time.time() + budget_s + (120 if web_sources else 0)
+        # Favourite companies go to the front of the queue. Indeed searches share one worker and run in turn:
+        # in parallel they trip Indeed's per-account rate limit.
+        ordered = sorted((x for x in url_sources + web_sources if x["kind"] != "indeed"), key=lambda s: not s.get("favourite"))
+        indeed = [x for x in web_sources if x["kind"] == "indeed"]
+
+        def indeed_in_turn():
+            out = []
+            for k, src in enumerate(indeed):
+                progress(f"Indeed {k + 1} of {len(indeed)}: {src['label'].removeprefix('Indeed: ')}")
+                res = scan_one(src, days)
+                progress(f"{src['label']}: {len(res['jobs'])} jobs" + (f" ({res['error'][:120]})" if res.get("error") else ""))
+                out.append(res)
+            return out
+
+        in_profile = lambda fn, *a: pool.submit(contextvars.copy_context().run, fn, *a)
+        futs = {in_profile(scan_one, s, days): s for s in ordered}
+        if indeed:
+            futs[in_profile(indeed_in_turn)] = None
+        deadline = time.time() + budget_s + (120 if web_sources else 0) + 150 * len(indeed)
         for fut in cf.as_completed(futs, timeout=None):
             s = futs[fut]
             res = fut.result()
-            results.append(res)
-            progress(f"{s['label']}: {len(res['jobs'])} jobs" + (f" ({res['error'][:80]})" if res.get("error") else ""))
+            if s is None:                      # the Indeed batch: its own progress lines are already out
+                results.extend(res)
+            else:
+                results.append(res)
+                progress(f"{s['label']}: {len(res['jobs'])} jobs" + (f" ({res['error'][:80]})" if res.get("error") else ""))
             if time.time() > deadline:
                 break
-    cutoff = (dt.date.today() - dt.timedelta(days=days)).isoformat()
-    keep_from = (dt.date.today() - dt.timedelta(days=30)).isoformat()
-    prefs = with_profile(prefs)
-    sig = rank_signature(prefs, evidence)
-    progress(f"Ranking {sum(len(r['jobs']) for r in results)} postings against your profile")
-    state = _load_jobs()
-    now = dt.datetime.now().isoformat(timespec="seconds")
-    fresh, new_ids = [], set()
-    with _lock:
-        for res in results:
-            for j in res["jobs"]:
-                if not j.get("url") or (j["posted"] and j["posted"] < keep_from):
-                    continue  # older than any window the app offers: never analysed, never stored
-                prev = state["jobs"].get(j["id"])
-                if not prev:
-                    new_ids.add(j["id"])
-                j = rank(j, evidence, prefs, sig)
-                j["first_seen"] = prev["first_seen"] if prev else now
-                if j["excluded"]:
-                    j = {k: v for k, v in j.items() if k != "description"} | {"_trimmed": True}
-                state["jobs"][j["id"]] = j
-                if j["posted"] and j["posted"] < cutoff:
-                    continue
-                fresh.append(j)
-        state["jobs"] = {k: v for k, v in state["jobs"].items()
-                         if (v.get("posted") or v.get("first_seen", now)[:10]) >= keep_from}
-        kept_new = [j for j in fresh if j["id"] in new_ids and not j.get("excluded")]
-        state.setdefault("scans", []).append({"at": now, "sources": len(results),
-                                              "read": sum(len(r["jobs"]) for r in results), "new": len(kept_new)})
-        state["scans"] = state["scans"][-30:]
-        _save_jobs(state)
-        rows = load_sources()
-        for r in rows:
-            for res in results:
-                if res["source"] == r["id"]:
-                    r["last_scan"], r["last_count"] = now, len(res["jobs"])
-                    r["last_error"] = res.get("error", "")
-                    r["method"] = res.get("method", "")
-        save_sources(rows)
-    dismissed = set(state.get("dismissed", []))
-    fresh = _dedupe_sort([{k: v for k, v in j.items() if k not in ("description", "_r")}
-                          for j in fresh if j["id"] not in dismissed and not j.get("excluded")])
-    return {"jobs": fresh, "results": [{k: v for k, v in r.items() if k != "jobs"} | {"count": len(r["jobs"])} for r in results],
-            "cutoff": cutoff}
+    return _store(results, days, prefs, evidence, progress)
 
 
 def _dedupe_sort(jobs: list[dict]) -> list[dict]:
@@ -909,3 +913,192 @@ def job_detail(job_id: str) -> dict:
             state["jobs"][job_id] = j
             _save_jobs(state)
     return j
+
+
+def _store(results: list[dict], days: int, prefs: dict, evidence: set[str], progress=lambda m: None) -> dict:
+    """Rank what a scan (or a paste) found, keep it, and return the fresh, non-excluded jobs."""
+    cutoff = (dt.date.today() - dt.timedelta(days=days)).isoformat()
+    keep_from = (dt.date.today() - dt.timedelta(days=30)).isoformat()
+    prefs = with_profile(prefs)
+    sig = rank_signature(prefs, evidence)
+    progress(f"Ranking {sum(len(r['jobs']) for r in results)} postings against your profile")
+    state = _load_jobs()
+    now = dt.datetime.now().isoformat(timespec="seconds")
+    fresh, new_ids = [], set()
+    with _lock:
+        for res in results:
+            for j in res["jobs"]:
+                if not j.get("url") or (j["posted"] and j["posted"] < keep_from):
+                    continue  # older than any window the app offers: never analysed, never stored
+                prev = state["jobs"].get(j["id"])
+                if not prev:
+                    new_ids.add(j["id"])
+                j = rank(j, evidence, prefs, sig)
+                j["first_seen"] = prev["first_seen"] if prev else now
+                if j["excluded"]:
+                    j = {k: v for k, v in j.items() if k != "description"} | {"_trimmed": True}
+                state["jobs"][j["id"]] = j
+                if j["posted"] and j["posted"] < cutoff:
+                    continue
+                fresh.append(j)
+        state["jobs"] = {k: v for k, v in state["jobs"].items()
+                         if (v.get("posted") or v.get("first_seen", now)[:10]) >= keep_from}
+        kept_new = [j for j in fresh if j["id"] in new_ids and not j.get("excluded")]
+        state.setdefault("scans", []).append({"at": now, "sources": len(results),
+                                              "read": sum(len(r["jobs"]) for r in results), "new": len(kept_new)})
+        state["scans"] = state["scans"][-30:]
+        _save_jobs(state)
+        rows = load_sources()
+        for r in rows:
+            for res in results:
+                if res["source"] == r["id"]:
+                    r["last_scan"], r["last_count"] = now, len(res["jobs"])
+                    r["last_error"] = res.get("error", "")
+                    r["method"] = res.get("method", "")
+        save_sources(rows)
+    dismissed = set(state.get("dismissed", []))
+    fresh = _dedupe_sort([{k: v for k, v in j.items() if k not in ("description", "_r")}
+                          for j in fresh if j["id"] not in dismissed and not j.get("excluded")])
+    return {"jobs": fresh, "results": [{k: v for k, v in r.items() if k != "jobs"} | {"count": len(r["jobs"])} for r in results],
+            "cutoff": cutoff}
+
+
+# ---------- jobs gathered by Claude in Chrome, pasted in ----------
+# The candidate's own Claude in Chrome browses job sites in their own signed-in browser and returns this app's job
+# format; pasting it here ranks it like any scan. Nothing is fetched by this app.
+
+def _plain(words: list[str], n: int = 30) -> list[str]:
+    return [w for w in words or [] if w and not w.startswith("re:")][:n]
+
+
+def chrome_prompt(prefs: dict, days: int) -> str:
+    """A self-contained prompt for Claude in Chrome, written from this profile's strategy."""
+    from .profile import experience_years_label
+    s, lv, home = strategy.load(), strategy.level(), strategy.home()
+    profile = load_profile()
+    tracks = [t for tid, t in strategy.tracks().items() if tid in (prefs.get("tracks") or list(strategy.tracks()))]
+    titles = list(dict.fromkeys(x for t in tracks for x in (t.get("titles") or [])))[:14]
+    wanted = regions(prefs)
+    where = []
+    if "city" in wanted and home["city"]:
+        where.append(f"{home['city']} (on-site or hybrid)")
+    if "country" in wanted and home["country"]:
+        where.append(f"elsewhere in {home['country']}")
+    if "remote" in wanted:
+        where.append(f"fully remote roles open to people in {home['country'] or 'my country'}")
+    if "world" in wanted:
+        where.append("abroad (UK, EU, Gulf, Singapore) where the employer sponsors visas")
+    favs = [r.get("company") or r["label"] for r in load_sources() if r.get("favourite")][:25]
+    skip = _plain((s.get("discover") or {}).get("exclude_title_words") or [], 30) + (prefs.get("exclude_skills") or [])
+    return f"""You are helping me find jobs. Use my browser: I am already signed in to the sites below. Collect job postings that fit me and give them back as one JSON object that my job-tracking app can read. Do not apply to anything, do not message anyone, do not save, follow or change anything on any site, and do not fill in any form. Only read.
+
+WHO I AM
+{s.get('field') or 'a professional'}, {experience_years_label(profile)} years of experience, level: {lv['label']} (current title: {lv.get('current_title') or profile['basics'].get('headline', '')}).
+What I want next (notes about me): {s.get('career_wants') or 'roles at my level or one step up in my field.'}
+
+WHAT TO SEARCH FOR
+Job titles (search each one, and close variants): {'; '.join(titles)}.
+Places: {'; '.join(where) or 'anywhere that fits'}.
+Posted within the last {days} days only. Skip anything older, and skip expired or closed postings.
+Skip titles or roles that are clearly something else, such as: {', '.join(skip) or 'anything outside my field'}.
+Skip roles that are well above my level (director, head, VP) or clearly below it (internships, trainees).
+
+WHERE TO LOOK (my own signed-in sessions)
+LinkedIn Jobs (use the "Past week" or "Past month" filter that fits {days} days, and sort by most recent), Naukri, Indeed, Instahyre, and the careers pages of these employers: {', '.join(favs) or 'the main employers in my field'}. Work through the titles on each site. Aim for 40 to 60 distinct postings in total; stop earlier if the searches run dry. If a site asks you to log in, solve a captcha or says you are being rate limited, skip that site and say so in "notes".
+
+FOR EACH POSTING
+Open it and read the whole description. Copy the details exactly as the page shows them. Never invent or guess a value; use "" when the page does not say.
+- "title": the job title as posted.
+- "company": the employer's name.
+- "location": the location line as posted (for example "Bengaluru, Karnataka, India (Hybrid)" or "Remote, India").
+- "url": the address of that one posting, from the browser's address bar. Remove tracking parameters after "?" when the posting still opens without them.
+- "posted": the posting date or the page's own wording ("2 days ago", "Oct 3, 2026").
+- "compensation": the pay if the posting states it, else "".
+- "description": the full description, word for word, up to 4000 characters. Do not summarise it. Include the requirements and responsibilities sections.
+If the same job appears on two sites, list it once, using the employer's own careers-page link when you can find it.
+
+HOW TO ANSWER
+Reply with one JSON object and nothing else, no commentary and no code fences, in exactly this shape:
+{{"jobs": [{{"title": "", "company": "", "location": "", "url": "", "posted": "", "compensation": "", "description": ""}}], "notes": "sites you could not read, and anything I should know"}}"""
+
+
+def chrome_start_url(prefs: dict, days: int) -> str:
+    """Where the new tab opens: a LinkedIn Jobs search for the first target title, in the candidate's city, in the window."""
+    from urllib.parse import quote_plus
+    titles = [x for t in strategy.search_titles().values() for x in t]
+    window = "r86400" if days <= 1 else "r604800" if days <= 7 else "r2592000"
+    return (f"https://www.linkedin.com/jobs/search/?keywords={quote_plus(titles[0] if titles else '')}"
+            f"&location={quote_plus(strategy.home()['city'] or strategy.home()['country'])}&f_TPR={window}&sortBy=DD")
+
+
+def _json_candidates(t: str):
+    """The same text, repaired step by step. A reply copied out of a formatted chat often arrives with curly quotes in
+    place of the JSON's straight ones; only the quotes that sit where JSON puts its own are converted, so a quoted
+    phrase inside a job description (see “Who This Role Is Open To” below) is left as it is."""
+    yield t
+    structural = re.sub(r"(?<=[\{\[:,])(\s*)[\u201c\u201d\u201e]", lambda m: m.group(1) + '"', t)
+    structural = re.sub(r"[\u201c\u201d\u201e](?=\s*[:,\}\]])", '"', structural)
+    yield structural
+    yield re.sub(r"[\u201c\u201d\u201e]", '"', t)
+
+
+def _parse_pasted(text: str) -> tuple[list[dict], str]:
+    """The JSON object (or bare list) the browser assistant returned, tolerating code fences, a stray sentence around it,
+    curly quotes, and raw line breaks inside strings."""
+    t = re.sub(r"^```[a-zA-Z]*\s*|```\s*$", "", (text or "").strip(), flags=re.M).strip()
+    t = t.replace("\u00a0", " ")
+    problem = ""
+    for candidate in _json_candidates(t):
+        for opener, closer in (("{", "}"), ("[", "]")):
+            a, b = candidate.find(opener), candidate.rfind(closer)
+            if a < 0 or b <= a:
+                continue
+            try:
+                data = json.loads(candidate[a:b + 1], strict=False)
+            except json.JSONDecodeError as e:
+                if opener == "{" and not problem:   # where the first attempt broke, for the message
+                    chunk = candidate[a:b + 1]
+                    problem = f" It breaks at character {e.pos:,} of {len(chunk):,} ({e.msg}), near: “{chunk[max(0, e.pos - 40):e.pos + 40]!s}”."
+                continue
+            jobs = data.get("jobs") if isinstance(data, dict) else data
+            if isinstance(jobs, list):
+                return [j for j in jobs if isinstance(j, dict)], str(data.get("notes") or "") if isinstance(data, dict) else ""
+    raise ValueError("That isn't the JSON the prompt asks for." + (problem or " Paste the whole reply, starting at { and ending at }.")
+                     + " If it was copied from a formatted chat, ask Claude to \"reply again as a code block\" and copy from the block.")
+
+
+def import_jobs(text: str, days: int, prefs: dict) -> dict:
+    rows, notes = _parse_pasted(text)
+    jobs, skipped, seen = [], 0, set()
+    for r in rows:
+        title, url = str(r.get("title") or "").strip(), str(r.get("url") or "").strip()
+        if not title or not url.startswith("http"):
+            skipped += 1
+            continue
+        raw_date = str(r.get("posted") or "")
+        job = _job(title, r.get("company"), r.get("location"), url, _indeed_date(raw_date), raw_date,
+                   description=str(r.get("description") or ""), method="browser (Claude in Chrome)", source="Claude in Chrome")
+        # Keyed on what the posting is, not on its link: the same job pasted again isn't "new" again.
+        job["id"] = hashlib.sha1(f"chrome|{job['title']}|{job['company']}|{job['location']}".lower().encode()).hexdigest()[:12]
+        comp = str(r.get("compensation") or "").strip()
+        if comp and comp.upper() != "N/A":
+            job["compensation"] = comp
+        if job["id"] in seen:
+            continue
+        seen.add(job["id"])
+        jobs.append(job)
+    if not jobs:
+        raise ValueError("No postings with a title and a link were found in that paste." + (f" Notes from the browser: {notes[:200]}" if notes else ""))
+    evidence = strong_skills(load_profile())
+    shown = _store([{"source": "chrome", "method": "browser (Claude in Chrome)", "jobs": jobs}], days, prefs, evidence)["jobs"]
+    state = _load_jobs()
+    ids, shown_ids = {j["id"] for j in jobs}, {j["id"] for j in shown}
+    hidden = [state["jobs"][i] for i in ids if i in state["jobs"] and i not in shown_ids]
+    why: dict[str, int] = {}
+    for j in hidden:
+        reason = (j.get("reasons") or ["filtered out"])[0].split("(")[0].strip()
+        why[reason] = why.get(reason, 0) + 1
+    cutoff = (dt.date.today() - dt.timedelta(days=days)).isoformat()
+    older = sum(1 for j in jobs if j["posted"] and j["posted"] < cutoff)
+    return {"read": len(jobs), "skipped": skipped, "older": older, "shown": len(shown_ids & ids), "hidden": len(hidden), "why": why,
+            "no_description": sum(1 for j in jobs if len(j["description"]) < 300), "notes": notes[:400]}

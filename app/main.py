@@ -1,37 +1,52 @@
 """Local web app: http://127.0.0.1:8765. Long work (model calls, scans) runs as background jobs the
 page polls, so nothing waits on a frozen request."""
+import contextvars
 import datetime as dt
 import threading
 import traceback
 import uuid
 
-from fastapi import Body, FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import areas, batch, discover, extract, letters, tailor, tracker
-from .config import OUTPUT, STATIC
-from .engines import ENGINES
+from . import areas, batch, discover, extract, letters, onboarding, profiles, strategy, tailor, tracker
+from .config import STATIC, output_dir
+from .engines import ENGINES, EngineError
 from .layouts import LAYOUTS
-from .profile import experience_years_label, load_profile, save_profile
+from .profile import experience_years_label, load_profile, profile_path, save_profile
 from .render import in_thread
 
 app = FastAPI(title="CV Tailor")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 JOBS: dict[str, dict] = {}
-DEFAULT_PREFS = {"tracks": ["ic_lead", "engineering_manager", "product_manager", "delivery_lead", "staff",
-                            "forward_deployed", "solutions_gtm", "ai_engineer"],
-                 "india": True, "remote": True, "abroad": True, "days": 14, "concurrency": 2,
-                 "include_senior": False, "exclude_skills": ["Java", ".NET", "C#"], "max_years_asked": 11, "offices": "",
-                 "regions": ["remote", "bengaluru", "india", "world"],
-                 "defaults": {"market": "auto", "track": "auto", "variant": "flowcv", "max_pages": "auto",
-                              "engine": "claude:opus"}}
+ONBOARDING: dict[str, str] = {}   # profile id -> the setup job reading its CV
+
+
+@app.middleware("http")
+async def pick_profile(request: Request, call_next):
+    """Whose data this request is about: the profile in the cookie (the last one used when there is none)."""
+    pid = request.cookies.get(profiles.COOKIE)
+    token = profiles.activate(pid if pid and profiles.get(pid) else profiles.last_used() or None)
+    try:
+        return await call_next(request)
+    finally:
+        profiles.reset(token)
+
+
+def _default_prefs(profile: dict) -> dict:
+    from .profile import experience_months
+    years = experience_months(profile) // 12
+    return {"tracks": list(strategy.tracks()), "india": True, "remote": True, "abroad": True, "days": 14, "concurrency": 2,
+            "include_senior": False, "exclude_skills": [], "max_years_asked": years + 4, "offices": "",
+            "regions": ["remote", "city", "country"],
+            "defaults": {"market": "auto", "track": "auto", "variant": "flowcv", "max_pages": "auto", "engine": "claude:opus"}}
 
 
 def start_job(kind: str, fn, *args) -> str:
     jid = uuid.uuid4().hex[:10]
-    job = {"id": jid, "kind": kind, "status": "running", "log": [], "result": None, "error": None,
+    job = {"id": jid, "kind": kind, "status": "running", "log": [], "result": None, "error": None, "profile": profiles.current(),
            "started": dt.datetime.now().isoformat(timespec="seconds")}
     JOBS[jid] = job
 
@@ -46,20 +61,38 @@ def start_job(kind: str, fn, *args) -> str:
             job["status"], job["error"] = "error", str(e)
             job["trace"] = traceback.format_exc()[-2000:]
 
-    threading.Thread(target=target, daemon=True).start()
+    # The job belongs to the profile that started it, even if the page switches profile while it runs.
+    threading.Thread(target=contextvars.copy_context().run, args=(target,), daemon=True).start()
     return jid
 
 
 def _prefs(profile: dict) -> dict:
     from .profile import experience_months
-    return DEFAULT_PREFS | (profile.get("preferences") or {}) | {"candidate_years": experience_months(profile) // 12}
+    base = _default_prefs(profile)
+    saved = profile.get("preferences") or {}
+    # `defaults` merges key by key: a profile that saved only its writer must still get the design, length and market.
+    prefs = base | saved | {"defaults": base["defaults"] | (saved.get("defaults") or {}),
+                            "candidate_years": experience_months(profile) // 12}
+    if prefs["defaults"].get("variant") not in LAYOUTS:
+        prefs["defaults"]["variant"] = base["defaults"]["variant"]
+    if prefs["defaults"].get("track") not in strategy.tracks() and prefs["defaults"].get("track") != "auto":
+        prefs["defaults"]["track"] = "auto"
+    prefs["regions"] = discover.regions(prefs)
+    prefs["tracks"] = [t for t in prefs.get("tracks") or [] if t in strategy.tracks()] or base["tracks"]
+    return prefs
 
 
 def _app_dir(app_id: str):
-    path = (OUTPUT / app_id).resolve()
-    if OUTPUT.resolve() not in path.parents or not (path / "report.json").exists():
+    root = output_dir().resolve()
+    path = (root / app_id).resolve()
+    if root not in path.parents or not (path / "report.json").exists():
         raise HTTPException(404, "No such application")
     return path
+
+
+def _key(x: str) -> str:
+    """Running-work tables are keyed per profile: two people can tailor for the same company on the same day."""
+    return f"{profiles.current()}/{x}"
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -67,22 +100,193 @@ def index():
     return FileResponse(STATIC / "index.html")
 
 
+def _profile_list() -> list[dict]:
+    return [{"id": p["id"], "name": p["name"], "status": p.get("status", "ready")} for p in profiles.all_profiles()]
+
+
+def _setup_state(pid: str) -> dict:
+    row = profiles.get(pid) or {}
+    job = JOBS.get(ONBOARDING.get(pid, ""))
+    return {"profiles": _profile_list(), "current": pid, "status": row.get("status", ""), "name": row.get("name", ""),
+            "setup_job": job["id"] if job and job["status"] == "running" else None,
+            "setup_error": job["error"] if job and job["status"] == "error" else None}
+
+
 @app.get("/api/state")
 def state():
+    pid = profiles.current()
+    row = profiles.get(pid)
+    if not row or row.get("status", "ready") in ("setting_up", "reading") or not profile_path().exists():
+        return {"setup": _setup_state(pid) | {"mode": "new"}, "engines": [{"id": e.id, "label": e.label, "available": e.available()} for e in ENGINES.values()]}
     profile = load_profile()
+    if row.get("status") == "review":
+        return {"setup": _setup_state(pid) | {"mode": "review"}, **_review(profile),
+                "engines": [{"id": e.id, "label": e.label, "available": e.available()} for e in ENGINES.values()]}
     m = tailor.markets()
+    home = strategy.home()
+    zones = next((z for city, z in areas.catalogue().items() if city.lower() in home["city_names"]), [])
     return {
+        "setup": None, "profiles": _profile_list(), "current": pid, "home": home, "strategy": strategy.summary(),
+        "home_market": tailor.home_market(), "legacy": profiles.is_legacy(pid),
         "profile": {"basics": profile["basics"], "confirmed_skills": profile.get("confirmed_skills", []),
                     "experience_years": experience_years_label(profile), "preferences": _prefs(profile)},
         "markets": {k: {"label": v["label"], "max_pages": v["max_pages"], "gdpr": v.get("gdpr_clause", False),
                         "header_line": tailor.default_header_line(k, profile)} for k, v in m.items()},
         "layouts": {k: {"label": v["label"], "blurb": v["blurb"]} for k, v in LAYOUTS.items()},
-        "tracks": {k: {"label": v["label"], "examples": v["headline_examples"]} for k, v in tailor.tracks().items()},
+        "tracks": {k: {"label": v["label"], "examples": v.get("headline_examples") or []} for k, v in tailor.tracks().items()},
         "voices": {k: {"label": v["label"], "best_for": v["best_for"]} for k, v in letters.voices().items() if k != "banned_phrases"},
         "engines": [{"id": e.id, "label": e.label, "available": e.available()} for e in ENGINES.values()],
         "statuses": tracker.STATUSES,
-        "areas": areas.catalogue(),
+        "areas": {home["city"]: zones} if zones else {},
     }
+
+
+def _review(profile: dict) -> dict:
+    """What the review screen shows after a CV was read: the profile as read, the checks, the strategy."""
+    cv = ""
+    from .profile import original_cv_path
+    if original_cv_path().exists():
+        cv = original_cv_path().read_text("utf-8")
+    return {"review": {"profile": {k: profile.get(k) for k in ("basics", "summary", "experience", "education", "certifications", "skills", "projects")},
+                       "flags": onboarding.check_against_cv(profile, cv) if cv else [],
+                       "strategy": strategy.summary(), "tracks": {k: {"label": v["label"], "brief": v.get("brief", ""), "titles": v.get("titles", [])}
+                                                                    for k, v in strategy.tracks().items()}}}
+
+
+# ---------- profiles: several people, each starting from a CV ----------
+
+def _cookie(resp: JSONResponse, pid: str) -> JSONResponse:
+    resp.set_cookie(profiles.COOKIE, pid, max_age=60 * 60 * 24 * 365, samesite="lax")
+    return resp
+
+
+@app.post("/api/profiles/switch")
+def profile_switch(body: dict = Body(...)):
+    if not profiles.get(body.get("id", "")):
+        raise HTTPException(404, "No such profile")
+    profiles.remember(body["id"])
+    return _cookie(JSONResponse({"ok": True}), body["id"])
+
+
+@app.post("/api/profiles/new")
+def profile_new(body: dict = Body(default={})):
+    """Start a profile: an empty one, ready for its CV."""
+    row = profiles.create((body.get("name") or "New profile").strip())
+    profiles.remember(row["id"])
+    return _cookie(JSONResponse({"id": row["id"]}), row["id"])
+
+
+@app.post("/api/profiles/{pid}/cv")
+def profile_cv(pid: str, body: dict = Body(...)):
+    """Read the CV (an uploaded file or pasted text) and build the profile and its strategy, as a background job."""
+    row = profiles.get(pid)
+    if not row or row.get("legacy"):
+        raise HTTPException(404, "No such profile")
+    job = JOBS.get(ONBOARDING.get(pid, ""))
+    if job and job["status"] == "running":
+        return {"job": job["id"]}
+    try:
+        text = onboarding.read_cv(body.get("filename", ""), body["data"]) if body.get("data") else (body.get("text") or "").strip()
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if len(text) < 300:
+        raise HTTPException(400, "Upload your CV (PDF or Word), or paste its full text.")
+    engine = body.get("engine") if body.get("engine") in ENGINES else "claude:opus"
+    profiles.update(pid, status="setting_up")
+    token = profiles.activate(pid)
+    try:
+        jid = start_job("onboarding", lambda t, n, w, e, progress: onboarding.run(pid, t, n, w, e, progress),
+                        text, row["name"], body.get("wants") or "", engine)
+    finally:
+        profiles.reset(token)
+    ONBOARDING[pid] = jid
+    return {"job": jid}
+
+
+@app.post("/api/profile/basics")
+def profile_basics(body: dict = Body(...)):
+    """Corrections from the review screen (and Settings): contact details and the summary."""
+    profile = load_profile()
+    for k in ("name", "headline", "email", "phone", "location", "linkedin", "nationality", "availability"):
+        if k in body:
+            profile["basics"][k] = str(body[k]).strip()
+    if "summary" in body:
+        profile["summary"] = str(body["summary"]).strip()
+    save_profile(profile)
+    pid = profiles.current()
+    if profile["basics"]["name"] and not profiles.is_legacy(pid):
+        profiles.update(pid, name=profile["basics"]["name"])
+    return {"ok": True}
+
+
+@app.post("/api/profile/bullet")
+def profile_bullet(body: dict = Body(...)):
+    """Fix, add or remove one bullet of a role (review screen). {role, id?, text} ; text '' removes."""
+    profile = load_profile()
+    role = next((r for r in profile["experience"] if r["id"] == body.get("role")), None)
+    if not role:
+        raise HTTPException(404, "No such role")
+    text = str(body.get("text") or "").strip()
+    row = next((b for b in role["bullets"] if b["id"] == body.get("id")), None)
+    if row and not text:
+        role["bullets"].remove(row)
+    elif row:
+        row["text"] = text
+    elif text:
+        n = 1 + max([int(b["id"].rsplit("-", 1)[-1]) for b in role["bullets"] if b["id"].rsplit("-", 1)[-1].isdigit()] or [0])
+        role["bullets"].append({"id": f"{role['id']}-{n}", "text": text})
+    save_profile(profile)
+    return {"ok": True}
+
+
+@app.post("/api/profiles/ready")
+def profile_ready():
+    """The person has checked what was read: the app opens."""
+    profiles.update(profiles.current(), status="ready")
+    return {"ok": True}
+
+
+@app.delete("/api/profiles/{pid}")
+def profile_delete(pid: str):
+    try:
+        profiles.delete(pid)
+    except KeyError:
+        raise HTTPException(404, "No such profile")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    resp = JSONResponse({"ok": True})
+    return _cookie(resp, profiles.last_used())
+
+
+@app.post("/api/strategy/refresh")
+def strategy_refresh(body: dict = Body(default={})):
+    """Read the profile again and redo the strategy: after the CV changes, or the goal does."""
+    engine = body.get("engine") if body.get("engine") in ENGINES else _prefs(load_profile())["defaults"].get("engine", "claude:opus")
+    wants = body.get("wants")
+    if wants is None:
+        wants = strategy.load().get("career_wants", "")
+
+    def work(progress):
+        s = onboarding.analyse(engine, wants, progress)
+        progress("Setting up Discover with employers and searches for you")
+        return {"seeded": onboarding.seed_sources(progress), "strategy": strategy.summary()}
+    return {"job": start_job("strategy", work)}
+
+
+@app.post("/api/strategy/company")
+def strategy_company(body: dict = Body(...)):
+    """Add one of the suggested employers to the favourites."""
+    try:
+        row = discover.add_favourite(body.get("name", ""))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    s = strategy.load()
+    for c in s.get("companies") or []:
+        if c["name"].lower() == body.get("name", "").lower():
+            c["added"] = True
+    if not s.get("fallback"):
+        strategy.save(s)
+    return row
 
 
 @app.post("/api/profile")
@@ -113,6 +317,15 @@ def tailor_start(body: dict = Body(...)):
     if len((body.get("jd") or "").strip()) < 200:
         raise HTTPException(400, "Paste the full job description (at least a few paragraphs).")
     return {"job": start_job("tailor", lambda req, progress: tailor.run(req, progress), body)}
+
+
+@app.post("/api/tailor/prompt")
+def tailor_prompt(body: dict = Body(...)):
+    """The tailoring brief as plain text for another AI chat, for when Claude's usage is used up."""
+    try:
+        return {"prompt": tailor.manual_prompt(body)}
+    except EngineError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.get("/api/jobs/{jid}")
@@ -226,17 +439,17 @@ def export():
 
 
 @app.get("/api/preview.pdf")
-def preview(variant: str = "flowcv", max_pages: str = "auto", market: str = "india", track: str = "ic_lead"):
-    pdf = in_thread(tailor.preview_base, {"variant": variant, "max_pages": max_pages, "market": market})
+def preview(variant: str = "flowcv", max_pages: str = "auto", market: str = "", track: str = ""):
+    pdf = in_thread(tailor.preview_base, {"variant": variant, "max_pages": max_pages, "market": market or tailor.home_market()})
     return FileResponse(pdf, media_type="application/pdf", headers={"Cache-Control": "no-store"})
 
 
 # ---------- interview prep ----------
-INTERVIEW_JOBS: dict[str, str] = {}   # app id -> the prep job running for it
+INTERVIEW_JOBS: dict[str, str] = {}   # profile/app id -> the prep job running for it
 
 
 def _prep_job(app_id: str) -> dict | None:
-    job = JOBS.get(INTERVIEW_JOBS.get(app_id, ""))
+    job = JOBS.get(INTERVIEW_JOBS.get(_key(app_id), ""))
     return job if job and job["status"] == "running" else None
 
 
@@ -245,7 +458,7 @@ def interview_list():
     from . import interview
     rows = []
     for r in tracker.load():
-        folder = OUTPUT / r["id"]
+        folder = output_dir() / r["id"]
         if not (folder / "report.json").exists():
             continue
         d = interview.load(r["id"])
@@ -268,10 +481,10 @@ def interview_start(app_id: str, body: dict = Body(default={})):
     from . import interview
     _app_dir(app_id)
     if _prep_job(app_id):
-        return {"job": INTERVIEW_JOBS[app_id]}
+        return {"job": INTERVIEW_JOBS[_key(app_id)]}
     engine = _prefs(load_profile())["defaults"].get("engine", "claude:opus")
     jid = start_job("interview", lambda a, o, e, progress: interview.generate(a, o, e, progress), app_id, body, engine)
-    INTERVIEW_JOBS[app_id] = jid
+    INTERVIEW_JOBS[_key(app_id)] = jid
     return {"job": jid}
 
 
@@ -280,7 +493,7 @@ def interview_say(app_id: str, body: dict = Body(...)):
     """Spoken answers for one round's talking questions."""
     from . import interview
     _app_dir(app_id)
-    key = f"{app_id}:say:{body.get('round', '')}"
+    key = _key(f"{app_id}:say:{body.get('round', '')}")
     job = JOBS.get(INTERVIEW_JOBS.get(key, ""))
     if job and job["status"] == "running":
         return {"job": job["id"]}
@@ -294,7 +507,7 @@ CODE_JOBS: dict[str, str] = {}   # app id -> the coding-test job running for it
 
 
 def _code_job(app_id: str) -> dict | None:
-    job = JOBS.get(CODE_JOBS.get(app_id, ""))
+    job = JOBS.get(CODE_JOBS.get(_key(app_id), ""))
     return job if job and job["status"] == "running" else None
 
 
@@ -312,14 +525,14 @@ def codetest_start(app_id: str, body: dict = Body(default={})):
     from . import interview
     _app_dir(app_id)
     if _code_job(app_id):
-        return {"job": CODE_JOBS[app_id]}
+        return {"job": CODE_JOBS[_key(app_id)]}
     engine = _prefs(load_profile())["defaults"].get("engine", "claude:opus")
     level = int(body.get("level") or 0)
     if 1 <= level <= 5:
         jid = start_job("codetest-more", lambda a, l, e, progress: interview.more_problems(a, l, e, progress), app_id, level, engine)
     else:
         jid = start_job("codetest", lambda a, e, progress: interview.generate_codetest(a, e, progress), app_id, engine)
-    CODE_JOBS[app_id] = jid
+    CODE_JOBS[_key(app_id)] = jid
     return {"job": jid}
 
 
@@ -338,7 +551,8 @@ CONTACT_JOBS: dict[str, str] = {}   # app id -> the contact search running for i
 @app.get("/api/contacts")
 def contacts_all():
     from . import contacts
-    running = {a: j for a, j in CONTACT_JOBS.items() if JOBS.get(j, {}).get("status") == "running"}
+    mine = _key("")
+    running = {a[len(mine):]: j for a, j in CONTACT_JOBS.items() if a.startswith(mine) and JOBS.get(j, {}).get("status") == "running"}
     return {"contacts": contacts.load_all(), "running": running}
 
 
@@ -346,11 +560,11 @@ def contacts_all():
 def contacts_find(app_id: str):
     from . import contacts
     _app_dir(app_id)
-    job = JOBS.get(CONTACT_JOBS.get(app_id, ""))
+    job = JOBS.get(CONTACT_JOBS.get(_key(app_id), ""))
     if job and job["status"] == "running":
         return {"job": job["id"]}
     jid = start_job("contacts", lambda a, progress: contacts.find(a, progress), app_id)
-    CONTACT_JOBS[app_id] = jid
+    CONTACT_JOBS[_key(app_id)] = jid
     return {"job": jid}
 
 
@@ -361,7 +575,7 @@ def coldmail_list():
     from . import coldmail
     rows = []
     for r in tracker.load():
-        if not (OUTPUT / r["id"] / "report.json").exists():
+        if not (output_dir() / r["id"] / "report.json").exists():
             continue
         mails = coldmail.load(r["id"])["mails"]
         rows.append({k: r.get(k, "") for k in ("id", "company", "role", "status", "logo", "created")}
@@ -604,6 +818,23 @@ def scan_start(body: dict = Body(...)):
             raise HTTPException(400, "Add a favourite company in Settings first.")
     return {"job": start_job("scan", lambda ids, d, p, progress: discover.scan(ids, d, p, progress=progress),
                              ids, days, prefs)}
+
+
+@app.get("/api/discover/prompt")
+def discover_prompt(days: int = 14):
+    """The prompt for Claude in Chrome, and the page to open it on."""
+    prefs = _prefs(load_profile())
+    return {"prompt": discover.chrome_prompt(prefs, days), "url": discover.chrome_start_url(prefs, days)}
+
+
+@app.post("/api/discover/import")
+def discover_import(body: dict = Body(...)):
+    """Jobs pasted from Claude in Chrome: ranked and stored like a scan."""
+    prefs = _prefs(load_profile())
+    try:
+        return in_thread(discover.import_jobs, body.get("text", ""), int(body.get("days") or prefs["days"]), prefs)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.get("/api/found")

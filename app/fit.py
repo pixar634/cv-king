@@ -1,11 +1,11 @@
 """Is this job at the candidate's level? Read by code from the JD: years of experience asked for,
-years leading people, and scope (managing managers, org size). A keyword match says nothing about
-level; a "Head of Engineering, 10+ years, manages managers" JD can share every soft word with a Lead CV.
+years leading people, scope (managing managers, org size), and the seniority its title names against the
+candidate's own level (from their strategy). A keyword match says nothing about level; a "Head of Engineering,
+10+ years, manages managers" JD can share every soft word with a Lead CV.
 """
 import re
 
-ABOVE_TITLE = re.compile(r"\b(head of|director|vp\b|vice president|chief|cto\b|cpo\b|distinguished|fellow\b|"
-                         r"senior staff|senior principal|senior director|group (engineering )?manager)\b", re.I)
+PM_TITLE = re.compile(r"product (manager|owner|lead)|\bapm\b", re.I)
 NUM = r"(\d{1,2})\s*\+?\s*(?:(?:-|–|to)\s*(\d{1,2})\s*\+?\s*)?"
 YEARS = re.compile(NUM + r"(?:years?|yrs?)\b(?:\s+of)?(?P<after>[^.\n;]{0,70})", re.I)
 LEADING = re.compile(r"(\d{1,2})\s*\+?\s*(?:years?\s+|yrs?\s+)?(?:of\s+)?(?:experience\s+)?(?:in\s+)?"
@@ -65,10 +65,13 @@ def strong_skills(profile: dict) -> set[str]:
 
 
 def level_check(title: str, text: str, candidate_years: int, strong: set[str] | None = None,
-                max_years: int | None = None) -> dict:
+                max_years: int | None = None, profile: dict | None = None) -> dict:
     """verdict: 'ok', 'stretch' (rank lower, say why) or 'above' (hide from Discover, warn when tailoring)."""
+    from . import strategy
     from .keywords import taxonomy
     req = requirements(text)
+    lv = strategy.level()
+    held = [r.get("title", "") for r in (profile or {}).get("experience", [])]
     reasons, verdict = [], "ok"
     # A verdict only ever goes up: a later "stretch" must never soften an earlier "above".
     raise_to = lambda v: "above" if "above" in (v, verdict) else "stretch" if "stretch" in (v, verdict) else "ok"
@@ -96,17 +99,18 @@ def level_check(title: str, text: str, candidate_years: int, strong: set[str] | 
     if req["scope"]:
         verdict = "above"
         reasons.append(f"manages managers or a large org (\"{req['scope'][:50]}\")")
-    if req["leading_years"] is not None and req["leading_years"] >= 2:
+    if req["leading_years"] is not None and req["leading_years"] >= 2 and not lv.get("people_manager"):
         verdict = raise_to("above" if req["leading_years"] >= 5 else "stretch")
-        reasons.append(f"asks for {req['leading_years']}+ years managing people (your CV shows mentoring, no direct reports)")
-    if req["pm_years"] is not None and req["pm_years"] >= 3:
+        reasons.append(f"asks for {req['leading_years']}+ years managing people (your CV shows no direct reports)")
+    if req["pm_years"] is not None and req["pm_years"] >= 3 and not any(PM_TITLE.search(t) for t in held):
         verdict = raise_to("above" if req["pm_years"] >= 8 else "stretch")
-        reasons.append(f"asks for {req['pm_years']}+ years as a product manager (your CV shows product work, not a PM title)")
-    if re.search(r"group product manager|principal product manager|staff product manager|director of product|"
-                 r"head of product|vp,? product|chief product", title or "", re.I):
+        reasons.append(f"asks for {req['pm_years']}+ years as a product manager (your CV shows no PM title)")
+    # The seniority the title names, against the candidate's own level: two steps up is a stretch, three is above.
+    named = strategy.title_level(title or "")
+    if named is not None and named - lv["rank"] >= 3:
         verdict = "above"
-        reasons.append("product leadership title, several steps above a first PM role")
-    elif ABOVE_TITLE.search(title or ""):
+        reasons.append(f"title is three or more levels above yours ({lv['label']})")
+    elif named is not None and named - lv["rank"] >= 2:
         verdict = raise_to("stretch")
-        reasons.append("title is above Lead")
+        reasons.append(f"title is two levels above yours ({lv['label']})")
     return {"verdict": verdict, "reasons": reasons, **{k: v for k, v in req.items() if k != "fields"}}

@@ -1,31 +1,43 @@
 """Tailor many jobs at once. Each item runs the full pipeline on its own thread; a semaphore caps how
 many model calls run together (subscription limits), and the state is on disk so a reload, or a
-restart, shows what happened."""
+restart, shows what happened. Each profile has its own queue; the semaphore is shared, because the model
+calls all go through one subscription."""
+import contextvars
 import datetime as dt
 import json
 import threading
 import uuid
 
 from . import discover, extract, tailor
-from .config import OUTPUT
+from .config import output_dir
+from .profiles import current
 
-QFILE = OUTPUT / "_queue.json"
 _lock = threading.Lock()
-_items: dict[str, dict] = {}
+_queues: dict[str, dict[str, dict]] = {}   # profile id -> item id -> item
 _slots = {"n": 2, "sem": threading.Semaphore(2)}
 
 
+def _qfile():
+    return output_dir() / "_queue.json"
+
+
+def _mine() -> dict[str, dict]:
+    return _queues.setdefault(current(), {})
+
+
 def _save():
-    QFILE.parent.mkdir(parents=True, exist_ok=True)
-    QFILE.write_text(json.dumps(list(_items.values()), indent=1, ensure_ascii=False), "utf-8")
+    f = _qfile()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(list(_mine().values()), indent=1, ensure_ascii=False), "utf-8")
 
 
 def _load():
-    if QFILE.exists() and not _items:
-        for it in json.loads(QFILE.read_text("utf-8")):
+    items, f = _mine(), _qfile()
+    if f.exists() and not items:
+        for it in json.loads(f.read_text("utf-8")):
             if it["status"] in ("queued", "running"):  # the process that ran them is gone
                 it["status"], it["stage"] = "error", "Interrupted by a restart. Retry it."
-            _items[it["id"]] = it
+            items[it["id"]] = it
 
 
 def set_concurrency(n: int) -> None:
@@ -37,12 +49,12 @@ def set_concurrency(n: int) -> None:
 def items() -> list[dict]:
     with _lock:
         _load()
-        return sorted(_items.values(), key=lambda i: i["created"], reverse=True)
+        return sorted(_mine().values(), key=lambda i: i["created"], reverse=True)
 
 
 def _update(item_id: str, **kw):
     with _lock:
-        _items[item_id].update(kw)
+        _mine()[item_id].update(kw)
         _save()
 
 
@@ -69,7 +81,7 @@ def _work(item_id: str, req: dict, source: dict):
                 if req.get("market") in (None, "", "auto"):
                     req["market"] = got["market"]
             if req.get("market") in (None, "", "auto"):
-                req["market"] = "india"
+                req["market"] = tailor.home_market()
             _update(item_id, company=req.get("company") or "", role=req.get("role") or "", market=req["market"])
             report = tailor.run(req, progress)
             _update(item_id, status="done", stage="Tailored", app_id=report["id"], company=report["company"],
@@ -90,13 +102,14 @@ def add(entries: list[dict], defaults: dict) -> list[str]:
             "job_id", "location", "posted", "replace_id")}
         source = {k: e[k] for k in ("found_id", "url") if e.get(k)}
         with _lock:
-            _items[item_id] = {"id": item_id, "created": dt.datetime.now().isoformat(timespec="seconds"),
+            _mine()[item_id] = {"id": item_id, "created": dt.datetime.now().isoformat(timespec="seconds"),
                                "entry": e, "defaults": defaults,
                                "status": "queued", "stage": "Waiting for a free slot", "company": e.get("company", ""),
                                "role": e.get("role", ""), "market": req.get("market", ""), "app_id": None,
                                "source": source | ({"text": True} if e.get("jd") else {})}
             _save()
-        threading.Thread(target=_work, args=(item_id, req, source), daemon=True).start()
+        ctx = contextvars.copy_context()   # the item belongs to the profile that queued it
+        threading.Thread(target=ctx.run, args=(_work, item_id, req, source), daemon=True).start()
         ids.append(item_id)
     return ids
 
@@ -104,7 +117,7 @@ def add(entries: list[dict], defaults: dict) -> list[str]:
 def retry(item_id: str) -> list[str]:
     with _lock:
         _load()
-        it = _items.pop(item_id, None)
+        it = _mine().pop(item_id, None)
         _save()
     if not it or not it.get("entry"):
         return []
@@ -114,7 +127,7 @@ def retry(item_id: str) -> list[str]:
 def remove(item_id: str) -> None:
     with _lock:
         _load()
-        it = _items.get(item_id)
+        it = _mine().get(item_id)
         if it and it["status"] not in ("queued", "running"):
-            _items.pop(item_id)
+            _mine().pop(item_id)
             _save()

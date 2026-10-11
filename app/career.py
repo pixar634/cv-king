@@ -5,29 +5,30 @@ import datetime as dt
 import json
 import re
 
-from .config import DATA, ROOT
+from .config import ROOT, data_dir
 from .engines import get_engine, parse_json_reply
 from .fit import strong_skills
 from .profile import experience_years_label, fmt_month, load_profile
 
-MAP_FILE = DATA / "career_map.json"
 
-BRIEF = """You are a career strategist who knows how software, product and AI-delivery careers progress in
-India, the UK, the EU, the Gulf and Singapore. Read this candidate's whole history and propose the realistic
-routes forward over the next five years, starting from their current role.
+
+def _file(name: str):
+    return data_dir() / name
+
+BRIEF = """You are a career strategist who knows how careers in {field} progress in {where}, and the
+neighbouring functions people in this field move into. Read this candidate's whole history and propose the
+realistic routes forward over the next five years, starting from their current role.
 
 TODAY: {today}. TOTAL EXPERIENCE (computed from dates): {years} years. CURRENT ROLE: {current}.
-THE CANDIDATE WANTS: to grow beyond "Lead engineer" if a better route exists; open to Engineering Manager,
-Product Manager (Senior/Lead PM eventually), Forward Deployed / Applied AI, Solutions, Staff/Principal IC, and
-role families that are new (Forward Deployed Engineering barely existed three years ago; more will appear).
+ALREADY WORKS IN (so never describe this as a switch or a new field for them): {field}; industries: {industries}.
+THE CANDIDATE WANTS: {wants}
 LONG-TERM GOAL: {goal}
 SALARY (yearly, the candidate's own log; growth figures computed by code): {salary}
 
-RESEARCH FIRST. Use web search before you answer: what is trending in 2026 for each route (in India and, where
-relevant, the UK, EU, Gulf, Singapore); which certifications employers actually screen for at each step (e.g. AWS or
-Azure certifications for solutions and cloud-heavy routes, product certifications for PM, none where the market
-doesn't care); what people do to get promoted from one step to the next (projects, visibility, scope); and salary
-ranges for each step in India from sources you can cite. Prefer recent, specific sources (job boards' salary pages,
+RESEARCH FIRST. Use web search before you answer: what is trending this year for each route (in {country} and, where
+relevant, abroad); which certifications employers actually screen for at each step (none where the market doesn't
+care); what people do to get promoted from one step to the next (projects, visibility, scope); and salary ranges for
+each step in {country} from sources you can cite. Prefer recent, specific sources (job boards' salary pages,
 levels/compensation sites, recruiter reports, company career ladders).
 
 PROFILE (every fact is true; nothing else is):
@@ -58,7 +59,7 @@ Return JSON only:
           "to_build": ["the concrete gaps to close before or during this step"],
           "search_titles": ["2 to 4 job titles to search for this step"],
           "certifications": [{{"name": "e.g. AWS Certified Solutions Architect - Associate", "need": "screened" | "helps", "why": "short"}}],
-          "projects": ["1 to 3 concrete projects the candidate could take on (at work or on Lighthouse) to earn this step"],
+          "projects": ["1 to 3 concrete projects the candidate could take on (at work or on the side) to earn this step"],
           "salary_band": {{"low": 0, "high": 0, "unit": "LPA", "source": "URL the range came from"}},
           "ladder_note": "how this level is named across companies (e.g. 'Senior PM = PM II at some product companies')"}}
       ]}}
@@ -66,12 +67,17 @@ Return JSON only:
 Rules:
 - 5 or 6 paths, each with 3 or 4 steps that together span the next five years. Step 1 must be reachable from
   the current role within a year (a lateral move or the next level), not a leap.
-- Paths must differ in kind: individual contributor, people management, product, forward-deployed / applied AI,
-  solutions / customer-facing, and (if it fits) a founder or early-stage route.
+- Paths must differ in kind: for example deeper specialist work in the same function, people management, a move to
+  an adjacent function this profile can reach, a domain or industry switch, a customer-facing route, and (if it
+  fits) an early-stage or founder route. Choose the kinds that fit this field and this person.
+- Name every route by what actually changes for this person: the employer type (vendor to bank, services to product,
+  employee to founder), the function, the level, or the industry. A route that stays in the field they already work in
+  must say so ("Same field, other side of the table: ..."), never "Switch to ..." that field. Compare each route with
+  the profile before naming it: if the profile already shows the work, the route is a step up or a move, not a switch.
 - Be honest about stretch: if a step usually needs things the profile lacks (direct reports, years as a PM),
   say so in to_build and mark the path's fit accordingly. Never put anything in you_have the profile doesn't show.
-- Use title conventions of product companies and global companies hiring in India; mention where Indian IT
-  services titles differ.
+- Use the title conventions of the employers this person would actually apply to in {country}; mention where
+  other kinds of employer name the same level differently.
 - A salary_band must be copied from a source you found, with its URL; if you found none, set salary_band to null.
   Never estimate a number yourself. Certifications only where employers actually ask for them; [] otherwise.
 - Include the long-term goal as the final step of every route that can reach it (it may sit beyond five years);
@@ -98,25 +104,22 @@ def history(profile: dict) -> list[dict]:
     return sorted(items, key=lambda x: x["sort"])
 
 
-LOG_FILE = DATA / "growth_log.json"
-GOAL_FILE = DATA / "career_goal.json"
-SALARY_FILE = DATA / "salary.json"
 
 
 def goal() -> dict:
-    return json.loads(GOAL_FILE.read_text("utf-8")) if GOAL_FILE.exists() else {}
+    return json.loads(_file("career_goal.json").read_text("utf-8")) if _file("career_goal.json").exists() else {}
 
 
 def set_goal(body: dict) -> dict:
     g = {"role": (body.get("role") or "").strip()[:80], "year": int(body.get("year") or 0) or None,
          "salary": float(body["salary"]) if str(body.get("salary") or "").strip() else None,
          "unit": body.get("unit") or "LPA"}
-    GOAL_FILE.write_text(json.dumps(g, indent=2), "utf-8")
+    _file("career_goal.json").write_text(json.dumps(g, indent=2), "utf-8")
     return g
 
 
 def salaries() -> list[dict]:
-    return json.loads(SALARY_FILE.read_text("utf-8")) if SALARY_FILE.exists() else []
+    return json.loads(_file("salary.json").read_text("utf-8")) if _file("salary.json").exists() else []
 
 
 def add_salary(year: int, amount: float, unit: str = "LPA", note: str = "") -> dict:
@@ -125,12 +128,12 @@ def add_salary(year: int, amount: float, unit: str = "LPA", note: str = "") -> d
         raise ValueError("Give a year and a yearly amount above zero.")
     row = {"id": uuid.uuid4().hex[:8], "year": int(year), "amount": float(amount), "unit": unit or "LPA", "note": (note or "")[:120]}
     rows = sorted([r for r in salaries() if r["year"] != row["year"]] + [row], key=lambda r: r["year"])
-    SALARY_FILE.write_text(json.dumps(rows, indent=2), "utf-8")
+    _file("salary.json").write_text(json.dumps(rows, indent=2), "utf-8")
     return row
 
 
 def remove_salary(row_id: str) -> None:
-    SALARY_FILE.write_text(json.dumps([r for r in salaries() if r["id"] != row_id], indent=2), "utf-8")
+    _file("salary.json").write_text(json.dumps([r for r in salaries() if r["id"] != row_id], indent=2), "utf-8")
 
 
 def projection() -> dict:
@@ -160,11 +163,11 @@ LOG_KINDS = {"did": "Shipped or did", "doing": "Doing now", "skill": "Learned a 
 
 
 def load() -> dict | None:
-    return json.loads(MAP_FILE.read_text("utf-8")) if MAP_FILE.exists() else None
+    return json.loads(_file("career_map.json").read_text("utf-8")) if _file("career_map.json").exists() else None
 
 
 def log() -> list[dict]:
-    return json.loads(LOG_FILE.read_text("utf-8")) if LOG_FILE.exists() else []
+    return json.loads(_file("growth_log.json").read_text("utf-8")) if _file("growth_log.json").exists() else []
 
 
 def add_log(kind: str, text: str, date: str = "", use_on_cv: bool = False) -> dict:
@@ -178,7 +181,7 @@ def add_log(kind: str, text: str, date: str = "", use_on_cv: bool = False) -> di
     entry = {"id": uuid.uuid4().hex[:8], "kind": kind if kind in LOG_KINDS else "did", "text": text[:600],
              "date": date or dt.date.today().isoformat(), "use_on_cv": bool(use_on_cv and kind in ("skill", "cert"))}
     rows = log() + [entry]
-    LOG_FILE.write_text(json.dumps(rows, indent=2, ensure_ascii=False), "utf-8")
+    _file("growth_log.json").write_text(json.dumps(rows, indent=2, ensure_ascii=False), "utf-8")
     if entry["use_on_cv"]:
         profile = load_profile()
         have = set(profile.get("confirmed_skills", []))
@@ -191,7 +194,7 @@ def remove_log(entry_id: str) -> None:
     from .profile import save_profile
     rows = log()
     gone = next((r for r in rows if r["id"] == entry_id), None)
-    LOG_FILE.write_text(json.dumps([r for r in rows if r["id"] != entry_id], indent=2, ensure_ascii=False), "utf-8")
+    _file("growth_log.json").write_text(json.dumps([r for r in rows if r["id"] != entry_id], indent=2, ensure_ascii=False), "utf-8")
     if gone and gone.get("use_on_cv"):
         profile = load_profile()
         profile["confirmed_skills"] = [s for s in profile.get("confirmed_skills", []) if s != gone["text"]]
@@ -201,8 +204,12 @@ def remove_log(entry_id: str) -> None:
 def generate(engine_id: str = "claude:opus", progress=lambda m: None) -> dict:
     profile = load_profile()
     current = next((r for r in profile["experience"] if not r.get("end")), profile["experience"][0])
-    notes_path = ROOT / "CAREER_MAP.md"
+    from . import profiles, strategy
+    notes_path = data_dir() / "career_notes.md"
+    if not notes_path.exists() and profiles.is_legacy():
+        notes_path = ROOT / "CAREER_MAP.md"
     notes = notes_path.read_text("utf-8")[:9000] if notes_path.exists() else ""
+    strat, home = strategy.load(), strategy.home()
     facts = {k: profile[k] for k in ("experience", "education", "certifications", "projects", "skills") if k in profile}
     g, proj = goal(), projection()
     goal_txt = (f"{g.get('role') or 'not set'} by {g.get('year') or 'no year set'}"
@@ -215,6 +222,9 @@ def generate(engine_id: str = "claude:opus", progress=lambda m: None) -> dict:
         if "needed_growth" in proj:
             sal_txt += f"; the goal needs {proj['needed_growth']}% a year from now"
     brief = BRIEF.format(today=dt.date.today().isoformat(), years=experience_years_label(profile), goal=goal_txt, salary=sal_txt,
+                         field=strat.get("field") or "their field", industries=", ".join(strat.get("industries") or []) or "see the profile", country=home["country"] or "their country",
+                         where=f"{home['country'] or 'their country'}, the UK, the EU, the Gulf and Singapore",
+                         wants=strat.get("career_wants") or "not stated; propose the strongest routes the profile supports",
                          current=f"{current['title']} at {current['company']}",
                          profile=json.dumps(facts, ensure_ascii=False)[:30000], notes=notes,
                          growth="\n".join(f"- {e['date']} [{LOG_KINDS.get(e['kind'], e['kind'])}] {e['text']}" for e in log()) or "(empty)")
@@ -247,7 +257,7 @@ def generate(engine_id: str = "claude:opus", progress=lambda m: None) -> dict:
            "summary": raw.get("summary", ""), "goal_assessment": raw.get("goal_assessment", ""),
            "trends": [t for t in (raw.get("trends") or []) if isinstance(t, dict) and t.get("text")][:8],
            "goal": g, "history": history(profile), "paths": paths}
-    MAP_FILE.write_text(json.dumps(out, indent=2, ensure_ascii=False), "utf-8")
+    _file("career_map.json").write_text(json.dumps(out, indent=2, ensure_ascii=False), "utf-8")
     return out
 
 
@@ -281,9 +291,11 @@ def matching_jobs(titles: list[str], days: int, prefs: dict) -> list[dict]:
 def search_web(titles: list[str], prefs: dict, progress=lambda m: None) -> dict:
     """A live web search for one step's titles, in the candidate's regions, through Discover's web source."""
     from .discover import from_websearch, rank, rank_signature, with_profile
-    regions = prefs.get("regions") or ["remote", "bengaluru", "india", "world"]
-    where = {"remote": "remote", "bengaluru": "Bengaluru", "india": "India", "world": "UK, EU, Dubai or Singapore"}
-    query = f"{' OR '.join(titles[:3])} jobs in " + ", ".join(where[r] for r in regions if r in where)
+    from . import strategy
+    from .discover import regions
+    home = strategy.home()
+    where = {"remote": "remote", "city": home["city"], "country": home["country"], "world": "UK, EU, Dubai or Singapore"}
+    query = f"{' OR '.join(titles[:3])} jobs in " + ", ".join(where[r] for r in regions(prefs) if where.get(r))
     progress(f"Searching the web: {query}")
     _, jobs = from_websearch(query, prefs.get("days", 14))
     ev = strong_skills(load_profile())

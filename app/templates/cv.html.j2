@@ -47,6 +47,10 @@ strong { font-weight: 700; }
 .role { font-weight: 700; break-after: avoid; }
 .org { font-style: italic; break-after: avoid; }
 .org .client { font-style: normal; }
+/* FlowCV and Classic: the location trails the company on its own line of text ("Company · City"). */
+.v-flowcv .entry .org, .v-flowcv .entry .loc, .v-classic .entry .org, .v-classic .entry .loc { display: inline; font-style: italic; }
+.v-flowcv .entry .loc::before, .v-classic .entry .loc::before { content: " \00B7  "; white-space: pre; }
+.loc:empty { display: none !important; }
 .when > span { display: block; }
 ul.bul { list-style: none; margin-top: 1pt; }
 /* The bullet is inline text on its own line, with a hanging indent. A floating (absolute) bullet
@@ -57,10 +61,13 @@ ul.bul li::before { content: "\2022"; display: inline-block; width: 9pt; text-in
 .langs span + span::before { content: "  \00B7  "; white-space: pre; }
 .gdpr { margin-top: 10pt; font-size: 7.4pt; line-height: 1.25; color: #333; }
 
+/* Location comes after the company in the text, never between the dates and the title: an ATS
+   resume parser takes the line after the dates as the employer, and filed "Bengaluru" as the company. */
+/* The headline sits on its own line below the name: beside it, a parser reads "Paul Lead" as the surname. */
 /* ---------- FlowCV serif (the original design) ---------- */
 html.v-flowcv { font-family: "Amiri", "Times New Roman", serif; }
 .v-flowcv .hd h1 { font-size: 25pt; }
-.v-flowcv .hd h1 .headline { font-weight: 400; font-style: italic; font-size: 18.5pt; margin-left: 6pt; }
+.v-flowcv .hd .headline { font-weight: 400; font-style: italic; font-size: 14pt; margin-top: 1pt; }
 .v-flowcv .sec > h2, .v-classic .sec > h2 { font-size: 11.4pt; letter-spacing: 0.02em; padding-bottom: 2pt; border-bottom: 1.4pt solid #000; margin-bottom: 5.5pt; }
 .v-flowcv .entry { display: grid; grid-template-columns: 33mm 1fr; column-gap: 6mm; }
 .v-flowcv .skills .entry { margin-bottom: 2.5pt; }
@@ -75,10 +82,9 @@ html.v-flowcv { font-family: "Amiri", "Times New Roman", serif; }
 /* ---------- Classic: one column, Calibri, dates right ---------- */
 html.v-classic { font-family: Calibri, Carlito, "Liberation Sans", sans-serif; line-height: 1.28; }
 .v-classic .hd h1 { font-size: 22pt; }
-.v-classic .hd h1 .headline { font-size: 15pt; font-weight: 400; color: #222; margin-left: 6pt; }
+.v-classic .hd .headline { font-size: 12.5pt; font-weight: 400; color: #222; margin-top: 1pt; }
 .v-classic .sec > h2 { font-size: 10.6pt; letter-spacing: 0.06em; border-bottom-width: 1pt; }
 .v-classic .entry > .when { float: right; text-align: right; margin-left: 6mm; }
-.v-classic .entry > .when > .loc { font-style: italic; }
 .v-classic ul.bul { clear: right; }
 .v-classic .skills .entry > .when, .v-classic .skills .entry > .what { float: none; display: inline; margin: 0; }
 .v-classic .skills .entry > .when::after { content: ": "; }
@@ -150,12 +156,13 @@ html.v-modern { font-family: "Plex", "Segoe UI", sans-serif; line-height: 1.34; 
 <body{% if doc.marks %} class="marks"{% endif %}>
 {% if doc.marks %}<div class="chg-legend"><span style="--c:#fff1bf">Rewritten for this JD</span><span style="--c:#dfeaff">Two bullets merged</span><span style="--c:#ffe1d6">Headline / summary written for this JD</span><span style="--c:transparent;margin-left:auto">Hover a highlighted line to see your original</span></div>{% endif %}
 <header class="hd h-{{ doc.header_style }}">
-  <h1><span class="name">{{ doc.name }}</span> <span class="headline{% if doc.marks and doc.marks.headline %} c-new{% endif %}"{% if doc.marks and doc.marks.headline %} title="Your profile: {{ doc.marks.headline }}"{% endif %}>{{ doc.headline }}</span></h1>
+  <h1><span class="name">{{ doc.name }}</span></h1>
+  <div class="headline{% if doc.marks and doc.marks.headline %} c-new{% endif %}"{% if doc.marks and doc.marks.headline %} title="Your profile: {{ doc.marks.headline }}"{% endif %}>{{ doc.headline }}</div>
   <ul class="contact">
-    <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4.5h18a1.5 1.5 0 0 1 1.5 1.5v.35L12 13 1.5 6.35V6A1.5 1.5 0 0 1 3 4.5zM1.5 8.1 12 14.8l10.5-6.7V18a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 18z"/></svg><a href="mailto:{{ doc.email }}">{{ doc.email }}</a></li>
-    <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8a15.2 15.2 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"/></svg><span>{{ doc.phone }}</span></li>
-    <li><svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M12 1.5a7.5 7.5 0 0 0-7.5 7.5c0 5.6 7.5 13.5 7.5 13.5S19.5 14.6 19.5 9A7.5 7.5 0 0 0 12 1.5zm0 10.3a2.8 2.8 0 1 1 0-5.6 2.8 2.8 0 0 1 0 5.6z"/></svg><span>{{ doc.location }}</span></li>
-    <li><svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.5h16A2.5 2.5 0 0 1 22.5 4v16a2.5 2.5 0 0 1-2.5 2.5H4A2.5 2.5 0 0 1 1.5 20V4A2.5 2.5 0 0 1 4 1.5zM5.6 9.4V18h2.9V9.4zm1.45-4.4a1.68 1.68 0 1 0 0 3.36 1.68 1.68 0 0 0 0-3.36zM10.4 9.4V18h2.9v-4.5c0-1.2.5-2 1.6-2 1 0 1.4.75 1.4 2V18h2.9v-5.3c0-2.6-1.4-3.5-3.2-3.5-1.4 0-2.3.65-2.7 1.35V9.4z"/></svg><a href="https://{{ doc.linkedin }}">{{ doc.linkedin }}</a></li>
+    {% if doc.email %}    <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4.5h18a1.5 1.5 0 0 1 1.5 1.5v.35L12 13 1.5 6.35V6A1.5 1.5 0 0 1 3 4.5zM1.5 8.1 12 14.8l10.5-6.7V18a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 18z"/></svg><a href="mailto:{{ doc.email }}">{{ doc.email }}</a></li>{% endif %}
+    {% if doc.phone %}    <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8a15.2 15.2 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"/></svg><span>{{ doc.phone }}</span></li>{% endif %}
+    {% if doc.location %}    <li><svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M12 1.5a7.5 7.5 0 0 0-7.5 7.5c0 5.6 7.5 13.5 7.5 13.5S19.5 14.6 19.5 9A7.5 7.5 0 0 0 12 1.5zm0 10.3a2.8 2.8 0 1 1 0-5.6 2.8 2.8 0 0 1 0 5.6z"/></svg><span>{{ doc.location }}</span></li>{% endif %}
+    {% if doc.linkedin %}    <li><svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.5h16A2.5 2.5 0 0 1 22.5 4v16a2.5 2.5 0 0 1-2.5 2.5H4A2.5 2.5 0 0 1 1.5 20V4A2.5 2.5 0 0 1 4 1.5zM5.6 9.4V18h2.9V9.4zm1.45-4.4a1.68 1.68 0 1 0 0 3.36 1.68 1.68 0 0 0 0-3.36zM10.4 9.4V18h2.9v-4.5c0-1.2.5-2 1.6-2 1 0 1.4.75 1.4 2V18h2.9v-5.3c0-2.6-1.4-3.5-3.2-3.5-1.4 0-2.3.65-2.7 1.35V9.4z"/></svg><a href="https://{{ doc.linkedin }}">{{ doc.linkedin }}</a></li>{% endif %}
     {% if doc.header_line %}
     <li class="wide"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M12 1.5a10.5 10.5 0 1 0 0 21 10.5 10.5 0 0 0 0-21zm-1.3 15-4.4-4.4 1.6-1.6 2.8 2.8 5.9-5.9 1.6 1.6z"/></svg><span>{{ doc.header_line }}</span></li>
     {% endif %}
@@ -178,10 +185,11 @@ html.v-modern { font-family: "Plex", "Segoe UI", sans-serif; line-height: 1.34; 
   <h2>WORK EXPERIENCE</h2>
   {% for r in doc.experience %}
   <div class="entry">
-    <div class="when"><span class="dates">{{ r.dates }}</span><span class="loc">{{ r.location }}</span></div>
+    <div class="when"><span class="dates">{{ r.dates }}</span></div>
     <div class="what">
       <div class="role">{{ r.title }}</div>
       <div class="org">{{ r.company }}{% if r.client %}<span class="client"> · Client: {{ r.client }}</span>{% endif %}</div>
+      <div class="loc">{{ r.location }}</div>
       {% if r.bullets %}<ul class="bul">
         {% for b in r.bullets %}{% set m = doc.marks.bullets[r.id][loop.index0] if doc.marks and doc.marks.bullets.get(r.id) and loop.index0 < doc.marks.bullets[r.id]|length else None %}<li{% if m and m.status != "kept" %} class="c-{{ m.status }}" title="Original: {{ m.before | join(' + ') }}"{% endif %}>{{ b | md }}</li>
         {% endfor %}
@@ -214,10 +222,11 @@ html.v-modern { font-family: "Plex", "Segoe UI", sans-serif; line-height: 1.34; 
   <h2>EDUCATION</h2>
   {% for e in doc.education %}
   <div class="entry">
-    <div class="when"><span class="dates">{{ e.year }}</span><span class="loc">{{ e.location }}</span></div>
+    <div class="when"><span class="dates">{{ e.year }}</span></div>
     <div class="what">
       <div class="role">{{ e.degree }}</div>
       <div class="org">{{ e.institution }}</div>
+      <div class="loc">{{ e.location }}</div>
       {% for d in e.details %}<div class="detail">{{ d }}</div>{% endfor %}
     </div>
   </div>
@@ -233,10 +242,12 @@ html.v-modern { font-family: "Plex", "Segoe UI", sans-serif; line-height: 1.34; 
 </section>
 {% endif %}
 
+{% if doc.languages %}
 <section class="sec">
   <h2>LANGUAGES</h2>
   <div class="langs">{% for l in doc.languages %}<span>{{ l.name }}{% if l.level %} ({{ l.level }}){% endif %}</span>{% endfor %}</div>
 </section>
+{% endif %}
 
 {% if doc.interests %}
 <section class="sec">

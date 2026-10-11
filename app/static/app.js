@@ -4,9 +4,12 @@ const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Browser storage only holds conveniences (cover-letter drafts, list filters, last tab); it may be unavailable.
+// Keys are per profile (the first profile, "me", keeps its original keys), so two people on one browser don't mix drafts.
+let PROFILE_ID = "me";
+const pkey = (k) => (PROFILE_ID && PROFILE_ID !== "me" ? `${PROFILE_ID}:${k}` : k);
 const store = {
-  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
-  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } },
+  get(k, d) { try { const v = localStorage.getItem(pkey(k)); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(pkey(k), JSON.stringify(v)); } catch { /* private mode */ } },
 };
 
 async function api(path, opts = {}) {
@@ -74,6 +77,9 @@ document.addEventListener("wheel", (e) => {
 // ================= boot =================
 async function boot() {
   S.state = await api("/api/state");
+  PROFILE_ID = S.state.setup ? S.state.setup.current : S.state.current;
+  wireProfileMenu();
+  if (S.state.setup) { renderSetup(); return; }   // a profile with no CV read yet: onboarding (setup.js)
   S.prefs = S.state.profile.preferences;
   wireNav();
   wireCapsule();
@@ -217,7 +223,8 @@ function renderJobCard() {
   const state = running
     ? `<div><div class="progress"></div><div class="progress__text" id="jobStage">${esc(item.stage || "Working")}</div>
         <p class="type-meta" style="margin-top:4px">Usually one to three minutes. It carries on if you leave; follow it in Pipeline.</p></div>`
-    : failed ? `<div class="notice notice--bad">${esc(item.stage)}</div><div class="job__foot"><span class="type-meta"></span><button class="btn btn--primary" id="jRetry">Try again</button></div>`
+    : failed ? `<div class="notice notice--bad">${esc(item.stage)}</div><div class="job__foot"><span class="type-meta"></span><button class="btn btn--primary" id="jRetry">Try again</button></div>
+        <button class="btn btn--sm btn--block" id="jManual" title="Copy the whole brief and paste it into Gemini or any AI chat">Copy prompt for another AI</button>`
     : done ? (S.app.scores.after < S.app.scores.ceiling - 3
         ? `<div class="job__foot"><span class="type-meta">Your profile can now reach ${S.app.scores.ceiling}% for this job; this CV is at ${S.app.scores.after}%.</span><button class="btn btn--primary btn--sm" id="jRedo">Re-tailor</button></div>`
         : `<div class="job__foot"><span class="type-meta">Tailored from your profile only. Every number and skill was checked against it.</span><button class="btn btn--sm" id="jRedo" title="Rewrite this CV with your current profile">Re-tailor</button></div>`)
@@ -226,7 +233,8 @@ function renderJobCard() {
         <label class="field"><span class="eyebrow">Market</span><select id="jMarket" class="control--sm">${marketOptions(market)}</select></label>
         <label class="field"><span class="eyebrow">Career track</span><select id="jTrack" class="control--sm"><option value="auto" ${D().track === "auto" ? "selected" : ""}>From the job title</option>${Object.entries(S.state.tracks).map(([k, t]) => `<option value="${k}" ${k === D().track ? "selected" : ""}>${esc(t.label)}</option>`).join("")}</select></label>
       </div>
-      <button class="btn btn--accent btn--lg btn--block" id="jGo" title="Ctrl+Enter">Tailor my CV ${ICON.arrow}</button>`;
+      <button class="btn btn--accent btn--lg btn--block" id="jGo" title="Ctrl+Enter">Tailor my CV ${ICON.arrow}</button>
+      <button class="btn btn--sm btn--ghost btn--block" id="jManual" title="Claude's usage used up? Copy the whole brief (rules, your CV, this job) and paste it into Gemini or any AI chat. You get sections to copy into your CV builder.">Copy prompt for another AI</button>`;
   $("#jobCard").innerHTML = `
     <article class="card plunk job">
       <div class="job__head">
@@ -244,6 +252,18 @@ function renderJobCard() {
     </article>`;
   const go = $("#jGo");
   if (go) go.onclick = () => tailorJob();
+  const manual = $("#jManual");
+  if (manual) manual.onclick = async () => {
+    manual.disabled = true;
+    try {
+      const m = $("#jMarket") ? $("#jMarket").value : (j.market || "auto");
+      const { prompt } = await api("/api/tailor/prompt", { body: { jd: j.description, company: ($("#jCompany")?.value || j.company || "").trim(), role: ($("#jRole")?.value || j.role || "").trim(),
+        location: j.location || "", market: m, track: $("#jTrack") ? $("#jTrack").value : D().track, max_pages: D().max_pages } });
+      await copy(prompt);
+      toast("Copied. Paste it into a new chat in Gemini (or any AI), then copy its sections into your CV builder.", 7000);
+    } catch (e) { toast(e.message, 5000); }
+    finally { manual.disabled = false; }
+  };
   const retry = $("#jRetry");
   if (retry) retry.onclick = () => { S.item = null; renderJobCard(); tailorJob(); };
   const prep = $("#jPrep");
@@ -391,7 +411,7 @@ function previewBase() {
   $("#pvTitle").innerHTML = `<span class="tag">Your profile</span><span class="type-meta">Not tailored yet, ${esc(S.state.layouts[D().variant].label)}</span>`;
   ["#download", "#markApplied", "#editToggle"].forEach((s) => ($(s).hidden = true));
   closeEditor();
-  const market = D().market === "auto" ? "india" : D().market;
+  const market = D().market === "auto" ? S.state.home_market : D().market;
   const q = new URLSearchParams({ variant: D().variant, max_pages: D().max_pages, market, t: Date.now() });
   renderChips();
   setFrame(`/api/preview.pdf?${q}`);
@@ -716,14 +736,66 @@ function wireDiscover() {
   $("#days").value = String(S.prefs.days || 14);
   $("#minMatch").value = String(store.get("cv.minMatch", 40));
   $("#sortBy").value = store.get("cv.sortBy", "match");
-  $("#days").onchange = async () => { await savePrefs({ days: +$("#days").value }); loadFound(); };
+  $("#days").onchange = async () => { await savePrefs({ days: +$("#days").value }); loadFound(); chromeReady().catch(() => {}); };
+  chromeReady().catch(() => {});
   $("#minMatch").onchange = () => { store.set("cv.minMatch", +$("#minMatch").value); loadFound(); };
   $("#sortBy").onchange = () => { store.set("cv.sortBy", $("#sortBy").value); loadFound(); };
   $("#scanAll").onclick = () => scanNow("all");
   $("#scanFav").onclick = () => scanNow("favourites");
   $("#scanIndeed").onclick = () => scanNow("indeed");
+  $("#chromeGo").onclick = chromeFind;
+  $("#chromePaste").onclick = () => openImport();
   $("#dockClear").onclick = () => { S.selected.clear(); loadFound(); };
   $("#dockGo").onclick = tailorSelected;
+}
+
+// ---- Claude in Chrome: copy the prompt, open a search tab, paste the reply back ----
+// The prompt is fetched ahead of the click, so the copy and the new tab both happen inside the click itself.
+let CHROME = { days: 0, data: null };
+async function chromeReady() {
+  const days = +$("#days").value;
+  if (CHROME.data && CHROME.days === days) return CHROME.data;
+  CHROME = { days, data: await api(`/api/discover/prompt?days=${days}`) };
+  return CHROME.data;
+}
+async function chromeFind() {
+  const days = +$("#days").value;
+  const ready = CHROME.data && CHROME.days === days ? CHROME.data : null;
+  if (ready) window.open(ready.url, "_blank", "noopener");   // inside the click, so the browser allows the new tab
+  try {
+    const d = ready || await chromeReady();
+    try { await navigator.clipboard.writeText(d.prompt); toast("Prompt copied. In the new tab, open Claude in Chrome's side panel and paste it.", 6000); }
+    catch { openImport(d.prompt); toast("Couldn't copy by itself. Copy the prompt from the box.", 6000); }
+    if (!ready) window.open(d.url, "_blank", "noopener");
+  } catch (e) { toast(e.message, 5000); }
+}
+function openImport(prompt) {
+  const box = $("#importPanel");
+  box.hidden = false;
+  box.innerHTML = `<div class="card import">
+    ${prompt ? `<label class="field"><span class="eyebrow">The prompt (copy it into Claude in Chrome)</span><textarea id="impPrompt" rows="5" readonly>${esc(prompt)}</textarea></label>` : ""}
+    <label class="field"><span class="eyebrow">Paste Claude's reply here</span>
+      <textarea id="impText" rows="7" placeholder='{"jobs": [{"title": "...", "company": "...", "location": "...", "url": "...", "posted": "...", "description": "..."}]}'></textarea></label>
+    <div class="import__acts"><button class="btn btn--accent" id="impGo">Add to Discover</button><button class="btn btn--ghost" id="impClose">Close</button></div>
+    <div id="impMsg" class="type-meta"></div></div>`;
+  $("#impClose").onclick = () => { box.hidden = true; box.innerHTML = ""; };
+  $("#impGo").onclick = async () => {
+    const msg = $("#impMsg"), btn = $("#impGo"), text = $("#impText").value;
+    if (text.trim().length < 20) { msg.textContent = "Paste Claude's reply first."; return; }
+    btn.disabled = true; msg.textContent = "Reading and ranking…";
+    try {
+      const r = await api("/api/discover/import", { body: { text, days: +$("#days").value } });
+      const why = Object.entries(r.why || {}).map(([k, n]) => `${n} ${k}`).join(", ");
+      msg.innerHTML = `${esc(`Read ${r.read} jobs. ${r.shown} now show in Discover${r.hidden ? `; ${r.hidden} were filtered out (${why})` : ""}.`)}`
+        + `${r.older ? ` ${esc(r.older + " were older than your window.")}` : ""}${r.skipped ? ` ${esc(r.skipped + " had no title or link.")}` : ""}${r.no_description ? ` ${esc(r.no_description + " had no full description, so their match is a rough 40%.")}` : ""}${r.notes ? ` Claude noted: ${esc(r.notes)}` : ""}`;
+      $("#impText").value = "";
+      S.openLatest = true;
+      await loadFound();
+      if (r.shown) msg.innerHTML += ` They're listed under <b>Found today</b>, below your favourites.`;
+    } catch (e) { msg.textContent = e.message; }
+    finally { btn.disabled = false; }
+  };
+  box.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 // mode: "all" (every source but Indeed), "favourites", or "indeed" (one Indeed search per career track)
@@ -736,23 +808,27 @@ async function scanNow(mode) {
     const { job } = await api("/api/scan", { body: { days: +$("#days").value, favourites: mode === "favourites", indeed: mode === "indeed" } });
     const res = await pollJob(job, (l) => ($(".progress__text", line).textContent = l.msg));
     await loadFound();
-    toast(`${res.jobs.length} fresh jobs found`);
+    const failed = (res.results || []).filter((r) => r.error), read = (res.results || []).reduce((n, r) => n + (r.count || 0), 0);
+    if (failed.length && failed.length === (res.results || []).length) toast(`Nothing came back. ${failed[0].error}`, 7000);
+    else toast(`${read} postings read, ${res.jobs.length} fresh for you${failed.length ? `. ${failed.length} source${failed.length > 1 ? "s" : ""} failed: see Settings, Sources` : ""}`, 5000);
   } catch (e) { toast(e.message, 4000); }
   finally { btns.forEach((b) => (b.disabled = false)); line.hidden = true; }
 }
 
 // Area filter: a per-browser convenience, so it lives in local storage.
-const REGIONS = [["remote", "Remote"], ["bengaluru", "Bengaluru"], ["india", "Rest of India"],
-  ["world", "Rest of the world"]];
+const regionList = () => [["remote", "Remote"], ["city", S.state.home.city || "My city"],
+  ["country", S.state.home.country ? `Rest of ${S.state.home.country}` : "Rest of my country"], ["world", "Rest of the world"]];
+const cityRe = () => new RegExp((S.state.home.city_names || []).map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") || "$^", "i");
 function renderAreaBar() {
   const sel = new Set(store.get("cv.areas", []));
   const strict = store.get("cv.areasStrict", false);
-  const regions = new Set(S.prefs.regions || REGIONS.map((r) => r[0]));
+  const regions = new Set(S.prefs.regions || regionList().map((r) => r[0]));
+  const zones = Object.values(S.state.areas || {})[0] || [];
   $("#areaBar").innerHTML = `<div class="filter-group"><span class="eyebrow">Region</span><div class="chip-row">
-    ${REGIONS.map(([k, label]) => `<button data-reg="${k}" class="chip ${regions.has(k) ? "on" : ""}" ${k === "world" ? 'title="UK, EU, the Gulf and Singapore: your visa targets. US roles stay out."' : ""}>${label}</button>`).join("")}</div></div>
-    ${regions.has("bengaluru") ? `<div class="filter-group"><span class="eyebrow">Bengaluru area</span><div class="chip-row">
-      ${(S.state.areas.Bengaluru || []).map((z) => `<button data-z="${esc(z)}" class="chip ${sel.has(z) ? "on" : ""}">${esc(z)}</button>`).join("")}</div>
-      ${sel.size ? `<label class="check"><input type="checkbox" id="areaStrict" ${strict ? "checked" : ""}> Hide Bengaluru jobs that don't say where</label>` : ""}</div>` : ""}`;
+    ${regionList().map(([k, label]) => `<button data-reg="${k}" class="chip ${regions.has(k) ? "on" : ""}" ${k === "world" ? 'title="UK, EU, the Gulf and Singapore: your visa targets. US roles stay out."' : ""}>${label}</button>`).join("")}</div></div>
+    ${regions.has("city") && zones.length ? `<div class="filter-group"><span class="eyebrow">${esc(S.state.home.city)} area</span><div class="chip-row">
+      ${zones.map((z) => `<button data-z="${esc(z)}" class="chip ${sel.has(z) ? "on" : ""}">${esc(z)}</button>`).join("")}</div>
+      ${sel.size ? `<label class="check"><input type="checkbox" id="areaStrict" ${strict ? "checked" : ""}> Hide ${esc(S.state.home.city)} jobs that don't say where</label>` : ""}</div>` : ""}`;
   $$("#areaBar [data-reg]").forEach((b) => (b.onclick = async () => {
     regions.has(b.dataset.reg) ? regions.delete(b.dataset.reg) : regions.add(b.dataset.reg);
     if (!regions.size) { toast("Keep at least one region."); return; }
@@ -769,10 +845,10 @@ function renderAreaBar() {
 
 function areaFilter(jobs) {
   const sel = new Set(store.get("cv.areas", []));
-  if (!sel.size || !(S.prefs.regions || []).includes("bengaluru")) return jobs;
+  if (!sel.size || !(S.prefs.regions || []).includes("city")) return jobs;
   const strict = store.get("cv.areasStrict", false);
-  const blr = (j) => /bengaluru|bangalore/i.test(j.location || "");
-  // the area filter narrows Bengaluru jobs only; remote and other regions pass through
+  const blr = (j) => cityRe().test(j.location || "");
+  // the area filter narrows jobs in your city only; remote and other regions pass through
   return jobs.filter((j) => !blr(j) || (j.areas || []).some((a) => sel.has(a)) || (!strict && !(j.areas || []).length));
 }
 
@@ -838,7 +914,7 @@ async function loadFound() {
         const meta = sc.length ? `${sc.length} scan${sc.length > 1 ? "s" : ""}, last at ${sc[sc.length - 1].at.slice(11, 16)}, ${sc.reduce((n, s) => n + s.new, 0)} new` : "";
         const list = groups[d];
         const dated = list.filter((j) => j.posted), unknown = list.filter((j) => !j.posted);
-        return `<details class="disclosure disclosure--lg day" ${i === 0 && !pinned.length ? "open" : ""}><summary><span>${dayLabel(d)}</span><span class="disclosure__sub num">${list.length} job${list.length === 1 ? "" : "s"}</span><span class="disclosure__aside">${meta}</span></summary>
+        return `<details class="disclosure disclosure--lg day" ${i === 0 && (!pinned.length || S.openLatest) ? "open" : ""}><summary><span>${dayLabel(d)}</span><span class="disclosure__sub num">${list.length} job${list.length === 1 ? "" : "s"}</span><span class="disclosure__aside">${meta}</span></summary>
           ${dated.length ? `<div class="card-grid">${dated.map(card).join("")}</div>` : ""}
           ${unknown.length ? `<div class="eyebrow group-title">Posting date unknown. Check the posting before you spend time on it.</div><div class="card-grid">${unknown.map(card).join("")}</div>` : ""}</details>`;
       }).join("")
@@ -853,6 +929,11 @@ async function loadFound() {
       renderDock();
     };
   });
+  if (S.openLatest) {   // just imported: show where the new jobs landed, under the pinned favourites
+    S.openLatest = false;
+    const first = $("#foundList details.day:not(.day--fav)");
+    if (first) first.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   renderDock();
 }
 
@@ -1748,7 +1829,7 @@ function renderCm() {
         <div class="field"><span class="type-meta">Their role</span><div class="chip-row" id="cmRole">
           ${Object.keys(CM.roles).map((k) => `<button class="chip ${k === CM.role ? "on" : ""}" data-role="${k}" title="${esc(CM.roles[k])}">${esc(cmRoleLabel(k))}</button>`).join("")}</div></div>
         <label class="field"><span class="type-meta">Context, if any</span>
-          <textarea id="cmContext" rows="2" placeholder="e.g. Saw their post about growing the payments team; we met at PyCon Bengaluru">${esc(pre.context || "")}</textarea></label>
+          <textarea id="cmContext" rows="2" placeholder="e.g. Saw their post about growing the team; we met at a conference">${esc(pre.context || "")}</textarea></label>
         <div class="field"><span class="type-meta">Tone</span><div class="seg" id="cmTone">${Object.entries(CM.tones).map(([k, l]) => `<button data-tone="${k}" class="${k === CM.tone ? "on" : ""}">${esc(l)}</button>`).join("")}</div></div>
         <button class="btn btn--accent btn--block" id="cmWrite">Write the email ${ICON.arrow}</button>
         <div id="cmBusy"></div>
@@ -1769,7 +1850,7 @@ function renderCm() {
 
 const cmFollowDue = (m) => { if (!m.sent_at) return ""; const d = new Date(m.sent_at + "T00:00:00"); d.setDate(d.getDate() + 6); return d; };
 const cmCvLink = () => (CM.sel === CM_NEW
-  ? `/api/preview.pdf?${new URLSearchParams({ variant: D().variant, max_pages: D().max_pages, market: D().market === "auto" ? "india" : D().market })}`
+  ? `/api/preview.pdf?${new URLSearchParams({ variant: D().variant, max_pages: D().max_pages, market: D().market === "auto" ? S.state.home_market : D().market })}`
   : `/apps/${CM.sel}/pdf?download=1`);
 
 function cmCard(m) {
@@ -2202,7 +2283,7 @@ async function generateCareer() {
 }
 
 // ================= settings drawer =================
-function openDrawer() { FX.show($("#scrim"), "scrim"); FX.show($("#drawer"), "drawer"); fillDrawer(); }
+function openDrawer() { FX.show($("#scrim"), "scrim"); FX.show($("#drawer"), "drawer"); fillDrawer(); fillStrategy(); }
 function closeDrawer() { FX.hide($("#drawer"), "drawer"); FX.hide($("#scrim"), "scrim"); }
 
 function wireDrawer() {

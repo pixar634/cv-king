@@ -35,7 +35,7 @@ class Term:
 
 
 class Taxonomy:
-    def __init__(self):
+    def __init__(self, extra: dict | None = None):
         raw = yaml.safe_load((KNOWLEDGE / "skills.yaml").read_text("utf-8"))
         cs = set(raw.get("case_sensitive", []))
         self.terms: dict[str, Term] = {}
@@ -44,6 +44,27 @@ class Taxonomy:
                 # A regex alias exists because the bare name is ambiguous (Go, R): don't add it back.
                 names = set(aliases) | (set() if any(a.startswith("re:") for a in aliases) else {canon})
                 self.terms[canon] = Term(canon, [_alias_regex(a, canon in cs) for a in names], category)
+        self._add_extra(extra or {})
+
+    def _add_extra(self, extra: dict) -> None:
+        """The profile's own field vocabulary (from its strategy): new terms, or more aliases for known ones.
+        Plain words only; a term the shared list already knows under another name joins that entry."""
+        for category, entries in extra.items():
+            if not isinstance(entries, dict):
+                continue
+            for canon, aliases in entries.items():
+                canon = str(canon).strip()
+                names = {str(a).strip() for a in (aliases or []) if isinstance(a, str) and 0 < len(a.strip()) <= 60
+                         and not a.startswith("re:")} | {canon}
+                names = {n for n in names if len(n) >= 2}
+                if not canon or not names:
+                    continue
+                known = canon if canon in self.terms else self.canonical_for(canon)
+                pats = [_alias_regex(n, False) for n in names]
+                if known:
+                    self.terms[known].patterns += pats
+                else:
+                    self.terms[canon] = Term(canon, pats, str(category))
 
     def find(self, text: str) -> dict[str, int]:
         """canonical -> count, longest match wins where spans overlap (React Native is not React)."""
@@ -71,9 +92,17 @@ class Taxonomy:
         return None
 
 
-@lru_cache(maxsize=1)
 def taxonomy() -> Taxonomy:
-    return Taxonomy()
+    """The shared skills list plus the current profile's own field terms."""
+    from . import strategy
+    p = strategy.path()
+    return _taxonomy(str(p), p.stat().st_mtime if p.exists() else 0.0)
+
+
+@lru_cache(maxsize=8)
+def _taxonomy(strategy_path: str, mtime: float) -> Taxonomy:
+    from . import strategy
+    return Taxonomy(strategy.extra_terms())
 
 
 @dataclass

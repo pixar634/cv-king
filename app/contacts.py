@@ -7,7 +7,7 @@ import json
 import re
 
 from .coldmail import EMAIL_RE
-from .config import OUTPUT
+from .config import output_dir
 from .engines import get_engine, parse_json_reply
 
 FILE = "contacts.json"
@@ -15,20 +15,21 @@ FILE = "contacts.json"
 BRIEF = """Find the people at {company} a candidate should write to about this opening: "{role}"{where}.
 
 Search the web properly: run at least six searches before you answer, for example
-  "{company}" engineering manager {city}
-  "{company}" head of engineering India
+  "{company}" {function} manager {city}
+  "{company}" head of {function} {country}
   "{company}" talent acquisition {city}
-  "{company}" recruiter India
-  site:linkedin.com/in "{company}" {city} engineering manager
+  "{company}" recruiter {country}
+  site:linkedin.com/in "{company}" {city} {function} manager
   site:linkedin.com/in "{company}" talent acquisition
   "{company}" careers email
 plus searches for any team, product or manager the job description names. Search result titles and snippets
 for LinkedIn profiles are a fine source (do not open LinkedIn itself).
 
 Who to include, most useful first:
-- the hiring manager or the manager of the team this role joins (engineering manager, director or head of
-  engineering for engineering roles; the product lead or head of product for product roles);
-- product managers or engineering leads on that team;
+- the hiring manager or the manager of the team this role joins (for example the engineering manager or head of
+  engineering for an engineering role, the product lead for a product role, the head of business analysis,
+  delivery or operations for an analyst role);
+- leads or senior people on that team;
 - the HR head, talent acquisition lead or recruiters who hire for this kind of role, ideally in {region}.
 Include everyone you find who plausibly fits, up to 12, with a "confidence": "high" when a source clearly shows
 them in that role at this company now, "medium" when it's likely (for example a profile snippet), "low" when the
@@ -58,12 +59,12 @@ JOB DESCRIPTION (for the team, location and hiring manager it may name):
 
 
 def load(app_id: str) -> dict | None:
-    p = OUTPUT / app_id / FILE
+    p = output_dir() / app_id / FILE
     return json.loads(p.read_text("utf-8")) if p.exists() else None
 
 
 def load_all() -> dict:
-    return {d.name: json.loads((d / FILE).read_text("utf-8")) for d in OUTPUT.iterdir() if (d / FILE).exists()}
+    return {d.name: json.loads((d / FILE).read_text("utf-8")) for d in output_dir().iterdir() if (d / FILE).exists()}
 
 
 def _url(u) -> str:
@@ -78,14 +79,19 @@ def _email(e, source) -> str:
 
 
 def find(app_id: str, progress=lambda m: None) -> dict:
-    folder = OUTPUT / app_id
+    folder = output_dir() / app_id
     report = json.loads((folder / "report.json").read_text("utf-8"))
     jd = (folder / "jd.txt").read_text("utf-8")
     loc = (report.get("job") or {}).get("location", "")
     progress(f"Searching the web for the people who hire for this role at {report['company']} (about a minute)")
-    city = (loc.split(",")[0].strip() or "India") if loc else "India"
+    from . import strategy
+    home = strategy.home()
+    country = home["country"] or "India"
+    city = (loc.split(",")[0].strip() or home["city"] or country) if loc else (home["city"] or country)
+    function = re.sub(r"(?i)\b(junior|jr\.?|associate|senior|sr\.?|lead|principal|staff|head of|manager|i{1,3})\b|[,(].*$", "",
+                      report["role"]).strip() or report["role"]
     brief = BRIEF.format(company=report["company"], role=report["role"], where=f" in {loc}" if loc else "",
-                         city=city, region=loc or "the role's location", jd=jd[:8000])
+                         city=city, country=country, function=function, region=loc or "the role's location", jd=jd[:8000])
     raw = parse_json_reply(get_engine("claude:sonnet").run(brief, timeout=420, tools=["WebSearch"]))
     people, seen = [], set()
     for p in raw.get("people") or []:

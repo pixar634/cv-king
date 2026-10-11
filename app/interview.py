@@ -16,7 +16,7 @@ import datetime as dt
 import json
 import re
 
-from .config import OUTPUT
+from .config import output_dir
 from .engines import get_engine, parse_json_reply
 from .profile import brief_view, experience_years_label, load_profile
 
@@ -185,7 +185,7 @@ JOB DESCRIPTION:
 
 
 def _folder(app_id: str):
-    return OUTPUT / app_id
+    return output_dir() / app_id
 
 
 def _read(app_id: str, name: str) -> dict | None:

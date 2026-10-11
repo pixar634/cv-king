@@ -5,7 +5,7 @@ import re
 
 import yaml
 
-from .config import KNOWLEDGE, OUTPUT
+from .config import KNOWLEDGE, output_dir
 from .engines import get_engine, parse_json_reply
 from .keywords import jd_keywords
 from .profile import brief_view, load_profile, profile_text
@@ -57,7 +57,7 @@ def phrase_flags(text: str) -> list[dict]:
 
 def write_letter(app_id: str, voice_id: str, engine_id: str) -> dict:
     from .tailor import _allowed_numbers, _text_flags, markets, soften  # avoid an import cycle
-    folder = OUTPUT / app_id
+    folder = output_dir() / app_id
     report = json.loads((folder / "report.json").read_text("utf-8"))
     plan = json.loads((folder / "plan.json").read_text("utf-8"))
     jd_text = (folder / "jd.txt").read_text("utf-8")
@@ -89,7 +89,7 @@ def write_letter(app_id: str, voice_id: str, engine_id: str) -> dict:
 
 
 def keep_letter(app_id: str, text: str, voice_id: str) -> None:
-    folder = OUTPUT / app_id
+    folder = output_dir() / app_id
     (folder / "cover_letter.txt").write_text(text.strip() + "\n", "utf-8")
     report = json.loads((folder / "report.json").read_text("utf-8"))
     report["cover_letter"], report["cover_voice"] = text.strip(), voice_id

@@ -7,9 +7,8 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
-from .config import OUTPUT
+from .config import output_dir
 
-TRACK = OUTPUT / "applications.json"
 STATUSES = ["Generated", "Applied", "Recruiter call", "Interviewing", "Offer", "Rejected", "No response", "Withdrawn"]
 _lock = threading.Lock()
 
@@ -26,16 +25,23 @@ JOB_HOSTS = ("linkedin.com", "naukri.com", "naukrigulf.com", "indeed.com", "glas
 SECOND_LEVEL = ("co.in", "co.uk", "com.sg", "com.au", "co.jp", "com.br", "ac.in", "org.in", "net.in", "ae", "gov.sg")
 
 
+def _file() -> Path:
+    return output_dir() / "applications.json"
+
+
 def load() -> list[dict]:
-    if not TRACK.exists():
+    f = _file()
+    if not f.exists():
         return []
-    return json.loads(TRACK.read_text("utf-8"))
+    return json.loads(f.read_text("utf-8"))
 
 
 def _save(rows: list[dict]) -> None:
-    tmp = TRACK.with_suffix(".tmp")
+    f = _file()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_suffix(".tmp")
     tmp.write_text(json.dumps(rows, indent=2, ensure_ascii=False), "utf-8")
-    tmp.replace(TRACK)
+    tmp.replace(f)
 
 
 def domain_from_url(url: str) -> str:
@@ -62,7 +68,7 @@ def fetch_logo(app_id: str, domain: str) -> bool:
     (it returns 404 for unknown sites), DuckDuckGo's as a fallback; anything tiny is rejected."""
     if not domain:
         return False
-    out = OUTPUT / app_id / "logo.png"
+    out = output_dir() / app_id / "logo.png"
     for url in (f"https://www.google.com/s2/favicons?domain={domain}&sz=128",
                 f"https://icons.duckduckgo.com/ip3/{domain}.ico"):
         try:
@@ -165,16 +171,16 @@ def export_xlsx() -> Path:
         ws.append(["", r["company"], r["role"], r["status"], r.get("applied_on", ""), r["created"][:10],
                    r["market"], r["layout"], r["pages"], r["score_before"] / 100, r["score_after"] / 100,
                    r["score_ceiling"] / 100, r.get("job_url", ""), r.get("notes", ""),
-                   str(OUTPUT / r["id"] / r["pdf"])])
+                   str(output_dir() / r["id"] / r["pdf"])])
         ws.row_dimensions[i].height = 24
         for col in (10, 11, 12):
             ws.cell(i, col).number_format = "0%"
         if r.get("job_url"):
             ws.cell(i, 13).hyperlink = r["job_url"]
             ws.cell(i, 13).font = Font(color="1D4E5C", underline="single")
-        logo = OUTPUT / r["id"] / "logo.png"
+        logo = output_dir() / r["id"] / "logo.png"
         if r.get("logo") and logo.exists():
-            thumb = OUTPUT / r["id"] / "logo_xl.png"
+            thumb = output_dir() / r["id"] / "logo_xl.png"
             Image.open(logo).convert("RGBA").resize((28, 28)).save(thumb)
             img = XLImage(str(thumb))
             img.width = img.height = 28
@@ -184,6 +190,6 @@ def export_xlsx() -> Path:
         ws.column_dimensions[get_column_letter(idx)].width = w
     ws.freeze_panes = "B2"
     ws.auto_filter.ref = f"A1:{get_column_letter(len(head))}{max(1, len(rows) + 1)}"
-    out = OUTPUT / f"applications_{dt.date.today().isoformat()}.xlsx"
+    out = output_dir() / f"applications_{dt.date.today().isoformat()}.xlsx"
     wb.save(out)
     return out

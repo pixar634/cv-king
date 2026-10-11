@@ -1,4 +1,5 @@
 """HTML -> PDF through the installed Chrome (no browser download), fitted to the page limit."""
+import contextvars
 import copy
 import re
 import threading
@@ -34,19 +35,19 @@ def build_doc(profile: dict, plan: dict, options: dict) -> dict:
         r = roles[rid]
         experience.append({
             "id": rid, "title": r["title"], "company": r["company"], "client": r.get("client", ""),
-            "dates": f"{fmt_month(r['start'])} – {fmt_month(r.get('end'))}", "location": r["location"],
+            "dates": f"{fmt_month(r['start'])} – {fmt_month(r.get('end'))}", "location": r.get("location", ""),
             "internship": bool(r.get("internship")), "bullets": list(bullets),
         })
     education = [
-        {"year": e["year"], "location": e["location"], "degree": e["degree"],
+        {"year": e.get("year", ""), "location": e.get("location", ""), "degree": e["degree"],
          "institution": e["institution"], "details": list(e.get("details", []))}
         for e in profile["education"] if not e.get("optional") or options.get("include_school")
     ]
     market_id = options["market"]
-    languages = [l for l in profile["languages"] if not l.get("markets") or market_id in l["markets"]]
+    languages = [l for l in profile.get("languages", []) if not l.get("markets") or market_id in l["markets"]]
     from .profile import projects_for
-    projects = [{"name": p["name"], "role": p["role"], "url": p.get("url", ""),
-                 "dates": f"{fmt_month(p['start'])} – {fmt_month(p.get('end'))}",
+    projects = [{"name": p["name"], "role": p.get("role", ""), "url": p.get("url", ""),
+                 "dates": f"{fmt_month(p.get('start'))} – {fmt_month(p.get('end'))}" if p.get("start") else "",
                  "bullets": [b["text"] for b in p["bullets"]]}
                 for p in projects_for(profile, options.get("track", ""))]
     variant = options.get("variant") if options.get("variant") in LAYOUTS else "flowcv"
@@ -54,12 +55,12 @@ def build_doc(profile: dict, plan: dict, options: dict) -> dict:
     layout = LAYOUTS[variant]
     density = "compact" if one_page else "normal"
     return {
-        "name": b["name"], "headline": plan["headline"], "email": b["email"], "phone": b["phone"],
-        "location": b["location"], "linkedin": b["linkedin"],
+        "name": b["name"], "headline": plan["headline"], "email": b.get("email", ""), "phone": b.get("phone", ""),
+        "location": b.get("location", ""), "linkedin": b.get("linkedin", ""),
         "header_line": (options.get("header_line") or "").strip(),
         "summary": plan["summary"], "skills": copy.deepcopy(plan["skills"]), "experience": experience,
         "projects": projects,
-        "education": education, "certifications": profile["certifications"], "languages": languages,
+        "education": education, "certifications": profile.get("certifications", []), "languages": languages,
         "interests": profile.get("interests") if options.get("include_interests", True) and not one_page else None,
         "gdpr": bool(options.get("gdpr")),
         "variant": variant, "header_style": layout["header"], "density": density,
@@ -188,7 +189,7 @@ def in_thread(fn, *args):
         except BaseException as e:  # re-raised on the caller's thread
             box["error"] = e
 
-    t = threading.Thread(target=target)
+    t = threading.Thread(target=contextvars.copy_context().run, args=(target,))   # keeps the caller's profile
     t.start()
     t.join()
     if "error" in box:

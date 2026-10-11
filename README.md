@@ -106,11 +106,19 @@ You know the drill: you find a role you'd be great at, spend an evening rewordin
 
 ---
 
+### 👥 Profiles: one install, anyone's career
+- 📄 **Start from a CV.** Add a profile, drop in the CV (PDF, Word or pasted text) and the app reads it into a master profile, then **checks every number, company and degree against the CV's own text** and flags anything it can't back up.
+- 🧭 **It works out your strategy.** From the CV and a web search it decides your field and level, how careers like yours progress, the kinds of role to aim at (your own function, the step up, adjacent moves), the title words that find them, the employers worth watching and the searches worth running.
+- 🔁 **Everything follows from that.** Tailor writes to your tracks and level (a Lead keeps "Lead"; an associate never claims "Manager"), Discover ranks against your roles and city, and Interview, Cold mail and Career read the same strategy. Employers with public job boards become Favourites automatically; the rest are one click in Settings.
+- 🧑‍🤝‍🧑 **Separate and private.** Each profile has its own CV, applications, scans, goal and salary log. Switch from the top bar; a browser remembers who it was.
+
+---
+
 ## 🏁 Get started
 
 1. 🐍 Install **Python 3.12** and make sure it's on your PATH.
 2. 🔑 Sign in to the **Claude CLI** (and optionally run `gemini` once and choose *Sign in with Google*).
-3. 📄 Add your master profile at `data/base_cv.json`. It's your only source of facts, and it stays out of git.
+3. 📄 Open the app and drop in your CV when it asks. It builds your profile, and you check it before anything uses it. (The first profile can also be written by hand at `data/base_cv.json`; others live under `profiles/`.)
 4. ▶️ Double-click **`start.bat`**. The first run sets everything up, then opens http://127.0.0.1:8765.
 5. ✂️ Paste your first job link and press **Tailor my CV**.
 
@@ -131,9 +139,9 @@ Keep the `start.bat` window open while you work; closing it stops the app.
 | `app/static/runner.js` | The coding-test sandbox: a network-free worker running JavaScript and Python (Pyodide) |
 | `knowledge/playbook.md` | The writing brief: how ATS and recruiters read a CV, and the rules |
 | `knowledge/markets.yaml` | Market conventions for each region |
-| `knowledge/tracks.yaml` | Career tracks and what each one leads with |
 | `knowledge/voices.yaml` | The five cover-letter voices and the banned clichés |
-| `data/` *(local only)* | Your profile, sources, goal and salary |
+| `app/profiles.py`, `app/strategy.py`, `app/onboarding.py` | Several people on one install; the per-profile strategy that drives every screen; reading a CV into a profile |
+| `data/`, `profiles/` *(local only)* | Profiles: each one's CV, strategy, sources, goal and salary |
 | `output/` *(local only)* | Per application: PDF, cover letter, JD, report, logo, plus the tracker |
 
 ---

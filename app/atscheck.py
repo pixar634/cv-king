@@ -36,11 +36,14 @@ def check(pdf: Path, doc: dict, profile: dict, max_pages: int) -> dict:
     add("glyphs", "No ligature or private-use glyphs (they break keyword search)", not bad, ", ".join(bad))
 
     b = profile["basics"]
-    add("email", "Email parses", b["email"] in flat, b["email"])
-    digits = re.sub(r"\D", "", b["phone"])
-    phone_re = re.compile(r"\+?" + r"[\s\-]?".join(digits))
-    add("phone", "Phone parses as one number", bool(phone_re.search(flat)), b["phone"])
-    add("linkedin", "LinkedIn URL parses", b["linkedin"] in flat, b["linkedin"])
+    if b.get("email"):
+        add("email", "Email parses", b["email"] in flat, b["email"])
+    digits = re.sub(r"\D", "", b.get("phone") or "")
+    if digits:
+        phone_re = re.compile(r"\+?" + r"[\s\-]?".join(digits))
+        add("phone", "Phone parses as one number", bool(phone_re.search(flat)), b["phone"])
+    if b.get("linkedin"):
+        add("linkedin", "LinkedIn URL parses", b["linkedin"] in flat, b["linkedin"])
     add("name", "Name is the first text on the page", flat.startswith(b["name"]), flat[:40])
 
     pos, last, order_ok = [], -1, True

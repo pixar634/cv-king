@@ -10,18 +10,17 @@ from pathlib import Path
 
 import yaml
 
-from . import atscheck, tracker
-from .config import KNOWLEDGE, ORIGINAL_TXT, OUTPUT
+from . import atscheck, strategy, tracker
+from .config import KNOWLEDGE, output_dir
 from .engines import EngineError, get_engine, parse_json_reply
 from .jd import parse_jd
 from .keywords import SOFT, covered, jd_keywords, jd_spelling, score, taxonomy, title_match
 from .layouts import LAYOUTS
 from .letters import first_letter_rules, phrase_flags
-from .profile import (all_skills, brief_view, bullet_index, experience_years_label, load_profile,
-                      profile_text)
+from .profile import (all_skills, brief_view, bullet_index, experience_years_label, fmt_month, load_profile,
+                      original_cv_path, profile_text)
 from .render import build_doc, fit_and_print, print_html, set_metadata
 
-BANNED_TITLE = re.compile(r"\b(staff|principal|architect|manager|head|director|vp|cto|founder|founding)\b", re.I)
 BANNED_WORDS = ["spearheaded", "orchestrated", "leveraged", "leveraging", "pioneered", "synergy",
                 "cutting-edge", "state-of-the-art", "robust", "seamless", "seamlessly", "passionate",
                 "results-driven", "go-getter", "delve", "tapestry", "holistic", "best-in-class",
@@ -52,42 +51,75 @@ def markets() -> dict:
 
 
 def tracks() -> dict:
-    return yaml.safe_load((KNOWLEDGE / "tracks.yaml").read_text("utf-8"))
+    """This profile's career tracks (from its strategy): what the CV leads with for each kind of target."""
+    return strategy.tracks()
 
 
 def track_for(title: str) -> str:
     """The career track a job title implies, for the 'auto' setting."""
-    t = (title or "").lower()
-    if re.search(r"forward[\s-]?deployed|deployment engineer|applied ai|implementation (engineer|lead)|field engineer|"
-                 r"customer engineer|resident (solutions )?architect|ai architect", t):
-        return "forward_deployed"
-    if re.search(r"solutions? (engineer|architect)|pre[\s-]?sales|sales engineer|gtm engineer|growth engineer|"
-                 r"developer advocate|devrel|partner engineer", t):
-        return "solutions_gtm"
-    if re.search(r"\bai engineer|agentic|ml engineer|llm engineer|ai platform", t) and "manager" not in t:
-        return "ai_engineer"
-    if re.search(r"engineering manager|\bem\b|tech(nical)? lead manager|head of engineering|director of engineering|development manager", t):
-        return "engineering_manager"
-    if re.search(r"product manager|product owner|\bapm\b|product lead|\btpm\b", t):
-        return "product_manager"
-    if re.search(r"program manager|project manager|project lead|delivery (lead|manager)|scrum master", t):
-        return "delivery_lead"
-    if re.search(r"\bstaff\b|principal|architect", t):
-        return "staff"
-    return "ic_lead"
+    return strategy.track_for(title)
+
+
+def home_market() -> str:
+    """The market of the candidate's own country: where 'auto' lands when a job doesn't say."""
+    from .extract import market_for
+    m = market_for(strategy.home()["country"])
+    return m if m in markets() and m != "remote" else "india"
 
 
 def default_header_line(market_id: str, profile: dict) -> str:
-    return markets()[market_id]["header_line"].format(availability=profile["basics"].get("availability", "")).strip(" ·")
+    """The market's status line, filled from the profile. A segment whose placeholders are all empty is left out;
+    an empty value inside a filled segment just drops out ("Remote from Pune, India ()" -> "Remote from Pune, India")."""
+    home = strategy.home()
+    values = {"availability": profile["basics"].get("availability", ""), "city": home["city"], "country": home["country"],
+              "nationality": profile["basics"].get("nationality", ""), "timezone": home["timezone"]}
+    keep = []
+    for seg in markets()[market_id]["header_line"].split(" · "):
+        names = re.findall(r"\{(\w+)\}", seg)
+        if names and not all(values.get(n) for n in names if n != "timezone"):
+            continue
+        text = re.sub(r"\s*\(\s*\)", "", seg.format(**values)).strip(" ,")
+        if text:
+            keep.append(text)
+    return " · ".join(keep)
 
 
-def page_budget(max_pages: int) -> str:
+def bullet_lines(profile: dict, one_page: bool) -> str:
+    return "\n".join(f"  - {r['title']}, {r['company']}: {n}" for r, n in strategy.bullet_counts(profile, one_page))
+
+
+def page_budget(max_pages: int, profile: dict) -> str:
     if max_pages == 1:
         return ("## PAGE BUDGET: ONE PAGE\nThe candidate chose a one-page CV. This overrides the counts above: "
-                "summary 2 sentences, 35 to 50 words. Bullets: Tech Mahindra 3, MathCo Senior Product Engineer 3, "
-                "MathCo Software Engineer 3, Dreamztech 1, internship 0. Every bullet under 170 characters. "
-                "Skills: 4 groups, 18 to 24 items in total. Make every line earn its place for THIS JD.")
+                "summary 2 sentences, 35 to 50 words. Bullets per role:\n" + bullet_lines(profile, True)
+                + "\nEvery bullet under 170 characters. Skills: 4 groups, 18 to 24 items in total. "
+                "Make every line earn its place for THIS JD.")
     return "## PAGE BUDGET: TWO PAGES\nUse the counts in the brief. Code trims from the end of the oldest roles if it overflows."
+
+
+def headline_rule() -> str:
+    word = strategy.level().get("headline_word")
+    if word:
+        return (f"The seniority word in the headline is always **{word}**, whatever seniority the JD names: a lower "
+                "headline undersells the candidate in every recruiter search, and a higher one claims a title not held.")
+    return ("Keep the headline at the level the profile supports: never above the current title's seniority, and never "
+            "a seniority word from the JD that the profile doesn't hold. A junior qualifier (Junior, Associate, Trainee) "
+            "may be left out when the headline names a function rather than a title.")
+
+
+def playbook(profile: dict) -> str:
+    """The shared writing brief, filled in for this candidate."""
+    s = strategy.load()
+    never = strategy.headline_never()
+    fill = {"FIELD": s.get("field") or "professional",
+            "CURRENT_TITLE": strategy.level().get("current_title") or profile["basics"].get("headline", ""),
+            "HEADLINE_LEVEL": headline_rule(),
+            "HEADLINE_NEVER": ", ".join(never) if never else "(none listed; still never claim a title above the profile's)",
+            "BULLET_COUNTS": bullet_lines(profile, False)}
+    text = (KNOWLEDGE / "playbook.md").read_text("utf-8")
+    for k, v in fill.items():
+        text = text.replace(f"[[{k}]]", v)
+    return text
 
 
 def keyword_guidance(jd_text: str, profile: dict) -> str:
@@ -108,17 +140,19 @@ def keyword_guidance(jd_text: str, profile: dict) -> str:
 
 
 def build_brief(profile: dict, jd: dict, market_id: str, company: str, role: str, years: str,
-                max_pages: int, track_id: str = "ic_lead") -> str:
+                max_pages: int, track_id: str = "") -> str:
     m = markets()[market_id]
-    tr = tracks().get(track_id) or tracks()["ic_lead"]
+    tr = strategy.track(track_id)
     rules = "\n".join(f"- {r}" for r in m["rules"])
-    return "\n\n".join([
-        (KNOWLEDGE / "playbook.md").read_text("utf-8"),
+    notes = (strategy.load().get("cv_notes") or "").strip()
+    return "\n\n".join(x for x in [
+        playbook(profile),
         first_letter_rules(),
         f"## MARKET: {m['label']}\nSpelling: {m['spelling']}\n{rules}",
-        page_budget(max_pages),
-        f"## CAREER TRACK: {tr['label']}\n{tr['brief']}\nHeadline examples for this track: "
-        + "; ".join(tr["headline_examples"]) + ". This overrides the generic headline examples; the Lead rule still holds.",
+        page_budget(max_pages, profile),
+        f"## CAREER TRACK: {tr.get('label', '')}\n{tr.get('brief', '')}\nHeadline examples for this track: "
+        + "; ".join(tr.get("headline_examples") or []) + ". These override the generic headline examples; the headline rules still hold.",
+        f"## NOTES FOR THIS CANDIDATE (they override the general rules above where they conflict)\n{notes}" if notes else "",
         f"## EXPERIENCE_YEARS\n{years}",
         f"## TARGET\nCompany: {company or 'unknown'}\nRole: {role or 'see JD'}\nLocation: {jd.get('location') or 'see JD'}\n"
         f"Candidate name for sign-offs: {profile['basics']['name']}\nAvailability: {profile['basics'].get('availability', '')}",
@@ -127,6 +161,99 @@ def build_brief(profile: dict, jd: dict, market_id: str, company: str, role: str
         f"## PROFILE\n```json\n{json.dumps(brief_view(profile, track_id), indent=1, ensure_ascii=False)}\n```",
         f"## OUTPUT\nReturn only this JSON object:\n{OUTPUT_SPEC}",
     ])
+
+
+MANUAL_SPEC = """## MANUAL MODE: THIS REPLY IS READ BY A PERSON, NOT BY CODE
+You are chatting with the candidate, who will copy your answer into a CV builder by hand. This overrides the brief's
+instructions about JSON, ids, `src`, and "code checks your output". Every other rule above still holds, above all
+rule zero: nothing that isn't in MY CURRENT CV above. If you are unsure whether something is true of me, leave it out
+and ask me at the end.
+
+Reply in plain text with exactly these sections, in this order, under these headings. No JSON, no tables, no
+markdown symbols (no **, no #), no commentary before or after:
+
+HEADLINE
+(one line, at most 5 words)
+
+SUMMARY
+(the summary paragraph)
+
+SKILLS
+(one line per group, as "Group name: skill, skill, skill")
+
+EXPERIENCE
+(every role in my CV, newest first, exactly as "Job title | Company | Dates", then its bullets, one per line, each
+starting with "- ". Titles, companies and dates exactly as written in my CV. Roles marked optional may be left out.)
+
+RECRUITER NOTE
+(at most 280 characters)
+
+GAPS
+(one line per JD requirement my CV doesn't show, as "- requirement: what I could truthfully say, or what to confirm")
+
+COVER LETTER
+(the cover letter, plain text, signed with my name)
+
+QUESTIONS FOR ME
+(only if you left something out because you weren't sure it's true of me; otherwise "None")"""
+
+
+def profile_as_text(profile: dict) -> str:
+    """The master profile written out as a CV, so a person can read it and a chat window can use it."""
+    b = profile["basics"]
+    out = [f"{b['name']} - {b.get('headline', '')}", b.get("location", ""), "", "SUMMARY", profile.get("summary", ""), ""]
+    out.append("EXPERIENCE")
+    for r in profile["experience"]:
+        head = f"{r['title']} | {r['company']}" + (f" (for {r['client']})" if r.get("client") else "")
+        out.append(f"{head} | {fmt_month(r['start'])} - {fmt_month(r.get('end'))}" + (f" | {r['location']}" if r.get("location") else "")
+                   + (" | optional" if r.get("optional") else ""))
+        if r.get("context"):
+            out.append(f"Context: {r['context']}")
+        if r.get("stack"):
+            out.append("Tools and methods: " + ", ".join(r["stack"]))
+        out += [f"- {x['text']}" for x in r["bullets"]]
+        out.append("")
+    if profile.get("projects"):
+        out.append("PROJECTS")
+        for p in profile["projects"]:
+            out.append(f"{p['name']}" + (f" | {p['role']}" if p.get("role") else ""))
+            out += [f"- {x['text']}" for x in p["bullets"]]
+        out.append("")
+    out.append("EDUCATION")
+    out += [f"{e['degree']} | {e['institution']} | {e.get('year', '')}" + ("".join(f" | {d}" for d in e.get("details", []))) for e in profile["education"]]
+    if profile.get("certifications"):
+        out += ["", "CERTIFICATIONS"] + [f"{c['name']}" + (f", {c['issuer']}" if c.get("issuer") else "") + (f" ({c['detail']})" if c.get("detail") else "") for c in profile["certifications"]]
+    out += ["", "SKILLS"] + [f"{k}: {', '.join(v)}" for k, v in profile["skills"].items()]
+    if profile.get("confirmed_skills"):
+        out.append("Also confirmed: " + ", ".join(profile["confirmed_skills"]))
+    if profile.get("languages"):
+        out += ["", "LANGUAGES", ", ".join(l["name"] + (f" ({l['level']})" if l.get("level") else "") for l in profile["languages"])]
+    return "\n".join(out)
+
+
+def manual_prompt(req: dict) -> str:
+    """The whole brief as one text to paste into any AI chat (Gemini, ChatGPT, ...): the rules, the keyword check, the
+    candidate's CV, the job, and an answer format a person can copy from."""
+    profile = load_profile()
+    jd = parse_jd(req["jd"])
+    if len(jd["text"]) < 200:
+        raise EngineError("Paste or open the full job description first.")
+    company, role = (req.get("company") or jd["company"] or "").strip(), (req.get("role") or jd["title"] or "").strip()
+    market_id = req.get("market") or "auto"
+    if market_id not in markets():
+        from .extract import market_for
+        market_id = market_for(req.get("location") or jd.get("location") or jd["text"][:800])
+    track_id = req.get("track")
+    if track_id not in tracks():
+        track_id = track_for(role or jd["text"].strip().splitlines()[0][:120])
+    pages = req.get("max_pages") or "auto"
+    max_pages = markets()[market_id]["max_pages"] if pages == "auto" else int(pages)
+    brief = build_brief(profile, jd, market_id, company, role, experience_years_label(profile), max_pages, track_id)
+    # The model-facing brief ends with the profile as JSON and a JSON output spec; swap both for readable ones.
+    cut = brief.index("## PROFILE")
+    brief = brief[:cut] + f"## MY CURRENT CV (the only source of facts)\n{profile_as_text(profile)}\n\n" + MANUAL_SPEC
+    return brief.replace(f"## EXPERIENCE_YEARS\n{experience_years_label(profile)}",
+                         f"## EXPERIENCE_YEARS\n{experience_years_label(profile)} (use exactly this number of years)")
 
 
 # ---------- guards ----------
@@ -152,12 +279,16 @@ def validate(raw: dict, profile: dict) -> tuple[dict, list[dict]]:
     roles = {r["id"]: r for r in profile["experience"]}
 
     headline = (raw.get("headline") or "").strip()
-    # The candidate is a Lead; a headline that drops or lowers it undersells them in every search.
-    lowered = re.sub(r"^(senior|sr\.?|mid[\s-]*level)\s+", "", headline, flags=re.I)
-    if headline and not re.search(r"\blead\b", lowered, re.I):
-        flag("warn", "headline", f"Headline \"{headline}\" didn't say Lead; corrected to \"Lead {lowered}\".")
-        headline = f"Lead {lowered}"
-    if not headline or BANNED_TITLE.search(headline) or len(headline.split()) > 8:
+    # A level with its own word (a Lead) keeps it: a headline that drops or lowers it undersells them in every search.
+    word = strategy.level().get("headline_word")
+    if word and headline:
+        lowered = re.sub(r"^(junior|jr\.?|associate|senior|sr\.?|mid[\s-]*level)\s+", "", headline, flags=re.I)
+        if not re.search(r"\b" + re.escape(word) + r"\b", lowered, re.I):
+            flag("warn", "headline", f"Headline \"{headline}\" didn't say {word}; corrected to \"{word} {lowered}\".")
+            headline = f"{word} {lowered}"
+    never = strategy.headline_never()
+    banned = re.compile(r"\b(" + "|".join(re.escape(w) for w in never) + r")\b", re.I) if never else None
+    if not headline or (banned and banned.search(headline)) or len(headline.split()) > 8:
         flag("error", "headline", f"Headline \"{headline}\" overstates or breaks the rules; used \"{profile['basics']['headline']}\" instead.")
         headline = profile["basics"]["headline"]
 
@@ -260,7 +391,7 @@ def analyse(pdf: Path, doc: dict, profile: dict, jd_text: str, jd_meta: dict, ma
     # model picked out of this JD are listed beside it, covered or not, but not counted.
     kws = jd_keywords(jd_text)
     full = jd_keywords(jd_text, jd_meta.get("must_have"), jd_meta.get("nice_to_have"))
-    original = ORIGINAL_TXT.read_text("utf-8") if ORIGINAL_TXT.exists() else ""
+    original = original_cv_path().read_text("utf-8") if original_cv_path().exists() else ""
     before, after, ceiling = score(kws, original), score(kws, text), score(kws, ptext)
     rows = [a | {"covered_before": b["covered"], "in_profile": c["covered"]}
             for a, b, c in zip(after["rows"], before["rows"], ceiling["rows"])]
@@ -269,11 +400,11 @@ def analyse(pdf: Path, doc: dict, profile: dict, jd_text: str, jd_meta: dict, ma
     kws = full  # the honesty checks below look at every term the JD names
 
     flags = _text_flags(text, ptext, allowed_numbers, kws, "CV")
-    from .fit import level_check
+    from .fit import level_check, strong_skills
     from .profile import experience_months
-    from .fit import strong_skills
-    lvl = level_check(jd_meta.get("title") or "", jd_text, experience_months(profile) // 12, strong_skills(profile),
-                      (profile.get("preferences") or {}).get("max_years_asked", 11))
+    years_n = experience_months(profile) // 12
+    lvl = level_check(jd_meta.get("title") or "", jd_text, years_n, strong_skills(profile),
+                      (profile.get("preferences") or {}).get("max_years_asked", years_n + 4), profile)
     if lvl["verdict"] != "ok":
         flags.insert(0, {"level": "error" if lvl["verdict"] == "above" else "warn", "kind": "level",
                          "text": ("Above your level: " if lvl["verdict"] == "above" else "A stretch: ") + "; ".join(lvl["reasons"])
@@ -308,9 +439,9 @@ def _slug(s: str, n: int = 40) -> str:
 
 def new_app_dir(company: str, role: str) -> Path:
     base = f"{dt.date.today().isoformat()}_{_slug(company, 30)}_{_slug(role, 40)}"
-    path, i = OUTPUT / base, 2
+    path, i = output_dir() / base, 2
     while path.exists():
-        path, i = OUTPUT / f"{base}-{i}", i + 1
+        path, i = output_dir() / f"{base}-{i}", i + 1
     path.mkdir(parents=True)
     return path
 
@@ -338,7 +469,7 @@ def resolve_options(req: dict, market_id: str, profile: dict) -> dict:
             "include_interests": req.get("include_interests", True),
             "include_school": req.get("include_school", False),
             "variant": req.get("variant") if req.get("variant") in LAYOUTS else "flowcv",
-            "track": req.get("track") if req.get("track") in tracks() or req.get("track") == "auto" else "ic_lead",
+            "track": req.get("track") if req.get("track") in tracks() or req.get("track") == "auto" else strategy.default_track(),
             "max_pages": max_pages}
 
 
@@ -362,7 +493,7 @@ def _print(folder: Path, profile: dict, plan: dict, options: dict, company: str,
 
 def run(req: dict, progress=lambda m: None) -> dict:
     profile = load_profile()
-    market_id = req.get("market") or "india"
+    market_id = req.get("market") or home_market()
     jd = parse_jd(req["jd"])
     if len(jd["text"]) < 200:
         raise EngineError("That job description is too short to tailor against. Paste the full posting.")
@@ -425,12 +556,12 @@ def run(req: dict, progress=lambda m: None) -> dict:
 
 
 def load_report(app_id: str) -> dict:
-    return json.loads((OUTPUT / app_id / "report.json").read_text("utf-8"))
+    return json.loads((output_dir() / app_id / "report.json").read_text("utf-8"))
 
 
 def rerender(app_id: str, changes: dict) -> dict:
     """Same tailored content, different layout / page limit / status line: no model call."""
-    folder = OUTPUT / app_id
+    folder = output_dir() / app_id
     report = load_report(app_id)
     profile = load_profile()
     plan = json.loads((folder / "plan.json").read_text("utf-8"))
@@ -456,7 +587,7 @@ def _clean(text: str) -> str:
 def changes(app_id: str) -> dict:
     """What tailoring did, line by line: the headline, the summary, and every bullet against the
     profile bullet(s) it came from. Bullets the CV left out are listed too."""
-    folder = OUTPUT / app_id
+    folder = output_dir() / app_id
     profile = load_profile()
     raw = json.loads((folder / "model_reply.json").read_text("utf-8"))
     doc = json.loads((folder / "doc.json").read_text("utf-8"))
@@ -492,7 +623,7 @@ def changes(app_id: str) -> dict:
 
 def changes_html(app_id: str) -> str:
     from .render import render_html
-    folder = OUTPUT / app_id
+    folder = output_dir() / app_id
     doc = json.loads((folder / "doc.json").read_text("utf-8"))
     ch = changes(app_id)
     doc["marks"] = {
@@ -505,7 +636,7 @@ def changes_html(app_id: str) -> str:
 
 
 def rescore(app_id: str) -> dict:
-    folder = OUTPUT / app_id
+    folder = output_dir() / app_id
     report = load_report(app_id)
     doc = json.loads((folder / "doc.json").read_text("utf-8"))
     profile = load_profile()
@@ -520,7 +651,7 @@ def rescore(app_id: str) -> dict:
 
 def get_plan(app_id: str) -> dict:
     """The tailored content as editable sections, with each role's fixed facts for labels."""
-    folder = OUTPUT / app_id
+    folder = output_dir() / app_id
     plan = json.loads((folder / "plan.json").read_text("utf-8"))
     profile = load_profile()
     roles = {r["id"]: r for r in profile["experience"]}
@@ -537,7 +668,7 @@ def get_plan(app_id: str) -> dict:
 def save_plan(app_id: str, body: dict) -> dict:
     """The candidate's own edits to the sections. Their words are kept as written; the same number and
     skill checks then run on the result, so anything new still shows in red."""
-    folder = OUTPUT / app_id
+    folder = output_dir() / app_id
     plan = json.loads((folder / "plan.json").read_text("utf-8"))
     clean = lambda s: re.sub(r"[ \t]+", " ", (s or "").strip())
     if body.get("headline", "").strip():
@@ -564,7 +695,7 @@ def save_plan(app_id: str, body: dict) -> dict:
 
 def apply_edits(app_id: str, html: str) -> dict:
     """The candidate edited the preview by hand: print exactly that HTML and re-check it."""
-    folder = OUTPUT / app_id
+    folder = output_dir() / app_id
     report = load_report(app_id)
     doc = json.loads((folder / "doc.json").read_text("utf-8"))
     profile = load_profile()
@@ -588,9 +719,9 @@ def apply_edits(app_id: str, html: str) -> dict:
 def preview_base(options_req: dict) -> Path:
     """Your profile in a chosen layout before any JD, so layouts can be compared at once."""
     profile = load_profile()
-    market_id = options_req.get("market") or "india"
+    market_id = options_req.get("market") or home_market()
     options = resolve_options(options_req, market_id, profile)
-    folder = OUTPUT / "_preview"
+    folder = output_dir() / "_preview"
     folder.mkdir(parents=True, exist_ok=True)
     doc = build_doc(profile, base_plan(profile), options)
     pdf = folder / f"preview_{options['variant']}_{options['max_pages']}p.pdf"

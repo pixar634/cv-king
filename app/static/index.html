@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="/static/css/tokens.css?v=1">
 <link rel="stylesheet" href="/static/css/base.css?v=4">
 <link rel="stylesheet" href="/static/css/components.css?v=12">
-<link rel="stylesheet" href="/static/css/views.css?v=11">
+<link rel="stylesheet" href="/static/css/views.css?v=14">
 </head>
 <body>
 <header class="topbar">
@@ -24,6 +24,7 @@
     <button data-view="career">Career</button>
   </nav>
   <div class="topbar__right">
+    <div class="menu-wrap"><button class="btn btn--sm btn--menu" id="profileChip" title="Switch or add a profile"></button><div class="menu" id="profileMenu" hidden></div></div>
     <div class="seg" id="engineSeg" title="Which AI writes and reads for you, everywhere in the app">
       <button data-e="claude">Claude</button><button data-e="gemini">Gemini</button>
     </div>
@@ -34,6 +35,8 @@
 </header>
 
 <main>
+<!-- ================= SETUP: a profile with no CV read yet, or one waiting for review ================= -->
+<section id="setup" class="setup" hidden></section>
 <!-- ================= TAILOR ================= -->
 <section class="view on" id="v-tailor">
   <div class="studio">
@@ -99,7 +102,9 @@
       <aside class="split__nav">
         <button class="btn btn--accent btn--block" id="scanAll">Scan sources</button>
         <button class="btn btn--block" id="scanFav" hidden title="Only your favourite companies: quick">Scan favourites</button>
-        <button class="btn btn--block" id="scanIndeed" title="Searches Indeed for each of your career tracks in your city, through Indeed's Claude connector, with full job descriptions. About a minute per track, run in parallel.">Scan Indeed</button>
+        <button class="btn btn--block" id="chromeGo" title="Copies a ready-made prompt and opens a LinkedIn Jobs search in a new tab. Open Claude in Chrome's side panel there, paste, and let it collect the jobs. Then paste its reply back here.">Find with Claude in Chrome</button>
+        <button class="btn btn--sm btn--ghost" id="chromePaste">Paste its results</button>
+        <button class="btn btn--block" id="scanIndeed" title="Searches Indeed for each of your career tracks in your city, through Indeed's Claude connector, with full job descriptions. Runs one track after another (Indeed limits calls per minute), so allow a few minutes.">Scan Indeed</button>
         <div id="scanLine" hidden></div>
         <label class="field"><span class="eyebrow">Posted within</span>
           <select id="days" class="control--sm">
@@ -114,7 +119,7 @@
           <select id="sortBy" class="control--sm"><option value="match">Best match</option><option value="newest">Newest</option></select></label>
         <div class="filters" id="areaBar"></div>
       </aside>
-      <section class="split__main" id="foundList"></section>
+      <div class="split__main"><div id="importPanel" hidden></div><section class="split__main" id="foundList"></section></div>
     </div>
   </div>
   <div class="dock" id="dock" hidden>
@@ -202,7 +207,7 @@
         <section class="career__block">
           <h3 class="eyebrow">Your goal</h3>
           <div class="goal-form">
-            <input type="text" id="goalRole" placeholder="e.g. VP of Engineering" aria-label="Goal role">
+            <input type="text" id="goalRole" placeholder="e.g. Head of Product" aria-label="Goal role">
             <input type="text" id="goalYear" inputmode="numeric" placeholder="By year, e.g. 2036" aria-label="Goal year">
             <input type="text" id="goalSalary" inputmode="decimal" placeholder="Yearly pay, e.g. 120" aria-label="Goal salary">
             <select id="goalUnit" aria-label="Unit"><option>LPA</option><option>USD</option><option>GBP</option><option>EUR</option><option>AED</option><option>SGD</option></select>
@@ -228,7 +233,7 @@
           <div class="log-form">
             <select id="logKind" aria-label="Kind"></select>
             <input type="date" id="logDate" aria-label="Date">
-            <textarea id="logText" rows="2" placeholder="e.g. Built an evals harness for Lighthouse search answers"></textarea>
+            <textarea id="logText" rows="2" placeholder="e.g. Led the UAT for a new payments release"></textarea>
             <label class="check" id="logCvLine"><input type="checkbox" id="logCv"> Use on my CVs (it's a skill I can talk about in an interview)</label>
             <button class="btn btn--sm" id="logAdd">Add to log</button>
           </div>
@@ -246,6 +251,7 @@
   <div class="drawer__head"><h2 class="type-h1">Settings</h2><button class="icon-btn" id="closeSettings" aria-label="Close">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2"/></svg></button></div>
   <div class="drawer__body">
+    <section class="drawer__section" id="stratBox"></section>
     <section class="drawer__section">
       <h3 class="eyebrow">Every new CV</h3>
       <label class="field"><span class="type-meta">Market</span><select id="dMarket"></select></label>
@@ -269,7 +275,7 @@
     </section>
     <section class="drawer__section">
       <h3 class="eyebrow">Company offices</h3>
-      <p class="type-meta">Most postings only say "Bengaluru". Note where a company sits and its jobs get that area in Discover. One per line: company | area, e.g. <code>Atlan | HSR Layout</code> or <code>Okta | Embassy Tech Village</code>.</p>
+      <p class="type-meta">Most postings only name the city. Note where a company sits and its jobs get that area in Discover (areas are known for Bengaluru so far). One per line: company | area, e.g. <code>Atlan | HSR Layout</code> or <code>Okta | Embassy Tech Village</code>.</p>
       <textarea id="offices" rows="4" placeholder="Atlan | HSR Layout"></textarea>
       <div><button class="btn btn--sm" id="saveOffices">Save offices</button></div>
     </section>
@@ -284,7 +290,7 @@
       <h3 class="eyebrow">Sources</h3>
       <div class="list" id="sourceList"></div>
       <div class="field-row"><input type="url" id="srcUrl" placeholder="Careers page or job board search URL"><button class="btn" id="addUrl">Add</button></div>
-      <div class="field-row"><input type="text" id="srcQuery" placeholder="Web search, e.g. lead full-stack Bengaluru"><button class="btn" id="addQuery">Add</button></div>
+      <div class="field-row"><input type="text" id="srcQuery" placeholder="Web search, e.g. your target title and city"><button class="btn" id="addQuery">Add</button></div>
       <div class="notice notice--bad" id="srcErr" hidden></div>
       <p class="type-meta">Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Recruitee and Personio boards are read through their public APIs. LinkedIn, Naukri, Indeed and Glassdoor are refused: their terms forbid automated access.</p>
     </section>
@@ -315,6 +321,7 @@
 <script src="/static/vendor/codemirror-5.65.16/closebrackets.min.js"></script>
 <script src="/static/fx.js?v=5"></script>
 <script src="/static/career.js?v=4"></script>
-<script src="/static/app.js?v=36"></script>
+<script src="/static/setup.js?v=1"></script>
+<script src="/static/app.js?v=41"></script>
 </body>
 </html>

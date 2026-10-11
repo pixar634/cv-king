@@ -1,12 +1,14 @@
 # How each market reads a CV. `header_line` is the default status line under the contact
 # details; it is editable per application in the UI, and the model never writes it.
+# Placeholders come from the profile: {availability}, {city}, {country}, {nationality}, {timezone}.
+# A " · " segment whose placeholder is empty is left out.
 # `rules` go into the writing brief verbatim.
 
 india:
   label: India
   spelling: Follow the JD's spelling for tool names (ReactJS vs React.js). For prose, use British spelling (optimise, organisation) consistently.
   max_pages: 2
-  header_line: "{availability} · Open to Bengaluru, hybrid or remote"
+  header_line: "{availability} · Open to {city}, hybrid or remote"
   show_nationality: false
   gdpr_clause: false
   rules:
@@ -14,7 +16,7 @@ india:
     - Indian JDs often list tools with their own spelling (NodeJS, ReactJS, Rest API). Mirror the JD spelling once in Skills; use the standard spelling elsewhere.
     - Services-company roles are read as "client + domain"; keep the client name and domain line. Product companies care about scale, ownership and outcomes; lead with those.
     - Do not include date of birth, marital status, father's name, photo, CTC or expected CTC. Never mention salary.
-    - Startups (Founding / Product Engineer roles) read for end-to-end ownership, shipping speed and breadth across the stack. Put the bullets that show owning a module from scoping to delivery first.
+    - Startups read for end-to-end ownership, speed and breadth. Put the bullets that show owning a piece of work from start to finish first.
 
 uk:
   label: United Kingdom
@@ -27,7 +29,7 @@ uk:
     - It is a "CV", not a resume. No photo, date of birth, marital status, nationality line or references ("References available on request" is dated; omit it).
     - UK hiring managers discount superlatives. Prefer plain, specific verbs and the measured result. Understatement reads as confidence.
     - Visa sponsorship is filtered early. The status line states it plainly; do not repeat or apologise for it in the summary.
-    - Use the term "full-stack engineer" or the JD's own title. "Developer" and "engineer" are interchangeable in the UK; follow the JD.
+    - Use the JD's own wording for the role title; UK employers use their own conventions ("developer" and "engineer" are interchangeable, for example).
 
 eu:
   label: European Union
@@ -38,16 +40,16 @@ eu:
   gdpr_clause: true
   rules:
     - Write in English unless the JD is in another language and asks for that language. A German, Dutch or French JD written in English accepts an English CV.
-    - Languages matter more in the EU: keep the Languages section and show the level in words (the profile's levels). Keep German as "Learning" exactly; never raise it.
+    - Languages matter more in the EU: keep the Languages section and show the level in words (the profile's levels), exactly as the profile writes them; never raise one.
     - No photo by default. Date of birth and marital status are not needed; omit them.
-    - Engineering cultures in Germany, the Netherlands and the Nordics value precision and modesty: concrete systems, measured outcomes, no hype words.
+    - Workplaces in Germany, the Netherlands and the Nordics value precision and modesty: concrete work, measured outcomes, no hype words.
     - The GDPR consent line at the end is required by Polish employers and harmless elsewhere; the candidate can switch it off.
 
 uae:
   label: UAE / Dubai
   spelling: British English.
   max_pages: 2
-  header_line: "Indian national · Requires UAE employment visa · Open to relocation to Dubai · {availability}"
+  header_line: "{nationality} national · Requires UAE employment visa · Open to relocation to Dubai · {availability}"
   show_nationality: true
   gdpr_clause: false
   rules:
@@ -59,7 +61,7 @@ singapore:
   label: Singapore
   spelling: British English.
   max_pages: 2
-  header_line: "Indian national · Requires Singapore Employment Pass · Open to relocation · {availability}"
+  header_line: "{nationality} national · Requires Singapore Employment Pass · Open to relocation · {availability}"
   show_nationality: true
   gdpr_clause: false
   rules:
@@ -68,16 +70,16 @@ singapore:
     - Regional-HQ roles value cross-team, cross-country collaboration; surface it where the profile supports it.
 
 remote:
-  label: Remote (from India)
+  label: Remote
   spelling: Match the JD's English variant (American for US companies, British for UK/EU); never mix.
   max_pages: 2
-  header_line: "Remote from Bengaluru, India (IST, UTC+5:30) · {availability}"
+  header_line: "Remote from {city}, {country} ({timezone}) · {availability}"
   show_nationality: false
   gdpr_clause: false
   rules:
     - Remote-first teams read for written communication, async work and autonomy. Surface documentation, specs, and owning modules end to end where the profile supports it.
-    - Hiring through an employer-of-record (Deel, Remote.com) is common for India; the CV does not need to mention it.
-    - Mention distributed or remote collaboration only where the profile shows it (MathCo's remote role does).
+    - Hiring through an employer-of-record (Deel, Remote.com) is common for remote hires abroad; the CV does not need to mention it.
+    - Mention distributed or remote collaboration only where the profile shows it.
 
 anz:
   label: Australia / New Zealand

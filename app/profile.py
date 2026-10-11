@@ -2,27 +2,44 @@
 import datetime as dt
 import json
 
-from .config import BASE_CV
+from .config import data_dir
+
+
+def profile_path():
+    return data_dir() / "base_cv.json"
+
+
+def original_cv_path():
+    """The CV as the candidate had it before any tailoring: the 'before' of every score."""
+    return data_dir() / "original_cv.txt"
 
 
 def load_profile() -> dict:
-    return json.loads(BASE_CV.read_text("utf-8"))
+    return json.loads(profile_path().read_text("utf-8"))
 
 
 def save_profile(profile: dict) -> None:
-    BASE_CV.write_text(json.dumps(profile, indent=2, ensure_ascii=False) + "\n", "utf-8")
+    profile_path().write_text(json.dumps(profile, indent=2, ensure_ascii=False) + "\n", "utf-8")
 
 
 def fmt_month(ym: str | None) -> str:
+    """'2021-04' -> '04/2021'; a CV that only gave the year ('2021') keeps just the year."""
     if not ym:
         return "Present"
-    year, month = ym.split("-")
+    if "-" not in str(ym):
+        return str(ym)
+    year, month = str(ym).split("-")[:2]
     return f"{month}/{year}"
 
 
+def _ym(value: str, end: bool) -> tuple[int, int]:
+    parts = str(value).split("-")
+    return int(parts[0]), int(parts[1]) if len(parts) > 1 else (12 if end else 1)
+
+
 def _months(start: str, end: str | None, today: dt.date) -> set[tuple[int, int]]:
-    sy, sm = (int(x) for x in start.split("-"))
-    ey, em = (int(x) for x in end.split("-")) if end else (today.year, today.month)
+    sy, sm = _ym(start, False)
+    ey, em = min(_ym(end, True), (today.year, today.month)) if end else (today.year, today.month)
     out, y, m = set(), sy, sm
     while (y, m) <= (ey, em):
         out.add((y, m))
@@ -59,34 +76,35 @@ def bullet_index(profile: dict) -> dict[str, tuple[str, str]]:
 def profile_text(profile: dict) -> str:
     """Every fact in the profile as one text: the evidence base for the guards."""
     b = profile["basics"]
-    parts = [b["name"], b["headline"], b["location"], b["phone"], b["email"], b["linkedin"],
+    parts = [b.get("name"), b.get("headline"), b.get("location"), b.get("phone"), b.get("email"), b.get("linkedin"),
              profile.get("summary", ""), profile.get("interests", "")]
     for r in profile["experience"]:
-        parts += [r["title"], r["company"], r.get("client", ""), r.get("context", ""), r["location"],
+        parts += [r["title"], r["company"], r.get("client", ""), r.get("context", ""), r.get("location", ""),
                   fmt_month(r["start"]), fmt_month(r.get("end")), r["start"], r.get("end") or "",
                   ", ".join(r.get("stack", []))]
         parts += [x["text"] for x in r["bullets"]]
     for p in profile.get("projects", []):
-        parts += [p["name"], p["role"], p.get("url", ""), ", ".join(p.get("stack", [])), fmt_month(p["start"]),
+        parts += [p["name"], p.get("role", ""), p.get("url", ""), ", ".join(p.get("stack", [])), fmt_month(p.get("start")),
                   *(b["text"] for b in p["bullets"])]
     for e in profile["education"]:
-        parts += [e["degree"], e["institution"], e["location"], e["year"], *e.get("details", [])]
-    for c in profile["certifications"]:
-        parts += [c["name"], c["issuer"], c.get("detail", "")]
-    parts += [l["name"] + " " + l.get("level", "") for l in profile["languages"]]
-    parts += all_skills(profile)
+        parts += [e["degree"], e["institution"], e.get("location", ""), e.get("year", ""), *e.get("details", [])]
+    for c in profile.get("certifications", []):
+        parts += [c["name"], c.get("issuer", ""), c.get("detail", "")]
+    parts += [l["name"] + " " + l.get("level", "") for l in profile.get("languages", [])]
+    parts += all_skills(profile) + list(profile.get("skills", {}))   # group labels are the candidate's own words too
     return "\n".join(p for p in parts if p)
 
 
 def projects_for(profile: dict, track: str) -> list[dict]:
-    return [p for p in profile.get("projects", []) if track in p.get("tracks", [])]
+    """Projects shown for a track: those tagged with it, and untagged ones everywhere."""
+    return [p for p in profile.get("projects", []) if not p.get("tracks") or track in p["tracks"]]
 
 
 def brief_view(profile: dict, track: str = "") -> dict:
     """The slice of the profile the model sees: facts only, no contact details."""
     return {
         "projects (printed exactly as written; cite them in the summary or skills where they fit the JD)": [
-            {k: p[k] for k in ("name", "role", "stack")} | {"dates": f"{fmt_month(p['start'])} - {fmt_month(p.get('end'))}",
+            {k: p.get(k, "") for k in ("name", "role", "stack")} | {"dates": f"{fmt_month(p.get('start'))} - {fmt_month(p.get('end'))}",
                                                            "bullets": [b["text"] for b in p["bullets"]]}
             for p in projects_for(profile, track)],
         "summary": profile["summary"],
@@ -98,8 +116,8 @@ def brief_view(profile: dict, track: str = "") -> dict:
             for r in profile["experience"]
         ],
         "education": profile["education"],
-        "certifications": profile["certifications"],
-        "languages": profile["languages"],
+        "certifications": profile.get("certifications", []),
+        "languages": profile.get("languages", []),
         "skills": profile["skills"],
         "confirmed_skills": profile.get("confirmed_skills", []),
     }

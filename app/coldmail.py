@@ -8,7 +8,7 @@ import json
 import re
 import uuid
 
-from .config import OUTPUT
+from .config import output_dir
 from .engines import get_engine, parse_json_reply
 from .keywords import jd_keywords
 from .letters import HUMAN_RULES, banned_phrases, phrase_flags, voices
@@ -18,7 +18,7 @@ FILE = "coldmail.json"
 ROLES = {
     "hiring_manager": "the hiring manager for this role",
     "recruiter": "a recruiter or talent partner",
-    "engineer": "an engineer or peer on the team",
+    "engineer": "someone on the team (a peer in the role's function)",
     "leader": "a founder or senior leader",
     "other": "someone at the company",
 }
@@ -38,7 +38,7 @@ Rules:
   copied exactly.
 - At most one line on what the company builds, taken only from the RESEARCH (or the JD when there is none).
 - One clear, low-effort ask that fits who they are: a hiring manager gets "worth a 15-minute call?", a
-  recruiter gets fit and availability, an engineer gets a question about the team or a referral.
+  recruiter gets fit and availability, someone on the team gets a question about the team or a referral.
 - Say the tailored CV is attached. Sign off with the candidate's name, then their LinkedIn URL on the next line.
 - Also write the follow-up to send 5 to 7 days later if there is no reply: 40 to 70 words, polite, adding one
   new and true piece of value rather than "just bumping this".
@@ -84,10 +84,10 @@ CUSTOM = "custom"   # emails to people you found yourself (a post, an event), no
 
 def _path(owner: str):
     if owner == CUSTOM:
-        folder = OUTPUT / "_coldmail"
+        folder = output_dir() / "_coldmail"
         folder.mkdir(parents=True, exist_ok=True)
         return folder / "custom.json"
-    return OUTPUT / owner / FILE
+    return output_dir() / owner / FILE
 
 
 def load(owner: str) -> dict:
@@ -102,7 +102,7 @@ def _save(owner: str, data: dict) -> None:
 def _job(owner: str, mail_or_req: dict) -> dict:
     """What the email is about: an application's saved job, or what you gave for a custom one."""
     if owner != CUSTOM:
-        folder = OUTPUT / owner
+        folder = output_dir() / owner
         report = json.loads((folder / "report.json").read_text("utf-8"))
         prep = folder / "interview.json"
         return {"company": report["company"], "role": report["role"], "jd": (folder / "jd.txt").read_text("utf-8"),
@@ -111,11 +111,11 @@ def _job(owner: str, mail_or_req: dict) -> dict:
                 "research": json.loads(prep.read_text("utf-8")).get("research", {}) if prep.exists() else {},
                 "header_line": report["options"]["header_line"], "years": report["experience_years"]}
     from .profile import experience_years_label
-    from .tailor import default_header_line
+    from .tailor import default_header_line, home_market
     profile = load_profile()
     return {"company": mail_or_req.get("company", ""), "role": mail_or_req.get("role", "") or "the role they posted",
             "jd": mail_or_req.get("job_text", ""), "jd_meta": {}, "job_id": "", "plan": None, "research": {},
-            "header_line": default_header_line("india", profile), "years": experience_years_label(profile)}
+            "header_line": default_header_line(home_market(), profile), "years": experience_years_label(profile)}
 
 
 def _flags(owner: str, mail: dict, text: str, where: str) -> list[dict]:
