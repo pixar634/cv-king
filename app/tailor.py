@@ -139,8 +139,21 @@ def keyword_guidance(jd_text: str, profile: dict) -> str:
             + ("\n".join(line(k) for k in avoid) or "- (none)"))
 
 
+def candidate_thoughts(text: str) -> str:
+    """The candidate's own free-text steer for one application, put to the writer as an instruction."""
+    text = (text or "").strip()
+    if not text:
+        return ""
+    return ("## THE CANDIDATE'S THOUGHTS ON THIS APPLICATION (act on them)\n"
+            "Written by the candidate for this one job. Follow them for emphasis, angle, order, tone and what to "
+            "lead with or leave out, wherever the rules above allow. They don't change rule zero: a fact, number or "
+            "skill they mention that is NOT in PROFILE must not go into the CV or letter. Put it in `gaps` instead, as "
+            "what the candidate should confirm, so they can add it to their profile. If a thought can't be followed "
+            "without breaking a rule, follow the rest and say why in `fit_notes`.\n<<<\n" + text[:2000] + "\n>>>")
+
+
 def build_brief(profile: dict, jd: dict, market_id: str, company: str, role: str, years: str,
-                max_pages: int, track_id: str = "") -> str:
+                max_pages: int, track_id: str = "", thoughts: str = "") -> str:
     m = markets()[market_id]
     tr = strategy.track(track_id)
     rules = "\n".join(f"- {r}" for r in m["rules"])
@@ -153,6 +166,7 @@ def build_brief(profile: dict, jd: dict, market_id: str, company: str, role: str
         f"## CAREER TRACK: {tr.get('label', '')}\n{tr.get('brief', '')}\nHeadline examples for this track: "
         + "; ".join(tr.get("headline_examples") or []) + ". These override the generic headline examples; the headline rules still hold.",
         f"## NOTES FOR THIS CANDIDATE (they override the general rules above where they conflict)\n{notes}" if notes else "",
+        candidate_thoughts(thoughts),
         f"## EXPERIENCE_YEARS\n{years}",
         f"## TARGET\nCompany: {company or 'unknown'}\nRole: {role or 'see JD'}\nLocation: {jd.get('location') or 'see JD'}\n"
         f"Candidate name for sign-offs: {profile['basics']['name']}\nAvailability: {profile['basics'].get('availability', '')}",
@@ -248,7 +262,8 @@ def manual_prompt(req: dict) -> str:
         track_id = track_for(role or jd["text"].strip().splitlines()[0][:120])
     pages = req.get("max_pages") or "auto"
     max_pages = markets()[market_id]["max_pages"] if pages == "auto" else int(pages)
-    brief = build_brief(profile, jd, market_id, company, role, experience_years_label(profile), max_pages, track_id)
+    brief = build_brief(profile, jd, market_id, company, role, experience_years_label(profile), max_pages, track_id,
+                        req.get("notes", ""))
     # The model-facing brief ends with the profile as JSON and a JSON output spec; swap both for readable ones.
     cut = brief.index("## PROFILE")
     brief = brief[:cut] + f"## MY CURRENT CV (the only source of facts)\n{profile_as_text(profile)}\n\n" + MANUAL_SPEC
@@ -509,7 +524,8 @@ def run(req: dict, progress=lambda m: None) -> dict:
     if options["track"] == "auto":
         options["track"] = track_for(role or jd["text"].strip().splitlines()[0][:120])
 
-    brief = build_brief(profile, jd, market_id, company, role, years, options["max_pages"], options["track"])
+    brief = build_brief(profile, jd, market_id, company, role, years, options["max_pages"], options["track"],
+                        req.get("notes", ""))
     progress(f"Writing with {engine.label} (usually 1 to 3 minutes)")
     reply = engine.run(brief)
     try:
@@ -547,7 +563,7 @@ def run(req: dict, progress=lambda m: None) -> dict:
         "pdf": pdf.name, "trims": trims, "plan_flags": flags, **result,
         "gaps": raw.get("gaps") or [], "recruiter_note": raw.get("recruiter_note", ""),
         "cover_letter": cover, "fit_notes": raw.get("fit_notes") or [], "jd_meta": jd_meta,
-        "options": options, "edited": False,
+        "options": options, "edited": False, "notes": (req.get("notes") or "").strip(),
         "job": {k: req.get(k, "") for k in ("job_url", "job_id", "location", "posted")},
     }
     (folder / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), "utf-8")

@@ -102,6 +102,7 @@
 /* stage */
 .stage { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--surface); }
 .stage__bar { display: flex; align-items: center; gap: var(--s-2); padding: 10px var(--s-5); border-bottom: 1px solid var(--line); background: var(--bg); position: relative; z-index: 10; }
+#gaps textarea { width: 100%; resize: vertical; }
 .stage__bar > :not(.stage__title) { flex: none; }
 .stage__title { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px; overflow: hidden; }
 .stage__title .type-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

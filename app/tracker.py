@@ -127,7 +127,7 @@ def update(app_id: str, fields: dict) -> dict:
             for k, v in fields.items():
                 if k in allowed:
                     r[k] = v
-            if fields.get("status") == "Applied" and not r.get("applied_on"):
+            if fields.get("status") not in (None, "Generated") and not r.get("applied_on"):   # any later stage means it went out
                 r["applied_on"] = dt.date.today().isoformat()
             if "domain" in fields:
                 r["domain"] = _clean_domain(fields["domain"])

@@ -963,6 +963,83 @@ def _store(results: list[dict], days: int, prefs: dict, evidence: set[str], prog
             "cutoff": cutoff}
 
 
+# ---------- JobSpy: LinkedIn, Indeed, Google Jobs and Naukri through the python-jobspy library ----------
+# The Discover "Scan with JobSpy" button. It scrapes those boards, which their terms of service don't allow
+# and which they block now and then, so it is a separate button that is never part of a normal scan. What it
+# searches for comes from the profile: the title queries of your career tracks, in your city.
+
+JOBSPY_SITES = ["linkedin", "indeed", "google", "naukri"]
+JOBSPY_MAX_QUERIES = 6
+
+
+def jobspy_queries(prefs: dict) -> list[str]:
+    """Up to two title queries per career track you rank for (your profile's strategy), else your headline."""
+    titles = strategy.search_titles()
+    picked = [t for t in (prefs.get("tracks") or list(titles)) if t in titles] or list(titles)
+    queries = [q for t in picked for q in titles[t][:2]]
+    if not queries:
+        try:
+            queries = [load_profile()["basics"].get("headline") or ""]
+        except FileNotFoundError:
+            queries = []
+    return list(dict.fromkeys(q for q in queries if q))[:JOBSPY_MAX_QUERIES]
+
+
+def _txt(v) -> str:
+    return v.strip() if isinstance(v, str) else ""
+
+
+def from_jobspy(query: str, location: str, country: str, days: int) -> list[dict]:
+    from jobspy import scrape_jobs
+    sites = [s for s in JOBSPY_SITES if s != "naukri" or country.lower() == "india"]
+    df = scrape_jobs(site_name=sites, search_term=query, google_search_term=f"{query} jobs near {location}",
+                     location=location, results_wanted=20, hours_old=max(24, days * 24),
+                     country_indeed=country.lower() or "india", linkedin_fetch_description=True,
+                     description_format="markdown", verbose=0)
+    out = []
+    for r in df.to_dict("records"):
+        title, url = _txt(r.get("title")), _txt(r.get("job_url"))
+        if not (title and url.startswith("http")):
+            continue
+        posted = _txt(str(r.get("date_posted") or "")[:10])
+        job = _job(title, _txt(r.get("company")), _txt(r.get("location")), url,
+                   posted if re.fullmatch(r"\d{4}-\d{2}-\d{2}", posted) else "", "",
+                   description=_txt(r.get("description")), remote=True if r.get("is_remote") is True else None,
+                   method="jobspy")
+        # The same posting turns up on several boards and under several links: key it on what it is
+        job["id"] = hashlib.sha1(f"{title}|{job['company']}|{job['location']}".lower().encode()).hexdigest()[:12]
+        job["source"] = f"JobSpy: {_txt(r.get('site')) or 'board'}"
+        lo, hi = r.get("min_amount"), r.get("max_amount")
+        if isinstance(lo, (int, float)) and lo == lo:
+            cur = _txt(r.get("currency"))
+            job["compensation"] = f"{cur} {int(lo):,}" + (f" to {int(hi):,}" if isinstance(hi, (int, float)) and hi == hi else "") \
+                + (f" per {_txt(r.get('interval'))}" if _txt(r.get("interval")) else "")
+        out.append(job)
+    return out
+
+
+def scan_jobspy(days: int, prefs: dict, progress=lambda m: None) -> dict:
+    home = strategy.home()
+    location = home["city"] or home["country"]
+    queries = jobspy_queries(prefs)
+    if not queries:
+        raise EngineError("Your profile has no career tracks or headline to search for yet. Set them up first.")
+    evidence = strong_skills(load_profile())
+    results = []
+    for k, q in enumerate(queries):
+        progress(f"JobSpy {k + 1} of {len(queries)}: {q}, {location}")
+        t = time.time()
+        try:
+            jobs = from_jobspy(q, location, home["country"], days)
+            res = {"source": f"jobspy:{q}", "method": "jobspy", "jobs": jobs}
+        except Exception as e:  # one search failing must not sink the rest
+            res = {"source": f"jobspy:{q}", "jobs": [], "error": f"{type(e).__name__}: {str(e)[:240]}"}
+        res["seconds"] = round(time.time() - t, 1)
+        progress(f"{q}: {len(res['jobs'])} jobs" + (f" ({res['error'][:100]})" if res.get("error") else ""))
+        results.append(res)
+    return _store(results, days, prefs, evidence, progress)
+
+
 # ---------- jobs gathered by Claude in Chrome, pasted in ----------
 # The candidate's own Claude in Chrome browses job sites in their own signed-in browser and returns this app's job
 # format; pasting it here ranks it like any scan. Nothing is fetched by this app.

@@ -10,7 +10,7 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import areas, batch, discover, extract, letters, onboarding, profiles, strategy, tailor, tracker
+from . import areas, batch, discover, extract, letterfile, letters, onboarding, profiles, strategy, tailor, tracker
 from .config import STATIC, output_dir
 from .engines import ENGINES, EngineError
 from .layouts import LAYOUTS
@@ -423,6 +423,26 @@ def letter_keep(app_id: str, body: dict = Body(...)):
     return {"ok": True}
 
 
+@app.post("/api/apps/{app_id}/letter/export")
+def letter_export(app_id: str, body: dict = Body(...)):
+    _app_dir(app_id)
+    fmt, text = body.get("fmt", "pdf"), (body.get("text") or "").strip()
+    if fmt not in letterfile.FORMATS:
+        raise HTTPException(400, "Pick pdf, docx or doc")
+    if not text:
+        raise HTTPException(400, "There's no letter to export")
+    import tempfile
+    from pathlib import Path
+    report, profile = tailor.load_report(app_id), load_profile()
+    name = f"{letterfile.file_stem(profile, report['company'], report['role'])}.{fmt}"
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / name
+        letterfile.build(fmt, text, profile["basics"], out)
+        data = out.read_bytes()
+    return Response(data, media_type=letterfile.FORMATS[fmt],
+                    headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
+
+
 @app.post("/api/apps/{app_id}/track")
 def app_track(app_id: str, body: dict = Body(...)):
     try:
@@ -809,6 +829,8 @@ def favourite_add(body: dict = Body(...)):
 def scan_start(body: dict = Body(...)):
     prefs = _prefs(load_profile())
     days = int(body.get("days") or prefs["days"])
+    if body.get("jobspy"):
+        return {"job": start_job("scan", lambda d, p, progress: discover.scan_jobspy(d, p, progress), days, prefs)}
     ids = body.get("source_ids")
     if body.get("indeed"):
         ids = [s["id"] for s in discover.ensure_indeed_sources(prefs)]

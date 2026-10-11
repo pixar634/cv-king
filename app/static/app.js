@@ -611,9 +611,14 @@ function renderInsights() {
         ${req.length ? `<div><div class="eyebrow" style="margin-bottom:10px">Required</div><div class="chip-row">${req.map(chip).join("")}</div></div>` : ""}
         ${other.length ? `<div><div class="eyebrow" style="margin-bottom:10px">Also scored</div><div class="chip-row">${other.slice(0, 40).map(chip).join("")}</div></div>` : ""}
         ${(a.jd_terms || []).length ? `<div><div class="eyebrow" style="margin-bottom:10px">Also asked for, read by the writer but not scored</div><div class="chip-row">${a.jd_terms.map(chip).join("")}</div></div>` : ""}
-        ${gaps.length ? `<div id="gaps"><div class="eyebrow">Gaps: tick only the ones that are true</div>
-          <div style="margin-top:6px">${gaps.map((g) => `<label class="gap"><input type="checkbox" data-term="${esc(g.term)}"><span class="gap__term">${esc(g.term)}${g.must_have ? '<span class="tag tag--bad">Required</span>' : ""}</span><span class="type-meta">${esc(g.note)}</span></label>`).join("")}</div>
-          <button class="btn btn--primary" id="confirmGaps" style="margin-top:12px">Add the ticked ones and re-tailor</button></div>` : ""}
+        <div id="gaps">
+          ${gaps.length ? `<div class="eyebrow">Gaps: tick only the ones that are true</div>
+          <div style="margin-top:6px">${gaps.map((g) => `<label class="gap"><input type="checkbox" data-term="${esc(g.term)}"><span class="gap__term">${esc(g.term)}${g.must_have ? '<span class="tag tag--bad">Required</span>' : ""}</span><span class="type-meta">${esc(g.note)}</span></label>`).join("")}</div>` : ""}
+          <label class="field" style="margin-top:${gaps.length ? 14 : 0}px"><span class="eyebrow">Your thoughts for this job (optional)</span>
+            <textarea id="gapNotes" rows="3" placeholder="e.g. Lead with the platform work. I also ran the Kafka pipeline at MathCo. Keep it to the Applied Materials story.">${esc(a.notes || "")}</textarea></label>
+          <p class="type-meta">If you write anything here, the CV and letter are re-written with it. Only what your profile already shows goes in as fact; anything new comes back as a gap to tick.</p>
+          <button class="btn btn--primary" id="confirmGaps" style="margin-top:12px">${gaps.length ? "Add the ticked ones and re-tailor" : "Re-tailor with my thoughts"}</button>
+        </div>
       </div>
       <div class="report__panel" data-panel="letter" id="letters"></div>
       ${notes ? `<div class="report__panel" data-panel="notes">
@@ -659,13 +664,17 @@ async function loadChanges(id) {
 
 async function confirmGaps() {
   const terms = $$("#gaps input:checked").map((i) => i.dataset.term);
-  if (!terms.length) { toast("Tick the skills you genuinely have first."); return; }
-  if (!confirm(`Add these to your profile as true skills?\n\n${terms.join(", ")}\n\nEvery future CV may use them, and interviewers may ask about them.`)) return;
-  await api("/api/profile", { body: { confirm: terms } });
-  const replace = S.app.id;
+  const notes = ($("#gapNotes")?.value || "").trim();
+  if (!terms.length && !notes) { toast("Tick the skills you genuinely have, or write your thoughts first."); return; }
+  if (terms.length) {
+    if (!confirm(`Add these to your profile as true skills?\n\n${terms.join(", ")}\n\nEvery future CV may use them, and interviewers may ask about them.`)) return;
+    await api("/api/profile", { body: { confirm: terms } });
+  }
+  const old = S.app;
+  if (S.job) S.job.market = old.market;
   S.app = null;
-  toast("Added. Re-tailoring this job.");
-  tailorJob({ replace_id: replace });
+  toast(terms.length ? "Added. Re-tailoring this job." : "Re-tailoring this job with your thoughts.");
+  tailorJob({ replace_id: old.id, notes, market: old.market, track: old.options.track, variant: old.options.variant, max_pages: String(old.options.max_pages) });
 }
 
 // cover letters: drafts per application live in this browser
@@ -681,13 +690,14 @@ function renderLetters() {
       <div class="chip-row">${Object.entries(S.state.voices).map(([k, v]) => `<button class="chip" data-voice="${k}" title="${esc(v.best_for)}">${esc(v.label)}</button>`).join("")}</div>
       <p class="type-meta" id="voiceBusy" hidden style="margin-top:10px"></p></div>
     ${all.map((d, i) => `<div class="letter" data-i="${i}"><div class="letter__head"><b>${esc(d.label)}</b>${d.words ? `<span class="tag num">${d.words} words</span>` : ""}${d.kept ? `<span class="tag tag--ok">Kept</span>` : ""}<span class="sp"></span>
-      <button class="btn btn--sm btn--ghost" data-act="copy">Copy</button>${d.voice !== "saved" ? `<button class="btn btn--sm ${d.kept ? "" : "btn--ghost"}" data-act="keep">${d.kept ? "Kept" : "Keep"}</button><button class="btn btn--sm btn--ghost" data-act="skip">Skip</button>` : ""}</div>
+      <button class="btn btn--sm btn--ghost" data-act="copy">Copy</button>${["pdf", "docx", "doc"].map((f) => `<button class="btn btn--sm btn--ghost" data-act="export" data-fmt="${f}" title="Save this letter as ${f.toUpperCase()}, named like the CV">${f.toUpperCase()}</button>`).join("")}${d.voice !== "saved" ? `<button class="btn btn--sm ${d.kept ? "" : "btn--ghost"}" data-act="keep">${d.kept ? "Kept" : "Keep"}</button><button class="btn btn--sm btn--ghost" data-act="skip">Skip</button>` : ""}</div>
       <div class="textbox ${d.kept ? "textbox--kept" : ""}">${esc(d.text)}</div>${flagsHtml(d.flags)}</div>`).join("") || `<p class="type-meta">No letter yet. Pick a voice above.</p>`}`;
   $$("[data-voice]", box).forEach((b) => (b.onclick = () => writeVoice(b.dataset.voice, b)));
   $$(".letter", box).forEach((el) => {
     const d = all[+el.dataset.i];
     $$("[data-act]", el).forEach((b) => (b.onclick = async () => {
       if (b.dataset.act === "copy") return copy(d.text);
+      if (b.dataset.act === "export") return exportLetter(a.id, d.text, b);
       const list = store.get(lettersKey(a.id), []);
       if (b.dataset.act === "skip") { store.set(lettersKey(a.id), list.filter((x) => x.id !== d.id)); return renderLetters(); }
       list.forEach((x) => (x.kept = x.id === d.id));
@@ -698,6 +708,27 @@ function renderLetters() {
       renderLetters();
     }));
   });
+}
+
+// "12 Oct", or "12 Oct 2025" when it isn't this year
+function dayLabel(iso) {
+  const d = new Date(iso + "T00:00:00");
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", ...(d.getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" }) });
+}
+
+async function exportLetter(id, text, btn) {
+  const fmt = btn.dataset.fmt, label = btn.textContent;
+  btn.disabled = true; btn.textContent = "...";
+  try {
+    const r = await fetch(`/api/apps/${id}/letter/export`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, fmt }) });
+    if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m; } catch { /* not json */ } throw new Error(m); }
+    const name = /filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "")?.[1] || `Cover_Letter.${fmt}`;
+    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(await r.blob()), download: name });
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast(`Saved ${name}`);
+  } catch (e) { toast(e.message, 4000); }
+  finally { btn.disabled = false; btn.textContent = label; }
 }
 
 async function writeVoice(voice, btn) {
@@ -743,6 +774,7 @@ function wireDiscover() {
   $("#scanAll").onclick = () => scanNow("all");
   $("#scanFav").onclick = () => scanNow("favourites");
   $("#scanIndeed").onclick = () => scanNow("indeed");
+  $("#scanJobspy").onclick = () => scanNow("jobspy");
   $("#chromeGo").onclick = chromeFind;
   $("#chromePaste").onclick = () => openImport();
   $("#dockClear").onclick = () => { S.selected.clear(); loadFound(); };
@@ -798,14 +830,14 @@ function openImport(prompt) {
   box.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
-// mode: "all" (every source but Indeed), "favourites", or "indeed" (one Indeed search per career track)
+// mode: "all" (every source but Indeed), "favourites", "indeed" (one Indeed search per career track) or "jobspy"
 async function scanNow(mode) {
-  const line = $("#scanLine"), btns = [$("#scanAll"), $("#scanFav"), $("#scanIndeed")];
+  const line = $("#scanLine"), btns = [$("#scanAll"), $("#scanFav"), $("#scanIndeed"), $("#scanJobspy")];
   line.hidden = false;
-  line.innerHTML = `<div class="progress"></div><div class="progress__text">${{ favourites: "Scanning your favourite companies", indeed: "Searching Indeed for each of your career tracks, about a minute" }[mode] || "Scanning your sources, favourites first"}</div>`;
+  line.innerHTML = `<div class="progress"></div><div class="progress__text">${{ favourites: "Scanning your favourite companies", indeed: "Searching Indeed for each of your career tracks, about a minute", jobspy: "Searching LinkedIn, Indeed, Google and Naukri for your career tracks, a few minutes" }[mode] || "Scanning your sources, favourites first"}</div>`;
   btns.forEach((b) => (b.disabled = true));
   try {
-    const { job } = await api("/api/scan", { body: { days: +$("#days").value, favourites: mode === "favourites", indeed: mode === "indeed" } });
+    const { job } = await api("/api/scan", { body: { days: +$("#days").value, favourites: mode === "favourites", indeed: mode === "indeed", jobspy: mode === "jobspy" } });
     const res = await pollJob(job, (l) => ($(".progress__text", line).textContent = l.msg));
     await loadFound();
     const failed = (res.results || []).filter((r) => r.error), read = (res.results || []).reduce((n, r) => n + (r.count || 0), 0);
@@ -991,7 +1023,7 @@ function renderPipeline() {
       <div class="item">${logoTile(r.id, r.logo, r.company)}
         <span class="item__body"><span class="item__title">${esc(r.company)}</span><span class="item__meta" title="${esc(r.role)}">${esc(r.role)}</span></span>
         <span class="item__aside">${scoreNum(r.score_after)}</span></div>
-      <div class="app-card__meta"><span class="num">${esc(r.applied_on || r.created.slice(0, 10))}</span><span class="app-card__host" title="${esc(r.job_url || "")}${r.job_id ? `, ID ${esc(r.job_id)}` : ""}">${esc(host(r.job_url || ""))}</span>${statusSel(r)}</div>
+      <div class="app-card__meta">${r.applied_on ? `<span class="chip chip--ok chip--pill num" title="The day you marked this applied">Applied on: ${esc(dayLabel(r.applied_on))}</span>` : `<span class="num" title="Date this CV was made">Tailored ${esc(dayLabel(r.created.slice(0, 10)))}</span>`}<span class="app-card__host" title="${esc(r.job_url || "")}${r.job_id ? `, ID ${esc(r.job_id)}` : ""}">${esc(host(r.job_url || ""))}</span>${statusSel(r)}</div>
       <div class="app-card__acts">
         ${r.job_url ? `<a class="btn btn--sm" href="${esc(r.job_url)}" target="_blank" rel="noopener" data-stop title="${esc(r.job_url)}">Open posting</a>` : `<span class="type-meta">No link saved</span>`}
         <a class="btn btn--sm btn--ghost" href="/apps/${esc(r.id)}/pdf?download=1" data-stop title="${esc(r.pdf)}">PDF</a>

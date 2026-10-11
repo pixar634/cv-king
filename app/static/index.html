@@ -9,8 +9,8 @@
 <link rel="stylesheet" href="/static/vendor/codemirror-5.65.16/codemirror.min.css">
 <link rel="stylesheet" href="/static/css/tokens.css?v=1">
 <link rel="stylesheet" href="/static/css/base.css?v=4">
-<link rel="stylesheet" href="/static/css/components.css?v=12">
-<link rel="stylesheet" href="/static/css/views.css?v=14">
+<link rel="stylesheet" href="/static/css/components.css?v=13">
+<link rel="stylesheet" href="/static/css/views.css?v=15">
 </head>
 <body>
 <header class="topbar">
@@ -105,6 +105,7 @@
         <button class="btn btn--block" id="chromeGo" title="Copies a ready-made prompt and opens a LinkedIn Jobs search in a new tab. Open Claude in Chrome's side panel there, paste, and let it collect the jobs. Then paste its reply back here.">Find with Claude in Chrome</button>
         <button class="btn btn--sm btn--ghost" id="chromePaste">Paste its results</button>
         <button class="btn btn--block" id="scanIndeed" title="Searches Indeed for each of your career tracks in your city, through Indeed's Claude connector, with full job descriptions. Runs one track after another (Indeed limits calls per minute), so allow a few minutes.">Scan Indeed</button>
+        <button class="btn btn--block" id="scanJobspy" title="Searches LinkedIn, Indeed, Google Jobs and Naukri with the JobSpy library, using the job titles of your career tracks and your city from your profile. These sites' terms don't allow scraping and they sometimes block it, so it can come back thin. Slow: a few minutes.">Scan with JobSpy</button>
         <div id="scanLine" hidden></div>
         <label class="field"><span class="eyebrow">Posted within</span>
           <select id="days" class="control--sm">
@@ -322,6 +323,6 @@
 <script src="/static/fx.js?v=5"></script>
 <script src="/static/career.js?v=4"></script>
 <script src="/static/setup.js?v=1"></script>
-<script src="/static/app.js?v=41"></script>
+<script src="/static/app.js?v=47"></script>
 </body>
 </html>

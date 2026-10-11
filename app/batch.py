@@ -99,7 +99,7 @@ def add(entries: list[dict], defaults: dict) -> list[str]:
         item_id = uuid.uuid4().hex[:10]
         req = {k: v for k, v in defaults.items() if v not in (None, "")} | {k: v for k, v in e.items() if k in (
             "jd", "company", "role", "job_url", "company_site", "market", "track", "variant", "max_pages", "engine",
-            "job_id", "location", "posted", "replace_id")}
+            "job_id", "location", "posted", "replace_id", "notes")}
         source = {k: e[k] for k in ("found_id", "url") if e.get(k)}
         with _lock:
             _mine()[item_id] = {"id": item_id, "created": dt.datetime.now().isoformat(timespec="seconds"),
