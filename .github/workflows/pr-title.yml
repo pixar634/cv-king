@@ -10,7 +10,7 @@ permissions: {}
 
 jobs:
   title:
-    name: Title follows [TYPE]: Subject
+    name: "Title follows [TYPE]: Subject"
     runs-on: ubuntu-latest
     if: github.event.pull_request.user.login != 'dependabot[bot]'
     steps:
