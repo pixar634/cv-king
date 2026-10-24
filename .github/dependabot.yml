@@ -1,0 +1,19 @@
+# Opens a PR once a week when a Python package or a GitHub Action has an update. CI runs on each one.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "[CHORE]"
+    labels: [dependencies]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "[CHORE]"
+    labels: [dependencies]

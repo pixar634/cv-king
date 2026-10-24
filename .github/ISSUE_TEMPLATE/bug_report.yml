@@ -1,0 +1,63 @@
+name: Bug report
+description: Something in JobMagnet is broken or behaves wrongly.
+title: "[BUG]: "
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. **Before you paste anything, remove personal details**: your name, email, phone,
+        employers you don't want public, and anything from your CV. Logs and screenshots can contain them.
+        Found a security problem? Don't open an issue: see [SECURITY.md](https://github.com/pixar634/jobmagnet/blob/main/SECURITY.md).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you saw, and what you expected instead.
+      placeholder: I pressed Scan Indeed and got "Indeed: rate limit" every time, even after waiting an hour.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Discover
+        2. Press Scan Indeed
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the app?
+      options: [Setup / profile, Tailor, Discover, Pipeline, Interview, Cold mail, Career, Settings, Something else]
+    validations:
+      required: true
+  - type: dropdown
+    id: writer
+    attributes:
+      label: Which writer were you using?
+      options: [Claude (signed in), Claude (API key), Gemini (signed in), Gemini (API key), Not relevant]
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Windows, macOS, Linux]
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error message or log
+      description: The text from the error toast, or the last lines of the terminal running the app. With personal details removed.
+      render: text
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed personal details from everything above.
+          required: true

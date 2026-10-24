@@ -1,0 +1,29 @@
+# Every PR is squash-merged, and its title becomes the commit message on main, so the title must follow
+# "[TYPE]: Subject" (see CONTRIBUTING.md). Edit the title and this check runs again.
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  title:
+    name: Title follows [TYPE]: Subject
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    steps:
+      - name: Check the title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          types='FEATURE|BUG|DESIGN|REFACTOR|PERF|SECURITY|INFRA|CHORE|TEST|DOCS|DATA|REVERT'
+          if [[ "$TITLE" =~ ^\[($types)\]:\ [A-Z] ]]; then
+            echo "Title OK: $TITLE"
+          else
+            echo "::error::The PR title must look like '[FEATURE]: Add a dark theme' or '[BUG]: Stop losing saved letters'."
+            echo "::error::Types: ${types//|/, }. The subject after the colon starts with a capital letter."
+            echo "Your title: $TITLE"
+            exit 1
+          fi

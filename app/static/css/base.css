@@ -1,0 +1,74 @@
+/* Base: reset, element defaults and type roles. Form controls are styled here once, at zero
+   specificity (:where), so every input, select and checkbox in the app looks the same and any
+   component can still adjust one without fighting the cascade. */
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { height: 100%; }
+body { margin: 0; min-height: 100%; }   /* min-height, not height: the sticky top bar needs a body as tall as the page */
+/* The page itself scrolls without a visible scrollbar (wheel, trackpad and keys still work), so the page
+   width never changes between short and long screens. Inner panels keep their thin scrollbars. */
+html { scrollbar-width: none; }
+html::-webkit-scrollbar { display: none; }
+body { overflow-x: clip; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 450 14px/1.5 var(--font-sans); letter-spacing: .005em;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+}
+* { scrollbar-width: thin; scrollbar-color: var(--pop-black-200) transparent; }
+button, input, select, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
+button { cursor: pointer; }
+a { color: inherit; }
+img { display: block; }
+h1, h2, h3, h4, p { margin: 0; }
+::selection { background: rgba(229, 254, 64, .3); color: var(--white); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; padding: 1px 5px; background: var(--surface-3); }
+
+/* ---------- type roles ---------- */
+.type-display { font-family: var(--font-serif); font-weight: 700; font-size: 40px; line-height: 1.08; letter-spacing: -.01em; color: var(--white); }
+.type-h1 { font-family: var(--font-serif); font-weight: 700; font-size: 32px; line-height: 1.15; color: var(--white); }
+.type-h2 { font-weight: 800; font-size: 20px; line-height: 1.25; letter-spacing: -.005em; color: var(--text); }
+.type-h3 { font-weight: 700; font-size: 15px; line-height: 1.3; color: var(--text); }
+.type-body { font-size: 14px; line-height: 1.6; color: var(--text-2); }
+.type-meta { font-size: 12.5px; line-height: 1.5; color: var(--text-3); }
+.eyebrow { font-weight: 800; font-size: 10.5px; line-height: 1.2; letter-spacing: var(--caps-tracking); text-transform: uppercase; color: var(--text-3); }
+.num { font-variant-numeric: tabular-nums; }
+.text-2 { color: var(--text-2); }
+.text-3 { color: var(--text-3); }
+.sp { flex: 1; }
+
+/* ---------- form controls ---------- */
+:where(input[type=text], input[type=url], input[type=date], input[type=number], input[type=search], select, textarea) {
+  height: var(--h-md); padding: 0 12px; border: 1px solid var(--line-2); border-radius: 0;
+  background: var(--surface-2); color: var(--text); font-size: 13.5px; font-weight: 500;
+  outline: none; caret-color: var(--accent); transition: border-color var(--dur) var(--ease);
+}
+:where(textarea) { height: auto; padding: 10px 12px; line-height: 1.55; resize: vertical; }
+:where(input, select, textarea):hover { border-color: var(--line-3); }
+:where(input, select, textarea):focus { border-color: var(--white); }
+:where(input, textarea)::placeholder { color: var(--text-4); }
+:where(select) {
+  appearance: none; padding-right: 34px; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23ffffff' stroke-opacity='.7' stroke-width='1.6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center;
+}
+:where(select) option { background: var(--surface-2); color: var(--text); }
+:where(input[type=date])::-webkit-calendar-picker-indicator { filter: invert(1); opacity: .6; cursor: pointer; }
+.control--sm { height: var(--h-sm) !important; font-size: 12.5px !important; padding-left: 10px; }
+select.control--sm { padding-right: 28px; background-position: right 9px center; }
+.invalid { border-color: var(--bad) !important; }
+
+/* NeoPOP checkbox: a square that fills with the accent and presses in. */
+:where(input[type=checkbox]) {
+  appearance: none; flex: none; width: 18px; height: 18px; margin: 0; cursor: pointer;
+  border: 1.5px solid var(--text-2); background: var(--bg) center / 12px no-repeat;
+  transition: background-color var(--dur), border-color var(--dur), transform var(--dur);
+}
+:where(input[type=checkbox]):hover { border-color: var(--white); }
+:where(input[type=checkbox]):checked {
+  border-color: var(--accent); background-color: var(--accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2 6.2l2.6 2.6L10 3.4' fill='none' stroke='%230d0d0d' stroke-width='2'/%3E%3C/svg%3E");
+}
+:where(input[type=checkbox]):active { transform: translate(1px, 1px); }

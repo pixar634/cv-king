@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest something JobMagnet should do, or do better.
+title: "[FEATURE]: "
+labels: [enhancement, triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would it solve?
+      description: Start from the job-hunting problem, not the solution.
+      placeholder: When a job asks for a cover letter in the application form, I have to copy it out of the Letter tab by hand.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Anything you tried or considered instead?
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the app?
+      options: [Setup / profile, Tailor, Discover, Pipeline, Interview, Cold mail, Career, Settings, Something new]
+    validations:
+      required: true
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Would you like to build it?
+      options:
+        - label: I'd like to open a pull request for this.

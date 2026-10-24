@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/pixar634/jobmagnet/security/advisories/new
+    about: Privately, so it can be fixed before anyone else knows about it.
+  - name: Ask a question or share an idea
+    url: https://github.com/pixar634/jobmagnet/discussions
+    about: Setup help, "how do I...", and ideas that aren't ready to be a feature request yet.

@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en-GB" class="v-{{ doc.variant }} d-{{ doc.density }}">
+<head>
+<meta charset="utf-8">
+<title>{{ doc.meta_title }}</title>
+<style>
+/* FONTS-BEGIN */
+@font-face { font-family: "Amiri"; src: url("{{ font_base }}Amiri-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; }
+@font-face { font-family: "Amiri"; src: url("{{ font_base }}Amiri-Bold.ttf") format("truetype"); font-weight: 700; font-style: normal; }
+@font-face { font-family: "Amiri"; src: url("{{ font_base }}Amiri-Italic.ttf") format("truetype"); font-weight: 400; font-style: italic; }
+@font-face { font-family: "Amiri"; src: url("{{ font_base }}Amiri-BoldItalic.ttf") format("truetype"); font-weight: 700; font-style: italic; }
+@font-face { font-family: "Plex"; src: url("{{ font_base }}IBMPlexSans-400-normal.ttf") format("truetype"); font-weight: 400; font-style: normal; }
+@font-face { font-family: "Plex"; src: url("{{ font_base }}IBMPlexSans-500-normal.ttf") format("truetype"); font-weight: 500; font-style: normal; }
+@font-face { font-family: "Plex"; src: url("{{ font_base }}IBMPlexSans-600-normal.ttf") format("truetype"); font-weight: 600 700; font-style: normal; }
+@font-face { font-family: "Plex"; src: url("{{ font_base }}IBMPlexSans-400-italic.ttf") format("truetype"); font-weight: 400; font-style: italic; }
+/* FONTS-END */
+
+/* One structure for every layout, so an ATS reads all of them the same way: name, contact,
+   summary, skills, then each role as dates, location, title, company, bullets. Baked-in ATS rules:
+   real text only, ligatures off (an "fi" glyph breaks keyword search), no hyphenation, icons as
+   vector paths (never an icon font), black text. */
+@page { size: A4; margin: {{ doc.geom.margin }}; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html {
+  font-size: {{ doc.font_pt }}pt;
+  line-height: 1.3;
+  color: #000;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "clig" 0, "dlig" 0, "hlig" 0;
+  hyphens: none;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+body { background: #fff; }
+a { color: inherit; text-decoration: none; }
+strong { font-weight: 700; }
+
+.hd h1 { font-weight: 700; line-height: 1.1; }
+.contact { list-style: none; }
+.contact svg { width: 10pt; height: 10pt; flex: none; fill: currentColor; }
+
+.sec { margin-top: {{ doc.geom.sec_gap }}pt; }
+.sec > h2 { font-weight: 700; line-height: 1.2; break-after: avoid; }
+.sec p { text-wrap: pretty; }
+.entry { margin-bottom: {{ doc.geom.entry_gap }}pt; }
+.entry:last-child { margin-bottom: 0; }
+.role { font-weight: 700; break-after: avoid; }
+.org { font-style: italic; break-after: avoid; }
+.org .client { font-style: normal; }
+/* FlowCV and Classic: the location trails the company on its own line of text ("Company · City"). */
+.v-flowcv .entry .org, .v-flowcv .entry .loc, .v-classic .entry .org, .v-classic .entry .loc { display: inline; font-style: italic; }
+.v-flowcv .entry .loc::before, .v-classic .entry .loc::before { content: " \00B7  "; white-space: pre; }
+.loc:empty { display: none !important; }
+.when > span { display: block; }
+ul.bul { list-style: none; margin-top: 1pt; }
+/* The bullet is inline text on its own line, with a hanging indent. A floating (absolute) bullet
+   becomes a separate column of dots to a PDF text extractor, which then regroups lines and can file
+   one role's bullets under the next role's title. */
+ul.bul li { padding-left: 9pt; text-indent: -9pt; break-inside: avoid; }
+ul.bul li::before { content: "\2022"; display: inline-block; width: 9pt; text-indent: 0; padding-left: 1pt; }
+.langs span + span::before { content: "  \00B7  "; white-space: pre; }
+.gdpr { margin-top: 10pt; font-size: 7.4pt; line-height: 1.25; color: #333; }
+
+/* Location comes after the company in the text, never between the dates and the title: an ATS
+   resume parser takes the line after the dates as the employer, and filed "Bengaluru" as the company. */
+/* The headline sits on its own line below the name: beside it, a parser reads "Paul Lead" as the surname. */
+/* ---------- FlowCV serif (the original design) ---------- */
+html.v-flowcv { font-family: "Amiri", "Times New Roman", serif; }
+.v-flowcv .hd h1 { font-size: 25pt; }
+.v-flowcv .hd .headline { font-weight: 400; font-style: italic; font-size: 14pt; margin-top: 1pt; }
+.v-flowcv .sec > h2, .v-classic .sec > h2 { font-size: 11.4pt; letter-spacing: 0.02em; padding-bottom: 2pt; border-bottom: 1.4pt solid #000; margin-bottom: 5.5pt; }
+.v-flowcv .entry { display: grid; grid-template-columns: 33mm 1fr; column-gap: 6mm; }
+.v-flowcv .skills .entry { margin-bottom: 2.5pt; }
+.v-flowcv .skills .when { font-weight: 700; }
+
+/* shared icon-grid header (FlowCV, Classic) */
+.h-grid .contact { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8mm; row-gap: 6pt; margin-top: 10pt; font-size: 10pt; }
+.d-compact .h-grid .contact { row-gap: 3pt; margin-top: 7pt; }
+.h-grid .contact li { display: flex; align-items: center; gap: 8pt; min-width: 0; }
+.h-grid .contact li.wide { grid-column: 1 / -1; }
+
+/* ---------- Classic: one column, Calibri, dates right ---------- */
+html.v-classic { font-family: Calibri, Carlito, "Liberation Sans", sans-serif; line-height: 1.28; }
+.v-classic .hd h1 { font-size: 22pt; }
+.v-classic .hd .headline { font-size: 12.5pt; font-weight: 400; color: #222; margin-top: 1pt; }
+.v-classic .sec > h2 { font-size: 10.6pt; letter-spacing: 0.06em; border-bottom-width: 1pt; }
+.v-classic .entry > .when { float: right; text-align: right; margin-left: 6mm; }
+.v-classic ul.bul { clear: right; }
+.v-classic .skills .entry > .when, .v-classic .skills .entry > .what { float: none; display: inline; margin: 0; }
+.v-classic .skills .entry > .when::after { content: ": "; }
+.v-classic .skills .entry { margin-bottom: 2pt; }
+
+/* ---------- title-and-dates grid (Engineer, Modern) ---------- */
+.v-engineer .xp .entry, .v-modern .xp .entry, .v-engineer .edu .entry, .v-modern .edu .entry {
+  display: grid; grid-template-columns: 1fr auto; column-gap: 6mm;
+}
+.v-engineer .xp .when, .v-engineer .xp .what, .v-modern .xp .when, .v-modern .xp .what,
+.v-engineer .edu .when, .v-engineer .edu .what, .v-modern .edu .when, .v-modern .edu .what { display: contents; }
+.v-engineer .entry .role, .v-modern .entry .role { grid-row: 1; grid-column: 1; }
+.v-engineer .entry .dates, .v-modern .entry .dates { grid-row: 1; grid-column: 2; text-align: right; }
+.v-engineer .entry .org, .v-modern .entry .org { grid-row: 2; grid-column: 1; }
+.v-engineer .entry .loc, .v-modern .entry .loc { grid-row: 2; grid-column: 2; text-align: right; }
+.v-engineer .entry .bul, .v-engineer .entry .detail, .v-modern .entry .bul, .v-modern .entry .detail { grid-column: 1 / -1; }
+.v-engineer .skills .entry, .v-modern .skills .entry { margin-bottom: 1.5pt; }
+.v-engineer .skills .when, .v-modern .skills .when { display: inline; font-weight: 700; }
+.v-engineer .skills .when::after, .v-modern .skills .when::after { content: ": "; }
+.v-engineer .skills .what, .v-modern .skills .what { display: inline; }
+
+/* ---------- Engineer: the Jake's-Resume structure ---------- */
+html.v-engineer { font-family: Cambria, Georgia, "Times New Roman", serif; line-height: 1.24; }
+.v-engineer .hd { text-align: center; }
+.v-engineer .hd h1 { font-size: 23pt; font-weight: 700; letter-spacing: 0.01em; }
+.v-engineer .hd .headline { display: block; font-size: 12pt; font-weight: 400; font-style: italic; margin-top: 2pt; }
+.v-engineer .contact { margin-top: 4pt; font-size: 9.6pt; }
+.v-engineer .contact li { display: inline; }
+.v-engineer .contact li + li::before { content: "  |  "; white-space: pre; }
+.v-engineer .contact li.wide { display: block; margin-top: 1.5pt; }
+.v-engineer .contact li.wide::before { content: none; }
+.v-engineer .contact svg { display: none; }
+.v-engineer .sec > h2 { font-size: 11pt; letter-spacing: 0.08em; padding-bottom: 1.5pt; border-bottom: 0.8pt solid #000; margin-bottom: 4pt; }
+.v-engineer .entry .dates { font-weight: 400; }
+.v-engineer .entry .loc { font-style: italic; }
+
+/* ---------- Modern sans: one muted accent ---------- */
+html.v-modern { font-family: "Plex", "Segoe UI", sans-serif; line-height: 1.34; --accent: #1d4e5c; --rule: #b9c9ce; }
+.v-modern .hd h1 { font-size: 23pt; font-weight: 600; letter-spacing: -0.01em; }
+.v-modern .hd .headline { display: block; font-size: 12.5pt; font-weight: 500; color: var(--accent); margin-top: 2pt; }
+.v-modern .contact { margin-top: 6pt; font-size: 9.2pt; color: #222; }
+.v-modern .contact li { display: inline; }
+.v-modern .contact li + li::before { content: "  ·  "; white-space: pre; }
+.v-modern .contact li.wide { display: block; margin-top: 2pt; }
+.v-modern .contact li.wide::before { content: none; }
+.v-modern .contact svg { display: none; }
+.v-modern .sec > h2 { font-size: 10pt; font-weight: 600; letter-spacing: 0.04em; color: var(--accent); padding-bottom: 2pt; border-bottom: 0.8pt solid var(--rule); margin-bottom: 4.5pt; }
+.v-modern .role { font-weight: 600; }
+.v-modern .org { font-style: normal; color: var(--accent); }
+.v-modern .entry .dates, .v-modern .entry .loc { color: #333; font-size: 0.95em; }
+.v-modern strong { font-weight: 600; }
+
+/* Changes view only (never printed): what the tailoring did to each line. */
+.chg-legend { display: none; }
+@media screen {
+  .marks .chg-legend { display: flex; gap: 14px; flex-wrap: wrap; font: 11px/1.4 system-ui, sans-serif; color: #444; margin: 0 0 10px; padding: 7px 10px; background: #f6f4ef; border-radius: 6px; }
+  .marks .chg-legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; background: var(--c); }
+  .marks .c-rewritten { background: #fff1bf; }
+  .marks .c-merged { background: #dfeaff; }
+  .marks .c-new { background: #ffe1d6; }
+  .marks .c-rewritten, .marks .c-merged, .marks .c-new { border-radius: 3px; cursor: help; }
+}
+@media screen {
+  html { background: #d9d5cc; }
+  body { width: 210mm; min-height: 297mm; margin: 12px auto; padding: {{ doc.geom.margin }}; background: #fff; box-shadow: 0 2px 16px rgba(0,0,0,.18); }
+}
+</style>
+</head>
+<body{% if doc.marks %} class="marks"{% endif %}>
+{% if doc.marks %}<div class="chg-legend"><span style="--c:#fff1bf">Rewritten for this JD</span><span style="--c:#dfeaff">Two bullets merged</span><span style="--c:#ffe1d6">Headline / summary written for this JD</span><span style="--c:transparent;margin-left:auto">Hover a highlighted line to see your original</span></div>{% endif %}
+<header class="hd h-{{ doc.header_style }}">
+  <h1><span class="name">{{ doc.name }}</span></h1>
+  <div class="headline{% if doc.marks and doc.marks.headline %} c-new{% endif %}"{% if doc.marks and doc.marks.headline %} title="Your profile: {{ doc.marks.headline }}"{% endif %}>{{ doc.headline }}</div>
+  <ul class="contact">
+    {% if doc.email %}    <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4.5h18a1.5 1.5 0 0 1 1.5 1.5v.35L12 13 1.5 6.35V6A1.5 1.5 0 0 1 3 4.5zM1.5 8.1 12 14.8l10.5-6.7V18a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 18z"/></svg><a href="mailto:{{ doc.email }}">{{ doc.email }}</a></li>{% endif %}
+    {% if doc.phone %}    <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8a15.2 15.2 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"/></svg><span>{{ doc.phone }}</span></li>{% endif %}
+    {% if doc.location %}    <li><svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M12 1.5a7.5 7.5 0 0 0-7.5 7.5c0 5.6 7.5 13.5 7.5 13.5S19.5 14.6 19.5 9A7.5 7.5 0 0 0 12 1.5zm0 10.3a2.8 2.8 0 1 1 0-5.6 2.8 2.8 0 0 1 0 5.6z"/></svg><span>{{ doc.location }}</span></li>{% endif %}
+    {% if doc.linkedin %}    <li><svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.5h16A2.5 2.5 0 0 1 22.5 4v16a2.5 2.5 0 0 1-2.5 2.5H4A2.5 2.5 0 0 1 1.5 20V4A2.5 2.5 0 0 1 4 1.5zM5.6 9.4V18h2.9V9.4zm1.45-4.4a1.68 1.68 0 1 0 0 3.36 1.68 1.68 0 0 0 0-3.36zM10.4 9.4V18h2.9v-4.5c0-1.2.5-2 1.6-2 1 0 1.4.75 1.4 2V18h2.9v-5.3c0-2.6-1.4-3.5-3.2-3.5-1.4 0-2.3.65-2.7 1.35V9.4z"/></svg><a href="https://{{ doc.linkedin }}">{{ doc.linkedin }}</a></li>{% endif %}
+    {% if doc.header_line %}
+    <li class="wide"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M12 1.5a10.5 10.5 0 1 0 0 21 10.5 10.5 0 0 0 0-21zm-1.3 15-4.4-4.4 1.6-1.6 2.8 2.8 5.9-5.9 1.6 1.6z"/></svg><span>{{ doc.header_line }}</span></li>
+    {% endif %}
+  </ul>
+</header>
+
+<section class="sec">
+  <h2>PROFESSIONAL SUMMARY</h2>
+  <p{% if doc.marks %} class="c-new" title="Your original summary: {{ doc.marks.summary }}"{% endif %}>{{ doc.summary | md }}</p>
+</section>
+
+<section class="sec skills">
+  <h2>SKILLS</h2>
+  {% for g in doc.skills %}
+  <div class="entry"><div class="when">{{ g.label }}</div><div class="what">{{ g["items"] | join(", ") }}</div></div>
+  {% endfor %}
+</section>
+
+<section class="sec xp">
+  <h2>WORK EXPERIENCE</h2>
+  {% for r in doc.experience %}
+  <div class="entry">
+    <div class="when"><span class="dates">{{ r.dates }}</span></div>
+    <div class="what">
+      <div class="role">{{ r.title }}</div>
+      <div class="org">{{ r.company }}{% if r.client %}<span class="client"> · Client: {{ r.client }}</span>{% endif %}</div>
+      <div class="loc">{{ r.location }}</div>
+      {% if r.bullets %}<ul class="bul">
+        {% for b in r.bullets %}{% set m = doc.marks.bullets[r.id][loop.index0] if doc.marks and doc.marks.bullets.get(r.id) and loop.index0 < doc.marks.bullets[r.id]|length else None %}<li{% if m and m.status != "kept" %} class="c-{{ m.status }}" title="Original: {{ m.before | join(' + ') }}"{% endif %}>{{ b | md }}</li>
+        {% endfor %}
+      </ul>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</section>
+
+{% if doc.projects %}
+<section class="sec xp">
+  <h2>PROJECTS</h2>
+  {% for p in doc.projects %}
+  <div class="entry">
+    <div class="when"><span class="dates">{{ p.dates }}</span><span class="loc">{{ p.url }}</span></div>
+    <div class="what">
+      <div class="role">{{ p.name }}</div>
+      <div class="org">{{ p.role }}</div>
+      <ul class="bul">
+        {% for b in p.bullets %}<li>{{ b | md }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+<section class="sec edu">
+  <h2>EDUCATION</h2>
+  {% for e in doc.education %}
+  <div class="entry">
+    <div class="when"><span class="dates">{{ e.year }}</span></div>
+    <div class="what">
+      <div class="role">{{ e.degree }}</div>
+      <div class="org">{{ e.institution }}</div>
+      <div class="loc">{{ e.location }}</div>
+      {% for d in e.details %}<div class="detail">{{ d }}</div>{% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</section>
+
+{% if doc.certifications %}
+<section class="sec">
+  <h2>CERTIFICATIONS</h2>
+  {% for c in doc.certifications %}
+  <div class="cert"><span class="role">{{ c.name }}</span>, <span class="org">{{ c.issuer }}</span>{% if c.detail and doc.density == "normal" %}. {{ c.detail }}{% endif %}</div>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if doc.languages %}
+<section class="sec">
+  <h2>LANGUAGES</h2>
+  <div class="langs">{% for l in doc.languages %}<span>{{ l.name }}{% if l.level %} ({{ l.level }}){% endif %}</span>{% endfor %}</div>
+</section>
+{% endif %}
+
+{% if doc.interests %}
+<section class="sec">
+  <h2>INTERESTS</h2>
+  <p>{{ doc.interests }}</p>
+</section>
+{% endif %}
+
+{% if doc.gdpr %}
+<p class="gdpr">I hereby consent to the processing of my personal data included in this CV for the purposes of the recruitment process, in accordance with Regulation (EU) 2016/679 of the European Parliament and of the Council of 27 April 2016 (General Data Protection Regulation).</p>
+{% endif %}
+</body>
+</html>

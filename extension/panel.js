@@ -1,0 +1,418 @@
+"use strict";
+// The side panel. It reads the page you're on (through page.js) and talks to JobMagnet on this machine.
+// On a job posting: read it and tailor a CV, with the scores. On an application form: fill it from your
+// profile, attach the CV and cover letter, and submit only when you press Submit.
+const SERVER = "http://127.0.0.1:8765";
+const ALL_SITES = { origins: ["https://*/*", "http://*/*"] };
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const S = { tab: null, ctx: null, rows: [], reports: {}, items: {}, busy: {}, granted: false, warnedEmpty: false };
+chrome.permissions.contains(ALL_SITES).then((g) => (S.granted = g));
+
+async function api(path, opts = {}) {
+  const r = await fetch(SERVER + path, { method: opts.method || (opts.body ? "POST" : "GET"), credentials: "include",
+    headers: opts.body ? { "Content-Type": "application/json" } : {}, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  if (!r.ok) {
+    let msg = r.statusText;
+    try { msg = (await r.json()).detail || msg; } catch { /* not json */ }
+    throw new Error(msg);
+  }
+  return opts.raw ? r : r.json();
+}
+
+async function pollJob(jid, onLog) {
+  let seen = 0;
+  for (;;) {
+    const j = await api(`/api/jobs/${jid}`);
+    for (; seen < j.log.length; seen++) onLog(j.log[seen]);
+    if (j.status === "done") return j.result;
+    if (j.status === "error") throw new Error(j.error);
+    await sleep(700);
+  }
+}
+
+// What the panel remembers per tab (this browser session only): the posting read, the tailoring, the form.
+const key = (tabId) => `tab:${tabId}`;
+async function memory(tabId) {
+  try { return (await chrome.storage.session.get(key(tabId)))[key(tabId)] || {}; } catch { return {}; }
+}
+async function remember(tabId, patch) {
+  const m = { ...(await memory(tabId)), ...patch };
+  try { await chrome.storage.session.set({ [key(tabId)]: m }); } catch { /* storage unavailable */ }
+  if (S.ctx && S.ctx.tab.id === tabId) S.ctx.mem = m;
+  return m;
+}
+
+// Reading every site needs your OK once; without it the panel can still read the tab you opened it on.
+function askAccess() {
+  if (S.granted) return Promise.resolve(true);
+  return chrome.permissions.request(ALL_SITES).then((g) => (S.granted = g)).catch(() => false);
+}
+
+async function inPage(cmd, arg = null, where = {}) {
+  const target = { tabId: where.tabId ?? S.tab.id };
+  if (where.all) target.allFrames = true;
+  else if (where.frame != null) target.frameIds = [where.frame];
+  await chrome.scripting.executeScript({ target, files: ["page.js"] });
+  const res = await chrome.scripting.executeScript({ target, func: (c, a) => window.__jm[c](a), args: [cmd, arg] });
+  return res.filter((r) => r.result != null).map((r) => ({ frame: r.frameId, ...r.result }));
+}
+
+// ---------- matching a page to an application ----------
+function urlKey(u) {
+  try {
+    const x = new URL(u);
+    return (x.hostname.replace(/^www\./, "") + x.pathname.replace(/\/(apply|application)\/?$/i, "").replace(/\/+$/, "")).toLowerCase();
+  } catch { return ""; }
+}
+function matchApp(url) {
+  const k = urlKey(url);
+  if (!k) return null;
+  let host = "";
+  try { host = new URL(url).hostname.replace(/^www\./, ""); } catch { /* not a url */ }
+  return S.rows.find((r) => r.job_url && (urlKey(r.job_url) === k || k.startsWith(urlKey(r.job_url) + "/")))
+    || S.rows.find((r) => r.job_id && String(r.job_id).length >= 5 && r.job_url && urlKey(r.job_url).startsWith(host) && url.includes(r.job_id))
+    || null;
+}
+
+// ---------- refresh: which tab, which page, which application ----------
+let refreshing = null;
+function refresh() {
+  clearTimeout(refreshing);
+  refreshing = setTimeout(doRefresh, 150);
+}
+
+async function doRefresh() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab) return;
+  S.tab = tab;
+  let state;
+  try { state = await api("/api/state"); $("#dot").className = "dot on"; $("#dot").title = "JobMagnet is running"; }
+  catch { $("#dot").className = "dot off"; $("#dot").title = "JobMagnet isn't running"; return renderOffline(); }
+  if (state.setup) return draw(`<div class="card"><h2>Finish setting up first</h2><p class="sub">JobMagnet hasn't read your CV yet.</p>
+    <a class="btn btn--primary" href="${SERVER}/" target="_blank">Open JobMagnet</a></div>`);
+  S.rows = await api("/api/apps").catch(() => []);
+  const mem = await memory(tab.id);
+  let probe = null;
+  try { probe = (await inPage("probe", null, { all: true, tabId: tab.id })).reduce((a, p) => ({ fields: a.fields + p.fields, file: a.file || p.file, thanks: a.thanks || p.thanks }), { fields: 0, file: false, thanks: false }); }
+  catch { probe = null; }
+  if (S.tab.id !== tab.id) return;
+  const isForm = !!probe && (probe.fields >= 4 || (probe.file && probe.fields >= 2));
+  const here = mem.url && urlKey(mem.url) === urlKey(tab.url);
+  // An application from this page, or the one you were tailoring in this tab when the form opened.
+  const app = matchApp(tab.url) || ((isForm || here) && mem.appId ? S.rows.find((r) => r.id === mem.appId) : null);
+  S.ctx = { tab, mem, probe, isForm, here, app };
+  if (mem.itemId && !mem.appId) watchItem(tab.id, mem.itemId);
+  if (app && !S.reports[app.id]) S.reports[app.id] = await api(`/api/apps/${app.id}`).catch(() => null);
+  render();
+}
+
+// ---------- drawing ----------
+function draw(html) { $("#main").innerHTML = html; }
+
+function renderOffline() {
+  draw(`<div class="card"><h2>JobMagnet isn't running</h2>
+    <p class="sub">Double-click <b>start.bat</b> in your JobMagnet folder, then come back here.</p>
+    <button class="btn btn--primary" id="retry">Try again</button></div>`);
+  $("#retry").onclick = refresh;
+}
+
+function render() {
+  const c = S.ctx;
+  if (!c) return;
+  const { tab, mem, probe, isForm, here, app } = c;
+  const busy = S.busy[tab.id];
+  const parts = [];
+  if (busy) parts.push(`<div class="card"><div class="progress"></div><div class="sub">${esc(busy)}</div></div>`);
+  if (!probe) {
+    parts.push(`<div class="card"><h2>Open a job posting</h2><p class="sub">I can't read this page. Open a job posting or an application form, then press the button again.</p>
+      ${S.granted ? "" : `<button class="btn" id="access">Let JobMagnet read job pages</button>`}</div>`);
+    return finish(parts);
+  }
+  const item = mem.itemId && S.items[mem.itemId];
+  if (item && (here || isForm) && item.status !== "done") parts.push(itemCard(item));
+  else if (app) parts.push(appCard(app, S.reports[app.id]));
+  else if (!busy) parts.push(postingCard(mem, here));
+  if (isForm) parts.push(formCard(app, mem));
+  else if (app && !busy) parts.push(`<div class="card"><span class="eyebrow">Next</span><p class="sub" style="margin:0">Press <b>Apply</b> on the page. When the form opens, I'll fill it in for you to check.</p></div>`);
+  finish(parts);
+}
+
+function finish(parts) {
+  draw(parts.join(""));
+  const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+  on("access", () => askAccess().then(refresh));
+  on("tailor", () => tailorHere(false));
+  on("readOnly", () => tailorHere(true));
+  on("tailorAgain", () => tailorHere(false, S.ctx.app?.id));
+  on("fill", fillForm);
+  on("submit", submitForm);
+  on("markApplied", markApplied);
+  on("retryItem", () => remember(S.tab.id, { itemId: null }).then(() => tailorHere(false)));
+  const pick = document.getElementById("pickApp");
+  if (pick) pick.onchange = async () => { await remember(S.tab.id, { appId: pick.value || null }); refresh(); };
+  document.querySelectorAll("[data-need]").forEach((b) => (b.onclick = () => fillNeed(b.dataset.need)));
+}
+
+function postingCard(mem, here) {
+  const j = here && mem.job;
+  if (j) {
+    return `<div class="card"><span class="eyebrow">This job</span><h2>${esc(j.role || "Untitled role")}</h2>
+      <div class="sub">${esc(j.company)}${j.location ? ` · ${esc(j.location)}` : ""}</div>
+      <div class="meta">${j.description.split(/\s+/).length} words read${j.posted ? `, posted ${esc(j.posted)}` : ""}</div>
+      <button class="btn btn--primary btn--block" id="tailor">Tailor my CV</button>
+      <a class="btn btn--ghost btn--block" href="${SERVER}/?job=${esc(mem.jobJid)}" target="_blank">Review it in JobMagnet first</a></div>`;
+  }
+  return `<div class="card"><span class="eyebrow">This page</span>
+    <p class="sub" style="margin:0">On a job posting? I'll read it and write a CV for it. Select the description first if the page shows more than one job.</p>
+    <button class="btn btn--primary btn--block" id="tailor">Tailor my CV for this job</button>
+    <button class="btn btn--ghost btn--block" id="readOnly">Just read it</button></div>`;
+}
+
+function itemCard(it) {
+  if (it.status === "error") {
+    return `<div class="card"><span class="eyebrow">Tailoring</span><div class="notice bad">${esc(it.stage)}</div>
+      <button class="btn btn--primary" id="retryItem">Try again</button></div>`;
+  }
+  return `<div class="card"><span class="eyebrow">Tailoring</span><h2>${esc(it.role || "This job")}</h2><div class="sub">${esc(it.company || "")}</div>
+    <div class="progress"></div><div class="meta">${esc(it.stage || "Working")}. Usually one to three minutes; it carries on if you close this.</div></div>`;
+}
+
+function appCard(row, rep) {
+  const sc = rep?.scores || { before: row.score_before, after: row.score_after, ceiling: row.score_ceiling };
+  const ats = rep?.ats || [];
+  const failed = ats.filter((a) => !a.ok);
+  const flags = (rep?.analysis_flags || []).filter((f) => f.level === "error");
+  return `<div class="card"><span class="eyebrow">Your CV for this job</span>
+    <h2>${esc(row.role)}</h2><div class="sub">${esc(row.company)}</div>
+    <div class="row"><span class="chip ${row.status === "Applied" ? "ok" : ""}">${esc(row.status)}${row.applied_on ? ` ${esc(row.applied_on)}` : ""}</span>
+      ${rep ? `<span class="chip ${failed.length ? "warn" : "ok"}">ATS ${ats.length - failed.length}/${ats.length} checks</span>` : ""}
+      ${flags.length ? `<span class="chip warn">${flags.length} to check</span>` : ""}</div>
+    <div class="score"><div><span class="meta">Before</span><b>${sc.before}%</b></div><div class="now"><span class="meta">Now</span><b>${sc.after}%</b></div><div><span class="meta">Ceiling</span><b>${sc.ceiling}%</b></div></div>
+    <div class="meter" title="Keyword match: ${sc.after}% now, ${sc.ceiling}% is the most your profile can truthfully reach"><span style="width:${sc.after}%"></span><i style="left:${sc.ceiling}%"></i></div>
+    ${failed.length ? `<ul class="list">${failed.map((a) => `<li><span class="chip warn">✕</span><span>${esc(a.label)}${a.detail ? `<span class="meta"> ${esc(a.detail)}</span>` : ""}</span></li>`).join("")}</ul>` : ""}
+    ${flags.length ? `<details><summary>What to check</summary><ul class="list">${flags.map((f) => `<li>${esc(f.text)}</li>`).join("")}</ul></details>` : ""}
+    <div class="row"><a class="btn btn--sm" href="${SERVER}/?app=${encodeURIComponent(row.id)}" target="_blank">Open in JobMagnet</a>
+      <a class="btn btn--sm" href="${SERVER}/apps/${encodeURIComponent(row.id)}/pdf?download=1" target="_blank">Download CV</a>
+      <button class="btn btn--sm btn--ghost" id="tailorAgain">Tailor again</button></div></div>`;
+}
+
+function formCard(app, mem) {
+  const f = mem.fill && mem.fill.url === S.tab.url ? mem.fill : null;
+  const options = S.rows.slice(0, 40).map((r) => `<option value="${esc(r.id)}" ${app && r.id === app.id ? "selected" : ""}>${esc(r.company)} · ${esc(r.role)}</option>`).join("");
+  const picker = `<label class="need"><span class="eyebrow">Application</span><select id="pickApp"><option value="">Pick the CV for this form</option>${options}</select></label>`;
+  if (mem.submitted && mem.submittedUrl === S.tab.url) {
+    return `<div class="card"><span class="eyebrow">Application form</span><div class="notice ok">Submitted (pressed “${esc(mem.submitted)}”). It's marked Applied in Pipeline.</div></div>`;
+  }
+  if (!f) {
+    return `<div class="card"><span class="eyebrow">Application form</span>${picker}
+      ${mem.step ? `<p class="meta" style="margin:0">Pressed “${esc(mem.step)}”. Fill this step when it's loaded.</p>` : ""}
+      <button class="btn btn--primary btn--block" id="fill" ${app ? "" : "disabled"}>${mem.step ? "Fill this step" : "Fill the form"}</button>
+      <p class="meta" style="margin:0">Answers come from your profile and this CV. Anything I can't answer truthfully is left for you. Nothing is sent until you press Submit.</p></div>`;
+  }
+  const needs = f.needs.map((n) => {
+    const opts = n.options && n.options.length;
+    const input = n.kind === "file" ? `<span class="meta">Attach it on the page.</span>`
+      : n.kind === "checkbox" ? `<span class="meta">Tick it on the page if it applies.</span>`
+      : opts ? `<select id="n-${esc(n.id)}"><option value="">Choose</option>${n.options.map((o) => `<option>${esc(o)}</option>`).join("")}</select>`
+      : `<input id="n-${esc(n.id)}" placeholder="Your answer">`;
+    const can = n.kind !== "file" && n.kind !== "checkbox";
+    return `<div class="need"><label for="n-${esc(n.id)}">${esc(n.label)}${n.required ? " *" : ""}</label><span class="meta">${esc(n.why)}</span>${input}
+      ${can ? `<div class="row"><button class="btn btn--sm" data-need="${esc(n.id)}">Fill and remember</button></div>` : ""}</div>`;
+  }).join("");
+  return `<div class="card"><span class="eyebrow">Application form</span>
+    <div class="row"><span class="chip ok">${f.filled} filled</span>${f.attached ? `<span class="chip ok">${f.attached} file${f.attached > 1 ? "s" : ""} attached</span>` : ""}${f.needs.length ? `<span class="chip warn">${f.needs.length} need you</span>` : ""}</div>
+    <p class="meta" style="margin:0">Filled fields are outlined in yellow on the page, the ones that need you in orange. Check them, then submit.</p>
+    ${f.needs.length ? `<div>${needs}</div>` : ""}
+    ${S.warnedEmpty ? `<div class="notice">${esc(S.warnedEmpty)}</div>` : ""}
+    <button class="btn btn--primary btn--block" id="submit" ${f.submitText ? "" : "disabled"}>${f.submitText ? `Submit: press “${esc(f.submitText)}”` : "No submit button found"}</button>
+    <button class="btn btn--ghost btn--block" id="fill">Fill again</button></div>`;
+}
+
+// ---------- posting -> tailored CV ----------
+async function tailorHere(readOnly, replaceId = "") {
+  await askAccess();
+  const tabId = S.tab.id;
+  const say = (m) => { S.busy[tabId] = m; if (S.tab.id === tabId) render(); };
+  say("Reading the posting");
+  try {
+    const [page] = await inPage("grab", null, { tabId });
+    const { job } = await api("/api/clip", { body: page });
+    const got = await pollJob(job, (l) => say(l.msg));
+    await remember(tabId, { url: page.url, job: got, jobJid: job, itemId: null, appId: null });
+    if (!readOnly) {
+      say("Starting the CV");
+      const { ids } = await api("/api/batch", { body: { items: [{ jd: got.description, company: got.company, role: got.role,
+        job_url: got.url, job_id: got.job_id, location: got.location, posted: got.posted, market: got.market || "auto",
+        ...(replaceId ? { replace_id: replaceId } : {}) }] } });
+      await remember(tabId, { itemId: ids[0] });
+      S.items[ids[0]] = { id: ids[0], status: "queued", stage: "Waiting for a free slot", company: got.company, role: got.role };
+    }
+  } catch (e) {
+    delete S.busy[tabId];
+    draw(`<div class="card"><div class="notice bad">${esc(e.message)}</div><button class="btn" id="back">Back</button></div>`);
+    $("#back").onclick = refresh;
+    return;
+  }
+  delete S.busy[tabId];
+  refresh();
+}
+
+const watching = new Set();
+async function watchItem(tabId, itemId) {
+  if (watching.has(itemId)) return;
+  watching.add(itemId);
+  try {
+    for (;;) {
+      const it = (await api("/api/batch")).find((i) => i.id === itemId);
+      if (!it) break;
+      S.items[itemId] = it;
+      if (it.status === "done") { await remember(tabId, { appId: it.app_id }); break; }
+      if (it.status === "error") break;
+      if (S.tab?.id === tabId) render();
+      await sleep(2000);
+    }
+  } catch { /* the app stopped; the next refresh says so */ }
+  watching.delete(itemId);
+  if (S.tab?.id === tabId) refresh();
+}
+
+// ---------- form -> filled ----------
+const split = (fid) => { const i = fid.indexOf(":"); return [Number(fid.slice(0, i)), fid.slice(i + 1)]; };
+const blank = (v) => v == null || v === "" || v === false || (Array.isArray(v) && !v.length);
+
+async function fileFor(appId, which) {
+  const r = await api(which === "cv" ? `/apps/${appId}/pdf` : `/api/apps/${appId}/letter.pdf`, { raw: true });
+  const name = /filename="?([^";]+)"?/.exec(r.headers.get("Content-Disposition") || "")?.[1] || (which === "cv" ? "CV.pdf" : "Cover_Letter.pdf");
+  const buf = new Uint8Array(await r.arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+  return { name, type: "application/pdf", b64: btoa(bin) };
+}
+
+async function fillForm() {
+  await askAccess();
+  const tabId = S.tab.id, url = S.tab.url, app = S.ctx.app;
+  if (!app) return;
+  const say = (m) => { S.busy[tabId] = m; if (S.tab.id === tabId) render(); };
+  S.warnedEmpty = false;
+  say("Reading the form");
+  try {
+    const scans = await inPage("scan", null, { all: true, tabId });
+    const fields = scans.flatMap((s) => s.fields.map((f) => ({ ...f, id: `${s.frame}:${f.id}` })));
+    if (!fields.length) throw new Error("I couldn't find form fields on this page. If the form sits in a box from another site, open the form on its own page.");
+    const submitAt = scans.filter((s) => s.submit).sort((a, b) => b.fields.length - a.fields.length)[0];
+    const todo = fields.filter((f) => f.kind === "file" || blank(typeof f.value === "string" ? f.value.trim() : f.value));
+    say("Working out the answers");
+    const { job } = await api(`/api/apps/${app.id}/fill`, { body: { fields: todo, url } });
+    const res = await pollJob(job, (l) => say(l.msg));
+    const byId = Object.fromEntries(fields.map((f) => [f.id, f]));
+    const needs = res.needs.map((n) => ({ ...n, ...byId[n.id], why: n.why }));
+    const frames = {};
+    const at = (fid) => { const [fr, id] = split(fid); frames[fr] ||= { answers: {}, files: {}, needs: [] }; return [frames[fr], id]; };
+    for (const [fid, v] of Object.entries(res.answers)) { const [fr, id] = at(fid); fr.answers[id] = v; }
+    say("Attaching your CV and cover letter");
+    let attached = 0;
+    for (const [fid, which] of Object.entries(res.files)) {
+      try { const [fr, id] = at(fid); fr.files[id] = await fileFor(app.id, which); attached++; }
+      catch (e) { needs.push({ ...byId[fid], why: which === "letter" ? `No cover letter yet (${e.message}). Write one in JobMagnet, or attach your own.` : e.message }); }
+    }
+    for (const n of needs) { const [fr, id] = at(n.id); fr.needs.push({ id }); }
+    say("Filling the form");
+    let filled = 0;
+    for (const [frame, payload] of Object.entries(frames)) {
+      const [r] = await inPage("fill", payload, { frame: Number(frame), tabId });
+      if (!r) continue;
+      filled += r.done.length;
+      for (const id of r.failed) {
+        const fid = `${frame}:${id}`;
+        if (!needs.some((n) => n.id === fid)) needs.push({ ...byId[fid], why: "I couldn't set it; please do it on the page" });
+      }
+    }
+    await remember(tabId, { appId: app.id, step: null, fill: { url, needs, filled: filled - attached, attached,
+      submitText: submitAt?.submit || "", submitFrame: submitAt?.frame ?? 0 } });
+  } catch (e) {
+    delete S.busy[tabId];
+    draw(`<div class="card"><div class="notice bad">${esc(e.message)}</div><button class="btn" id="back">Back</button></div>`);
+    $("#back").onclick = refresh;
+    return;
+  }
+  delete S.busy[tabId];
+  render();
+}
+
+async function fillNeed(fid) {
+  const f = S.ctx.mem.fill, n = f.needs.find((x) => x.id === fid);
+  const el = document.getElementById(`n-${fid}`);
+  const v = el && el.value.trim();
+  if (!n || !v) return el && el.focus();
+  const [frame, id] = split(fid);
+  const [r] = await inPage("fill", { answers: { [id]: n.kind === "checkgroup" ? [v] : v } }, { frame });
+  if (!r || !r.done.length) return;
+  await api("/api/answers", { body: { q: n.label, a: v } }).catch(() => {});
+  await remember(S.tab.id, { fill: { ...f, filled: f.filled + 1, needs: f.needs.filter((x) => x.id !== fid) } });
+  render();
+}
+
+async function submitForm() {
+  const tabId = S.tab.id, mem = S.ctx.mem, f = mem.fill, app = S.ctx.app;
+  // What you typed on the page into the fields that needed you: kept, so the next form asks once fewer.
+  const vals = {};
+  const byFrame = {};
+  for (const n of f.needs) { const [fr, id] = split(n.id); (byFrame[fr] ||= []).push(id); }
+  for (const [frame, ids] of Object.entries(byFrame)) {
+    const [r] = await inPage("values", ids, { frame: Number(frame), tabId }).catch(() => []);
+    for (const [id, v] of Object.entries(r || {})) if (id !== "frame") vals[`${frame}:${id}`] = v;
+  }
+  const empty = f.needs.filter((n) => n.required && n.id in vals && blank(vals[n.id]));
+  if (empty.length && !S.warnedEmpty) {
+    S.warnedEmpty = `Still empty: ${empty.map((n) => n.label).join("; ")}. Press Submit again to send it anyway.`;
+    return render();
+  }
+  S.warnedEmpty = false;
+  for (const n of f.needs) if (!blank(vals[n.id]) && n.kind !== "checkbox") await api("/api/answers", { body: { q: n.label, a: vals[n.id] } }).catch(() => {});
+  const before = S.ctx.probe?.fields || 0;
+  const [r] = await inPage("submit", null, { frame: f.submitFrame, tabId });
+  if (!r?.clicked) return stuck("I couldn't find the button. Press it on the page, then mark it applied here.");
+  S.busy[tabId] = `Pressed “${r.clicked}”. Checking it went through`;
+  render();
+  await sleep(3500);
+  const after = (await inPage("probe", null, { all: true, tabId }).catch(() => [])).reduce((a, p) => ({ fields: a.fields + p.fields, thanks: a.thanks || p.thanks, url: a.url || p.url }), { fields: 0, thanks: false, url: "" });
+  delete S.busy[tabId];
+  const final = /submit|send/i.test(r.clicked);
+  const left = after.thanks || (after.url && after.url !== f.url) || after.fields < before / 2;
+  if (final && left) {
+    await api(`/api/apps/${app.id}/track`, { body: { status: "Applied" } }).catch(() => {});
+    await remember(tabId, { fill: null, submitted: r.clicked, submittedUrl: S.tab.url });
+  } else if (!final) {
+    await remember(tabId, { fill: null, step: r.clicked });
+  } else {
+    return stuck("The form is still here, so it may not have gone through. Check the page for errors, fix them, and press Submit again. If it did go through, mark it applied.");
+  }
+  refresh();
+}
+
+function stuck(msg) {
+  draw(`<div class="card"><div class="notice">${esc(msg)}</div><button class="btn btn--primary" id="markApplied">Mark applied</button>
+    <button class="btn btn--ghost" id="back">Back to the form</button></div>`);
+  $("#markApplied").onclick = markApplied;
+  $("#back").onclick = refresh;
+}
+
+async function markApplied() {
+  const app = S.ctx.app;
+  if (!app) return;
+  await api(`/api/apps/${app.id}/track`, { body: { status: "Applied" } }).catch(() => {});
+  await remember(S.tab.id, { fill: null, submitted: "Mark applied", submittedUrl: S.tab.url });
+  S.warnedEmpty = false;
+  refresh();
+}
+
+// ---------- follow the tab you're on ----------
+chrome.tabs.onActivated.addListener(refresh);
+chrome.tabs.onUpdated.addListener((id, info) => { if (id === S.tab?.id && (info.status === "complete" || info.url)) refresh(); });
+chrome.permissions.onAdded.addListener(() => { S.granted = true; refresh(); });
+setInterval(() => { if ($("#dot").classList.contains("off")) refresh(); }, 5000);
+refresh();

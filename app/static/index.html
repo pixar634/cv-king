@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JobMagnet</title>
+<link rel="preload" href="/static/fonts/PlusJakartaSans-Variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/vendor/reactflow.css">
+<link rel="stylesheet" href="/static/vendor/codemirror-5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="/static/css/tokens.css?v=1">
+<link rel="stylesheet" href="/static/css/base.css?v=4">
+<link rel="stylesheet" href="/static/css/components.css?v=13">
+<link rel="stylesheet" href="/static/css/views.css?v=15">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="brand__mark plunk" aria-hidden="true"></span><span>JOB<b>MAGNET</b></span></div>
+  <nav class="tabs tabs--nav" id="nav" aria-label="Screens">
+    <button data-view="tailor" class="on">Tailor</button>
+    <button data-view="discover">Discover</button>
+    <button data-view="pipeline">Pipeline <span class="tag tag--accent tag--solid num" id="liveCount" hidden></span></button>
+    <button data-view="interview">Interview</button>
+    <button data-view="outreach">Cold mail</button>
+    <button data-view="career">Career</button>
+  </nav>
+  <div class="topbar__right">
+    <div class="menu-wrap"><button class="btn btn--sm btn--menu" id="profileChip" title="Switch or add a profile"></button><div class="menu" id="profileMenu" hidden></div></div>
+    <div class="seg" id="engineSeg" title="Which AI writes and reads for you, everywhere in the app">
+      <button data-e="claude">Claude</button><button data-e="gemini">Gemini</button>
+    </div>
+    <button class="icon-btn" id="openSettings" aria-label="Settings" title="Settings">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-1.7-1L15 3.5h-4l-.4 2.5a7.4 7.4 0 0 0-1.7 1l-2.4-1-2 3.4L6.6 11a7.6 7.6 0 0 0 0 2l-2 1.6 2 3.4 2.4-1c.5.4 1.1.7 1.7 1l.4 2.5h4l.4-2.5c.6-.3 1.2-.6 1.7-1l2.4 1 2-3.4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
+</header>
+
+<main>
+<!-- ================= SETUP: a profile with no CV read yet, or one waiting for review ================= -->
+<section id="setup" class="setup" hidden></section>
+<!-- ================= TAILOR ================= -->
+<section class="view on" id="v-tailor">
+  <div class="studio">
+    <div class="rail" id="side">
+      <div id="emptyHero"></div>
+      <div class="composer" id="capsule">
+        <label class="eyebrow" for="cmd">New job</label>
+        <div class="composer__row">
+          <textarea id="cmd" class="composer__input" rows="1" spellcheck="false" placeholder="Job link or full description"></textarea>
+          <button class="btn btn--accent btn--square" id="cmdGo" aria-label="Read it" title="Enter">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/></svg>
+          </button>
+          <div class="composer__sweep" aria-hidden="true"></div>
+        </div>
+        <div class="composer__hint" id="cmdStatus" role="status"></div>
+      </div>
+      <div id="jobCard"></div>
+      <div class="rail__stack" id="insights"></div>
+      <div class="rail__stack" id="emptyState"></div>
+    </div>
+
+    <div class="stage">
+      <div class="stage__bar">
+        <div class="stage__title" id="pvTitle"></div>
+        <div class="seg" id="modeSeg">
+          <button data-v="pdf" class="on">PDF</button><button data-v="changes">Changes</button>
+        </div>
+        <div class="menu-wrap"><button class="btn btn--sm btn--menu" id="designChip" title="Design"></button><div class="menu" id="designMenu" hidden></div></div>
+        <div class="menu-wrap"><button class="btn btn--sm btn--menu" id="lengthChip" title="Length"></button><div class="menu" id="lengthMenu" hidden></div></div>
+        <span class="stage__divider" aria-hidden="true"></span>
+        <button class="btn btn--sm btn--ghost" id="editToggle" hidden title="Edit every section next to the PDF">Edit</button>
+        <button class="btn btn--sm" id="markApplied" hidden>Mark applied</button>
+        <a class="btn btn--sm btn--primary" id="download" hidden>Download PDF</a>
+      </div>
+      <div class="stage__body">
+        <aside class="editor" id="editor" hidden aria-label="Edit sections">
+          <div class="editor__head"><span class="eyebrow">Edit sections</span><span class="editor__state" id="edState"></span>
+            <button class="icon-btn icon-btn--sm" id="edClose" aria-label="Close the editor" title="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2"/></svg></button></div>
+          <div class="editor__body" id="edBody"></div>
+          <div class="editor__foot"><span class="type-meta">**double asterisks** make bold</span><span class="sp"></span>
+            <button class="btn btn--sm btn--ghost" id="edDiscard">Discard</button><button class="btn btn--sm btn--primary" id="edSave" title="Ctrl+S">Update PDF</button></div>
+        </aside>
+        <div class="pv" id="pv">
+          <iframe id="frame" title="CV preview"></iframe>
+          <div class="busy pv__busy"><div class="busy__box plunk"><span class="spinner"></span><span id="busyMsg">Rendering</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= DISCOVER ================= -->
+<section class="view" id="v-discover">
+  <div class="page page--wide">
+    <header class="page__head">
+      <div class="page__intro">
+        <span class="eyebrow">Discover</span>
+        <h1 class="type-h1">Fresh jobs, ranked for you</h1>
+        <p class="page__lede" id="discoverLede">Fresh postings from your sources, ranked against your profile.</p>
+      </div>
+    </header>
+    <div class="split">
+      <aside class="split__nav">
+        <button class="btn btn--accent btn--block" id="scanAll">Scan sources</button>
+        <button class="btn btn--block" id="scanFav" hidden title="Only your favourite companies: quick">Scan favourites</button>
+        <button class="btn btn--block" id="chromeGo" title="Copies a ready-made prompt and opens a LinkedIn Jobs search in a new tab. Open Claude in Chrome's side panel there, paste, and let it collect the jobs. Then paste its reply back here.">Find with Claude in Chrome</button>
+        <button class="btn btn--sm btn--ghost" id="chromePaste">Paste its results</button>
+        <button class="btn btn--block" id="scanIndeed" title="Searches Indeed for each of your career tracks in your city, through Indeed's Claude connector, with full job descriptions. Runs one track after another (Indeed limits calls per minute), so allow a few minutes.">Scan Indeed</button>
+        <button class="btn btn--block" id="scanJobspy" title="Searches LinkedIn, Indeed, Google Jobs and Naukri with the JobSpy library, using the job titles of your career tracks and your city from your profile. These sites' terms don't allow scraping and they sometimes block it, so it can come back thin. Slow: a few minutes.">Scan with JobSpy</button>
+        <div id="scanLine" hidden></div>
+        <label class="field"><span class="eyebrow">Posted within</span>
+          <select id="days" class="control--sm">
+            <option value="1">Last 24 hours</option><option value="3">Last 3 days</option><option value="7">Last 7 days</option>
+            <option value="14" selected>Last 14 days</option><option value="30">Last 30 days</option>
+          </select></label>
+        <label class="field"><span class="eyebrow">Match</span>
+          <select id="minMatch" class="control--sm">
+            <option value="0">Any match</option><option value="40">40% and up</option><option value="50" selected>50% and up</option><option value="60">60% and up</option><option value="70">70% and up</option>
+          </select></label>
+        <label class="field"><span class="eyebrow">Sort</span>
+          <select id="sortBy" class="control--sm"><option value="match">Best match</option><option value="newest">Newest</option></select></label>
+        <div class="filters" id="areaBar"></div>
+        <div class="taste" id="tastePanel"></div>
+      </aside>
+      <div class="split__main"><div id="importPanel" hidden></div><section class="split__main" id="foundList"></section></div>
+    </div>
+  </div>
+  <div class="dock" id="dock" hidden>
+    <span class="dock__text" id="dockText"></span>
+    <button class="btn btn--sm btn--ghost" id="dockClear">Clear</button>
+    <button class="btn btn--accent" id="dockGo">Tailor</button>
+  </div>
+</section>
+
+<!-- ================= PIPELINE ================= -->
+<section class="view" id="v-pipeline">
+  <div class="page page--wide">
+    <header class="page__head">
+      <div class="page__intro">
+        <span class="eyebrow">Pipeline</span>
+        <h1 class="type-h1">Every application, one place</h1>
+        <p class="page__lede" id="pipeLede"></p>
+      </div>
+    </header>
+    <div class="split">
+      <aside class="split__nav">
+        <nav class="side-nav" id="stageNav" aria-label="Stages"></nav>
+        <a class="btn btn--sm btn--ghost" href="/api/export.xlsx" id="exportBtn">Export to Excel</a>
+      </aside>
+      <section class="split__main">
+        <div class="split__head" id="stageHead"></div>
+        <div class="card-grid" id="board"></div>
+      </section>
+    </div>
+  </div>
+</section>
+
+<!-- ================= INTERVIEW ================= -->
+<section class="view" id="v-interview">
+  <div class="page page--wide">
+    <header class="page__head">
+      <div class="page__intro">
+        <span class="eyebrow">Interview</span>
+        <h1 class="type-h1">Walk in knowing the questions</h1>
+        <p class="page__lede">Pick an application. The company is researched first: what it actually builds, its stack and how it interviews. Then you get the interview for that role and level, round by round, with model answers.</p>
+      </div>
+    </header>
+    <div class="split">
+      <aside class="split__nav"><span class="eyebrow">Your applications</span><div class="list" id="ivList"></div></aside>
+      <section class="split__main" id="ivMain"></section>
+    </div>
+  </div>
+</section>
+
+<!-- ================= COLD MAIL ================= -->
+<section class="view" id="v-outreach">
+  <div class="page page--wide">
+    <header class="page__head">
+      <div class="page__intro">
+        <span class="eyebrow">Cold mail</span>
+        <h1 class="type-h1">Get a reply, not a silence</h1>
+        <p class="page__lede">Pick an application and say who you're writing to. You get a short email and its follow-up, built from your real experience and what the company builds. It goes to your Gmail drafts; you send it.</p>
+      </div>
+    </header>
+    <div class="split">
+      <aside class="split__nav"><span class="eyebrow">Your applications</span><div class="list" id="cmList"></div></aside>
+      <section class="split__main" id="cmMain"></section>
+    </div>
+  </div>
+</section>
+
+<!-- ================= CAREER ================= -->
+<section class="view" id="v-career">
+  <div class="career">
+    <header class="page__head career__head">
+      <div class="page__intro">
+        <span class="eyebrow">Career</span>
+        <h1 class="type-h1">Where your next five years can go</h1>
+        <p class="page__lede career__lede" id="careerLede">Your history, and the routes it opens over the next five years.</p>
+      </div>
+      <div class="page__controls"><span class="type-meta" id="careerStamp"></span><button class="btn btn--accent" id="careerGen">Map my routes</button></div>
+    </header>
+    <div class="career__body">
+      <div class="career__canvas">
+        <div id="flow" data-fx-skip></div>
+        <div class="busy" id="careerBusy" hidden><div class="busy__box plunk"><span class="spinner"></span><span id="careerBusyMsg">Mapping</span></div></div>
+      </div>
+      <aside class="career__side">
+        <div id="stepPanel" class="step"></div>
+        <section class="career__block">
+          <h3 class="eyebrow">Your goal</h3>
+          <div class="goal-form">
+            <input type="text" id="goalRole" placeholder="e.g. Head of Product" aria-label="Goal role">
+            <input type="text" id="goalYear" inputmode="numeric" placeholder="By year, e.g. 2036" aria-label="Goal year">
+            <input type="text" id="goalSalary" inputmode="decimal" placeholder="Yearly pay, e.g. 120" aria-label="Goal salary">
+            <select id="goalUnit" aria-label="Unit"><option>LPA</option><option>USD</option><option>GBP</option><option>EUR</option><option>AED</option><option>SGD</option></select>
+            <button class="btn btn--sm" id="goalSave">Save goal</button>
+          </div>
+        </section>
+        <section class="career__block">
+          <h3 class="eyebrow">Salary</h3>
+          <div id="salaryChart"></div>
+          <p class="type-meta" id="salaryNote"></p>
+          <div class="salary-form">
+            <input type="text" id="salYear" inputmode="numeric" placeholder="Year" aria-label="Year">
+            <input type="text" id="salAmount" inputmode="decimal" placeholder="Yearly CTC" aria-label="Yearly CTC">
+            <select id="salUnit" aria-label="Unit"><option>LPA</option><option>USD</option><option>GBP</option><option>EUR</option><option>AED</option><option>SGD</option></select>
+            <button class="btn" id="salAdd">Add</button>
+          </div>
+          <div class="list" id="salaryList"></div>
+        </section>
+        <section class="career__block" id="trendsBox"></section>
+        <section class="career__block">
+          <h3 class="eyebrow">Growth log <span class="tabs__count" id="logHint"></span></h3>
+          <p class="type-meta">What you've done, are doing, learned or want next. The map reads all of it each time you map your routes. Only skills and certifications you mark for CVs reach your profile.</p>
+          <div class="log-form">
+            <select id="logKind" aria-label="Kind"></select>
+            <input type="date" id="logDate" aria-label="Date">
+            <textarea id="logText" rows="2" placeholder="e.g. Led the UAT for a new payments release"></textarea>
+            <label class="check" id="logCvLine"><input type="checkbox" id="logCv"> Use on my CVs (it's a skill I can talk about in an interview)</label>
+            <button class="btn btn--sm" id="logAdd">Add to log</button>
+          </div>
+          <div class="list" id="logList"></div>
+        </section>
+      </aside>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- ================= SETTINGS ================= -->
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" aria-label="Settings" hidden>
+  <div class="drawer__head"><h2 class="type-h1">Settings</h2><button class="icon-btn" id="closeSettings" aria-label="Close">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2"/></svg></button></div>
+  <div class="drawer__body">
+    <section class="drawer__section" id="stratBox"></section>
+    <section class="drawer__section">
+      <h3 class="eyebrow">Every new CV</h3>
+      <label class="field"><span class="type-meta">Market</span><select id="dMarket"></select></label>
+      <label class="field"><span class="type-meta">Career track</span><select id="dTrack"></select></label>
+      <label class="field"><span class="type-meta">Design</span><select id="dVariant"></select></label>
+      <label class="field"><span class="type-meta">Length</span><select id="dPages"><option value="auto">Market default (2 pages)</option><option value="1">1 page</option><option value="2">2 pages</option></select></label>
+      <label class="field"><span class="type-meta">Writer</span><select id="dEngine"></select></label>
+      <label class="field"><span class="type-meta">Jobs tailored at once</span><select id="dConc"><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+      <label class="field"><span class="type-meta">Availability, shown on every CV</span><input type="text" id="dAvail" placeholder="Serving notice, available from 15 Nov 2026"></label>
+    </section>
+    <section class="drawer__section">
+      <h3 class="eyebrow">Discover only shows</h3>
+      <div class="chip-row" id="rankTracks"></div>
+      <label class="check"><input type="checkbox" id="dSenior"> Include Senior-level titles (below Lead)</label>
+      <label class="field"><span class="type-meta">Hide jobs that ask for more than</span>
+        <select id="dMaxYears"><option value="9">9 years</option><option value="10">10 years</option><option value="11">11 years</option><option value="12">12 years</option><option value="15">15 years</option></select></label>
+      <div class="field"><span class="type-meta">Skip jobs that need</span>
+        <div class="chip-row" id="excludeList"></div>
+        <div class="field-row"><input type="text" id="excludeAdd" placeholder="Add a skill, e.g. Angular"><button class="btn" id="excludeBtn">Add</button></div>
+      </div>
+    </section>
+    <section class="drawer__section">
+      <h3 class="eyebrow">Company offices</h3>
+      <p class="type-meta">Most postings only name the city. Note where a company sits and its jobs get that area in Discover (areas are known for Bengaluru so far). One per line: company | area, e.g. <code>Atlan | HSR Layout</code> or <code>Okta | Embassy Tech Village</code>.</p>
+      <textarea id="offices" rows="4" placeholder="Atlan | HSR Layout"></textarea>
+      <div><button class="btn btn--sm" id="saveOffices">Save offices</button></div>
+    </section>
+    <section class="drawer__section">
+      <h3 class="eyebrow">Favourite companies</h3>
+      <p class="type-meta">Scanned first on every Discover run, and their openings are pinned at the top of Discover whatever their match. Type a name and the app finds its job board (Greenhouse, Lever, Ashby, SmartRecruiters or Workable); if it has none, its openings are found by web search. A careers-page link works too.</p>
+      <div class="list" id="favList"></div>
+      <div class="field-row"><input type="text" id="favAdd" placeholder="e.g. Stripe, or a careers page link"><button class="btn" id="favBtn">Add</button></div>
+      <div class="notice notice--bad" id="favErr" hidden></div>
+    </section>
+    <section class="drawer__section">
+      <h3 class="eyebrow">Sources</h3>
+      <div class="list" id="sourceList"></div>
+      <div class="field-row"><input type="url" id="srcUrl" placeholder="Careers page or job board search URL"><button class="btn" id="addUrl">Add</button></div>
+      <div class="field-row"><input type="text" id="srcQuery" placeholder="Web search, e.g. your target title and city"><button class="btn" id="addQuery">Add</button></div>
+      <div class="notice notice--bad" id="srcErr" hidden></div>
+      <p class="type-meta">Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Recruitee and Personio boards are read through their public APIs. LinkedIn, Naukri, Indeed and Glassdoor are refused: their terms forbid automated access.</p>
+    </section>
+    <section class="drawer__section">
+      <h3 class="eyebrow">People to watch</h3>
+      <p class="type-meta">Hiring managers you follow, one per line: name | company | LinkedIn URL. A bare profile URL works too. Each scan looks for their recent public hiring posts. For instant alerts, also switch on the bell (All posts) on their LinkedIn profiles.</p>
+      <textarea id="people" rows="5" placeholder="Priya Sharma | Razorpay | https://www.linkedin.com/in/…"></textarea>
+      <div><button class="btn btn--sm" id="savePeople">Save list</button></div>
+    </section>
+    <section class="drawer__section">
+      <h3 class="eyebrow">Skills you've confirmed</h3>
+      <div class="chip-row" id="confirmed"></div>
+      <p class="type-meta">Added from Gaps. Every CV may use them, so keep only what you can talk about in an interview.</p>
+    </section>
+  </div>
+</aside>
+
+<div class="toast plunk" id="toast" role="status" data-fx-skip></div>
+<script src="/static/vendor/react.production.min.js"></script>
+<script src="/static/vendor/react-dom.production.min.js"></script>
+<script src="/static/vendor/reactflow.umd.js"></script>
+<script src="/static/vendor/motion-11.18.2.js"></script>
+<script src="/static/vendor/gsap-3.12.5.min.js"></script>
+<script src="/static/vendor/codemirror-5.65.16/codemirror.min.js"></script>
+<script src="/static/vendor/codemirror-5.65.16/python.min.js"></script>
+<script src="/static/vendor/codemirror-5.65.16/javascript.min.js"></script>
+<script src="/static/vendor/codemirror-5.65.16/matchbrackets.min.js"></script>
+<script src="/static/vendor/codemirror-5.65.16/closebrackets.min.js"></script>
+<script src="/static/fx.js?v=5"></script>
+<script src="/static/career.js?v=4"></script>
+<script src="/static/setup.js?v=1"></script>
+<script src="/static/app.js?v=47"></script>
+</body>
+</html>

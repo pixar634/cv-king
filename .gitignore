@@ -1,0 +1,16 @@
+# Environment
+.venv/
+__pycache__/
+*.pyc
+
+# Personal data: stays on this laptop
+data/
+output/
+interview/
+CAREER_MAP.md
+
+# Local backups
+.backup/
+
+# Other people's profiles made in the app
+profiles/
