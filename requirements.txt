@@ -1,10 +1,10 @@
-﻿fastapi==0.115.6
+fastapi==0.115.6
 uvicorn==0.34.0
 jinja2==3.1.5
 pyyaml==6.0.2
 playwright==1.49.1
 pdfminer.six==20240706
-pypdf==5.1.0
+pypdf==6.21.2
 openpyxl==3.1.5
 pillow==11.0.0
 pypdfium2==4.30.0
