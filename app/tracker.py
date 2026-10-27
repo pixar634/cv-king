@@ -7,6 +7,7 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
+from . import db
 from .config import output_dir
 
 STATUSES = ["Generated", "Applied", "Recruiter call", "Interviewing", "Offer", "Rejected", "No response", "Withdrawn"]
@@ -109,23 +110,33 @@ def add_from_report(report: dict, req: dict) -> None:
     row["logo"] = fetch_logo(report["id"], domain)
     replaced = req.get("replace_id")
     with _lock:
+        db.ensure_seeded()
         old = next((r for r in load() if r["id"] == replaced), None)
         if old:  # a re-tailor after confirming skills keeps the application's status and notes
             row.update({k: old[k] for k in ("status", "applied_on", "notes", "job_url") if old.get(k)})
             row["domain"] = row["domain"] or old.get("domain", "")
         rows = [r for r in load() if r["id"] not in (row["id"], replaced)]
         _save([row] + rows)
+        if old:
+            db.moved(old["id"], row["id"])
+            db.record_status(row["id"], row["company"], row["role"], old["status"], row["status"], "tailor",
+                             f"re-tailored, replacing {old['id']}")
+        else:
+            db.record_status(row["id"], row["company"], row["role"], None, "Generated", "tailor")
 
 
-def update(app_id: str, fields: dict) -> dict:
+def update(app_id: str, fields: dict, source: str = "app") -> dict:
+    """source: who changed it (app or extension), kept with the status history."""
     allowed = {"status", "applied_on", "job_url", "notes", "domain", "company", "role"}
     if "status" in fields and fields["status"] not in STATUSES:
         raise ValueError(f"Unknown status {fields['status']!r}: use one of {', '.join(STATUSES)}")
     with _lock:
+        db.ensure_seeded()
         rows = load()
         for r in rows:
             if r["id"] != app_id:
                 continue
+            was = r["status"]
             for k, v in fields.items():
                 if k in allowed:
                     r[k] = v
@@ -135,6 +146,8 @@ def update(app_id: str, fields: dict) -> dict:
                 r["domain"] = _clean_domain(fields["domain"])
                 r["logo"] = fetch_logo(app_id, r["domain"])
             _save(rows)
+            if r["status"] != was:
+                db.record_status(app_id, r["company"], r["role"], was, r["status"], source)
             return r
     raise KeyError(app_id)
 

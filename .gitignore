@@ -8,6 +8,10 @@ data/
 output/
 interview/
 CAREER_MAP.md
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 
 # Local backups
 .backup/
