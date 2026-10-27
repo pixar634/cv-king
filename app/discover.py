@@ -521,16 +521,62 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 13
+RANK_VERSION = 14
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "regions", "places")
 
 
+# A country's other names and its main tech cities, with their other spellings: postings often name only the city.
+COUNTRY_PLACES = {
+    "united kingdom": ["United Kingdom", "UK", "U.K.", "Great Britain", "England", "Scotland", "Wales", "London",
+                       "Manchester", "Edinburgh", "Cambridge", "Oxford", "Bristol", "Glasgow", "Belfast", "Leeds",
+                       "Birmingham", "Reading"],
+    "germany": ["Germany", "Deutschland", "Berlin", "Munich", "München", "Muenchen", "Hamburg", "Frankfurt", "Cologne",
+                "Köln", "Koeln", "Stuttgart", "Düsseldorf", "Dusseldorf", "Leipzig", "Karlsruhe"],
+    "netherlands": ["Netherlands", "The Netherlands", "Holland", "Amsterdam", "Rotterdam", "Utrecht", "Eindhoven",
+                    "The Hague", "Den Haag", "Delft", "Leiden"],
+    "poland": ["Poland", "Polska", "Warsaw", "Warszawa", "Kraków", "Krakow", "Wrocław", "Wroclaw", "Gdańsk", "Gdansk",
+               "Poznań", "Poznan", "Łódź", "Lodz", "Katowice"],
+    "ireland": ["Ireland", "Dublin", "Cork", "Galway", "Limerick"],
+    "luxembourg": ["Luxembourg"],
+    "finland": ["Finland", "Suomi", "Helsinki", "Espoo", "Tampere", "Oulu", "Turku"],
+    "sweden": ["Sweden", "Stockholm", "Gothenburg", "Göteborg", "Malmö", "Malmo"],
+    "denmark": ["Denmark", "Copenhagen", "København", "Aarhus"],
+    "norway": ["Norway", "Oslo"],
+    "spain": ["Spain", "Madrid", "Barcelona", "Valencia", "Málaga", "Malaga"],
+    "portugal": ["Portugal", "Lisbon", "Lisboa", "Porto"],
+    "france": ["France", "Paris", "Lyon", "Toulouse"],
+    "belgium": ["Belgium", "Brussels", "Bruxelles", "Antwerp", "Ghent"],
+    "austria": ["Austria", "Vienna", "Wien", "Graz"],
+    "switzerland": ["Switzerland", "Zurich", "Zürich", "Geneva", "Genève", "Basel", "Lausanne"],
+    "czech republic": ["Czech Republic", "Czechia", "Prague", "Praha", "Brno"],
+    "estonia": ["Estonia", "Tallinn"],
+    "italy": ["Italy", "Milan", "Milano", "Rome", "Turin"],
+}
+PLACE_ALIASES = {k: k for k in COUNTRY_PLACES} | {
+    "uk": "united kingdom", "u.k": "united kingdom", "great britain": "united kingdom", "gb": "united kingdom",
+    "deutschland": "germany", "the netherlands": "netherlands", "holland": "netherlands", "nl": "netherlands",
+    "polska": "poland", "suomi": "finland", "czechia": "czech republic"}
+
+
+def place_names(place: str) -> list[str]:
+    """Every name a place in your list matches: a country brings its other names and main cities."""
+    out = []
+    for p in (x.strip() for x in place.split(",")):
+        country = PLACE_ALIASES.get(p.lower().rstrip("."))
+        if country:
+            out += COUNTRY_PLACES[country]
+        elif len(p) > 2:
+            out.append(p)
+    return out
+
+
 def places_pattern(prefs: dict) -> re.Pattern | None:
     """Places you'd move to ("Amsterdam, Netherlands", "Luxembourg"): a job in one is wanted whatever the region
-    switches say. Each part of a place counts, so a posting that names only the country matches too."""
-    parts = [p.strip() for place in prefs.get("places") or [] for p in place.split(",") if len(p.strip()) > 2]
-    return strategy.any_of(parts) if parts else None
+    switches say. Each part of a place counts, and a country matches its main cities, so a posting that names only
+    "Berlin" matches "Germany"."""
+    parts = [n for place in prefs.get("places") or [] for n in place_names(place)]
+    return strategy.any_of(list(dict.fromkeys(parts))) if parts else None
 # Region filter keys. Older settings said "bengaluru" and "india" for the city and the rest of the country.
 REGION_KEYS = {"bengaluru": "city", "india": "country"}
 
