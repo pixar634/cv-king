@@ -1118,6 +1118,8 @@ def _store(results: list[dict], days: int, prefs: dict, evidence: set[str], prog
     learned = taste.model(state)
     fresh = [taste.apply(j, learned) for j in fresh if j["id"] not in dismissed and not j.get("excluded")]
     fresh = _dedupe_sort([{k: v for k, v in j.items() if k not in ("description", "_r")} for j in fresh if j])
+    from . import db
+    db.sync_soon()   # the local database gets this scan's jobs too
     return {"jobs": fresh, "results": [{k: v for k, v in r.items() if k != "jobs"} | {"count": len(r["jobs"])} for r in results],
             "cutoff": cutoff}
 

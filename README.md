@@ -459,6 +459,8 @@ Still stuck? [Open a bug report](https://github.com/pixar634/jobmagnet/issues/ne
 | `app/letters.py`, `app/coldmail.py`, `app/contacts.py` | Cover letters, cold emails, finding contacts |
 | `app/interview.py`, `app/static/runner.js` | Interview prep and the coding-test sandbox |
 | `app/career.py` | The career map |
+| `app/memory.py`, `app/untrusted.py` | Your memory of what the CV leaves out; keeping job postings as data, never instructions |
+| `app/db.py`, `scripts/query.py` | The local SQLite record (`jobmagnet.db` in each profile's data folder): every status change, plus copies of your applications and Discover's jobs to query. `python scripts/query.py --tables` lists them |
 | `app/apply.py` | Answers for an application form: profile facts by code, the rest by the model, saved answers reused |
 | `app/engines.py` | Running Claude Code and the Gemini CLI |
 | `app/static/` | The web UI: plain JavaScript and CSS, no build step. The design system runs `tokens.css` → `base.css` → `components.css` → `views.css` |
