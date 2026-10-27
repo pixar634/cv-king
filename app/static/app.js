@@ -980,6 +980,8 @@ async function loadFound() {
         <span class="logo logo--sm">${initial(j.company || j.source)}</span>
         <span class="tag ${d === null ? "tag--warn" : d <= 3 ? "tag--ok" : ""}">${d === null ? "Date unknown" : ago(j.posted)}</span>
         ${isNew(j) ? `<span class="tag tag--accent tag--solid">New</span>` : ""}
+        ${j.pay === "meets" ? `<span class="tag tag--ok" title="States pay at or above your floor">Pay meets</span>` : j.pay === "likely" ? `<span class="tag" title="Pay range or company tier reaches your floor">Pay likely</span>` : ""}
+        ${j.open === "unclear" ? `<span class="tag tag--warn" title="Doesn't say if it hires where you live, or if it sponsors a visa">Check eligibility</span>` : ""}
         ${isFav(j) ? `<span class="tag tag--accent" title="One of your favourite companies" aria-label="Favourite">${ICON.star.replace("<svg", "<svg style=\"width:9px;height:9px\"")}</span>` : ""}
         <a class="icon-btn icon-btn--sm" href="${esc(j.url)}" target="_blank" rel="noopener" title="Open the posting" aria-label="Open the posting">${ICON.out}</a>
         <button class="icon-btn icon-btn--sm job-card__pass" title="Not for me: hide it, and Discover learns to push down jobs like it" aria-label="Not for me">${ICON.x}</button>
@@ -2585,6 +2587,11 @@ function wireDrawer() {
   $("#addUrl").onclick = () => addSource("url", $("#srcUrl"));
   $("#addQuery").onclick = () => addSource("websearch", $("#srcQuery"));
   $("#savePeople").onclick = savePeople;
+  $("#savePay").onclick = async () => {
+    await savePrefs({ pay_floor_home_lpa: +$("#payHome").value || 0, pay_floor_remote_lpa: +$("#payRemote").value || 0,
+      pay_floor_abroad_eur: +$("#payAbroad").value || 0, pay_tiers: $("#payTiers").value });
+    toast("Saved. Discover is re-ranked by pay.");
+  };
   $("#saveOffices").onclick = async () => { await savePrefs({ offices: $("#offices").value }); toast("Saved. Discover shows those areas now."); };
   $("#savePlaces").onclick = async () => {
     const places = $("#places").value.split("\n").map((s) => s.trim()).filter(Boolean);
@@ -2605,6 +2612,8 @@ async function fillDrawer() {
   $("#dSenior").checked = !!S.prefs.include_senior;
   $("#dMaxYears").value = String(S.prefs.max_years_asked || 11);
   $("#offices").value = S.prefs.offices || "";
+  $("#payHome").value = S.prefs.pay_floor_home_lpa || 0; $("#payRemote").value = S.prefs.pay_floor_remote_lpa || 0;
+  $("#payAbroad").value = S.prefs.pay_floor_abroad_eur || 0; $("#payTiers").value = S.prefs.pay_tiers || "";
   $("#places").value = (S.prefs.places || []).join("\n");
   fillBoards();
   $("#dAvail").value = S.state.profile.basics.availability || "";

@@ -521,9 +521,9 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 15
+RANK_VERSION = 16
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
-             "offices", "regions", "places")
+             "offices", "regions", "places", "pay_floor_home_lpa", "pay_floor_remote_lpa", "pay_floor_abroad_eur", "pay_tiers")
 
 
 # A country's other names and its main tech cities, with their other spellings: postings often name only the city.
@@ -642,7 +642,8 @@ def rank(job: dict, evidence: set[str], prefs: dict, sig: str | None = None) -> 
     if cached and (cached.get("sig") == sig or job.get("_trimmed")):
         return job | {k: v for k, v in cached.items() if k != "sig"}
     out = _rank(job, evidence, prefs)
-    keep = {k: out[k] for k in ("match", "order", "reasons", "excluded", "areas", "skills", "estimate", "unscored", "open")
+    keep = {k: out[k] for k in ("match", "order", "reasons", "excluded", "areas", "skills", "estimate", "unscored", "open",
+                                     "pay")
             if k in out}
     return out | {"_r": keep | {"sig": sig}}
 
@@ -752,9 +753,17 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     if level["verdict"] == "stretch":
         order -= 10
         reasons += [f"stretch: {r}" for r in level["reasons"]]
+    # Pay against your floor for where the job is; stated pay below it is hidden, a company tier stands in when unsaid.
+    from .pay import verdict as pay_verdict
+    pv = pay_verdict(job, reg if reg in ("home", "remote") else "abroad", prefs)
+    if pv["label"] == "below":
+        return job | {"match": 0, "reasons": [pv["why"]], "excluded": True, "pay": "below"}
+    order += {"meets": 6, "likely": 3}.get(pv["label"], 0) - (6 if pv.get("tier") == "low" else 0)
+    if pv["why"]:
+        reasons.append(pv["why"])
     from .areas import tag
     return job | {"skills": skills, "match": max(0, min(100, score)), "estimate": estimate, "unscored": unscored, "order": order,
-                  "reasons": reasons, "excluded": False, "open": o["state"],
+                  "reasons": reasons, "excluded": False, "open": o["state"], "pay": pv["label"],
                   "areas": tag(job, prefs.get("offices", ""))}
 
 
