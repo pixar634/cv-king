@@ -11,6 +11,7 @@ import uuid
 
 from . import discover, extract, tailor
 from .config import output_dir
+from .gate import NotEligible
 from .profiles import current
 
 _lock = threading.Lock()
@@ -72,7 +73,7 @@ def _work(item_id: str, req: dict, source: dict):
                         "role": req.get("role") or j.get("title", ""), "job_url": j.get("url", ""),
                         "job_id": extract._job_id_from_url(j.get("url", "")),
                         "location": j.get("location", ""), "posted": j.get("posted", ""),
-                        "discover_match": j.get("match")}
+                        "discover_match": j.get("match"), "remote": j.get("remote")}
                 if req.get("market") in (None, "", "auto"):
                     req["market"] = extract.market_for(j.get("location", ""), j.get("remote"))
             elif source.get("url"):
@@ -90,6 +91,8 @@ def _work(item_id: str, req: dict, source: dict):
                     role=report["role"], score=report["scores"]["after"], ceiling=report["scores"]["ceiling"])
         except tailor.BelowMatch as e:   # stopped before writing; the card offers "Tailor anyway"
             _update(item_id, status="error", stage=str(e), below_min=True, ceiling=e.reach)
+        except NotEligible as e:   # fails a hard screen: stopped before writing, "Tailor anyway" goes through
+            _update(item_id, status="error", stage=str(e), below_min=True, gate=e.result["verdict"])
         except Exception as e:  # one failed job must not stop the others
             _update(item_id, status="error", stage=str(e)[:400])
 

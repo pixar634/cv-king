@@ -122,7 +122,7 @@ async function doRefresh() {
   const app = matchApp(tab.url) || ((isForm || here) && mem.appId ? S.rows.find((r) => r.id === mem.appId) : null);
   S.ctx = { tab, mem, probe, isForm, here, app };
   if (mem.itemId && !mem.appId) watchItem(tab.id, mem.itemId);
-  if (here && mem.job && !mem.fit) S.ctx.mem = await remember(tab.id, { fit: await api("/api/fit", { body: { jd: mem.job.description } }).catch(() => null) });
+  if (here && mem.job && !mem.fit) S.ctx.mem = await remember(tab.id, { fit: await api("/api/fit", { body: fitBody(mem.job) }).catch(() => null) });
   if (app && !S.reports[app.id]) S.reports[app.id] = await api(`/api/apps/${app.id}`).catch(() => null);
   render();
 }
@@ -192,13 +192,20 @@ function finish(parts) {
 }
 
 // The job against your profile before any writing: measured in code, the same numbers tailoring will report.
+const fitBody = (j) => ({ jd: j.description, role: j.role || "", location: j.location || "", market: j.market || "", remote: !!j.remote });
+
+function gateHtml(g) {
+  if (!g || g.verdict === "ok") return "";
+  return `<div class="notice ${g.verdict === "stop" ? "bad" : ""}"><b>${g.verdict === "stop" ? "Fails a screen" : "A stretch"}.</b> ${g.reasons.map(esc).join(" · ")}. Worth tailoring only with a referral.</div>`;
+}
+
 function fitHtml(f) {
   if (!f) return "";
   const warn = (f.warnings || []).length ? `<div class="notice">This posting has text aimed at AI tools. JobMagnet reads it as text and never follows it:
     ${f.warnings.map((w) => `<div class="meta">“${esc(w)}”</div>`).join("")}</div>` : "";
-  if (!f.measured) return warn + `<p class="meta" style="margin:0">This posting names too few standard skills to score. Read it yourself before tailoring.</p>`;
+  if (!f.measured) return gateHtml(f.gate) + warn + `<p class="meta" style="margin:0">This posting names too few standard skills to score. Read it yourself before tailoring.</p>`;
   const list = (label, terms, cls) => terms.length ? `<div class="fit__list"><span class="meta">${label}</span><div class="row">${terms.map((t) => `<span class="chip ${cls}">${esc(t)}</span>`).join("")}</div></div>` : "";
-  return `${warn}<div class="score"><div><span class="meta">Your CV</span><b>${f.now}%</b></div><div class="now"><span class="meta">Can reach</span><b>${f.reach}%</b></div><div><span class="meta">Your filter</span><b>${f.minimum ? `${f.minimum}%` : "Any"}</b></div></div>
+  return `${gateHtml(f.gate)}${warn}<div class="score"><div><span class="meta">Your CV</span><b>${f.now}%</b></div><div class="now"><span class="meta">Can reach</span><b>${f.reach}%</b></div><div><span class="meta">Your filter</span><b>${f.minimum ? `${f.minimum}%` : "Any"}</b></div></div>
     <div class="meter" title="Keyword match: ${f.now}% with your CV as it is, ${f.reach}% is the most your profile can truthfully reach"><span style="width:${f.now}%"></span><i style="left:${f.reach}%"></i></div>
     ${f.below ? `<div class="notice">Your profile can reach ${f.reach}% of this job's keywords, below your ${f.minimum}% filter. Worth a look before you spend a tailor on it.</div>` : ""}
     ${list("Tailoring adds (in your profile, not yet in your CV)", f.adds, "ok")}
@@ -253,7 +260,7 @@ function postingCard(mem, here) {
       <div class="sub">${esc(j.company)}${j.location ? ` · ${esc(j.location)}` : ""}</div>
       <div class="meta">${j.description.split(/\s+/).length} words read${j.posted ? `, posted ${esc(j.posted)}` : ""}</div>
       ${fitHtml(mem.fit)}
-      ${mem.fit?.below ? `<button class="btn btn--primary btn--block" id="tailorForce">Tailor anyway</button>`
+      ${mem.fit?.below || (mem.fit?.gate && mem.fit.gate.verdict !== "ok") ? `<button class="btn btn--primary btn--block" id="tailorForce">Tailor anyway</button>`
         : `<button class="btn btn--primary btn--block" id="tailor">Tailor my CV</button>`}
       <a class="btn btn--ghost btn--block" href="${SERVER}/?job=${esc(mem.jobJid)}" target="_blank">Review it in JobMagnet first</a></div>`;
   }
@@ -343,7 +350,7 @@ async function tailorHere(readOnly, replaceId = "", force = false) {
     const [page] = await inPage("grab", null, { tabId });
     const { job } = await api("/api/clip", { body: page });
     const got = await pollJob(job, (l) => say(l.msg));
-    const fit = await api("/api/fit", { body: { jd: got.description } }).catch(() => null);
+    const fit = await api("/api/fit", { body: fitBody(got) }).catch(() => null);
     await remember(tabId, { url: page.url, job: got, jobJid: job, itemId: null, appId: null, fit });
     if (!readOnly) {
       say("Starting the CV");

@@ -856,9 +856,16 @@ def memory_remove(entry_id: str):
 
 @app.post("/api/fit")
 def fit_preview(body: dict = Body(...)):
-    """A job's match before tailoring, in well under a second: no model call."""
+    """A job's match before tailoring, in well under a second: no model call. With the job's title and location,
+    also whether it passes the screens a CV can't fix (the same verdict tailoring stops on)."""
+    from . import gate
     profile = load_profile()
-    return tailor.fit(parse_jd(body.get("jd") or "")["text"], profile, _prefs(profile)["min_match"])
+    prefs, text = _prefs(profile), parse_jd(body.get("jd") or "")["text"]
+    out = tailor.fit(text, profile, prefs["min_match"])
+    market = body.get("market") if body.get("market") not in (None, "", "auto") else \
+        extract.market_for(body.get("location") or "", body.get("remote"))
+    return out | {"gate": gate.check(text, body.get("role") or "", body.get("location") or "", market, body.get("remote"),
+                                     profile, prefs)}
 
 
 @app.post("/api/clip")

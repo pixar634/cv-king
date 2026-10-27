@@ -207,7 +207,7 @@ function setJob(job) {
   $("#side").classList.add("has-job");
   renderJobCard();
   // The job against your profile before any writing: code only, back in well under a second.
-  if (job.description) api("/api/fit", { body: { jd: job.description } }).then((f) => { if (S.job === job) { job.fit = f; renderJobCard(); } }).catch(() => {});
+  if (job.description) api("/api/fit", { body: fitBody(job) }).then((f) => { if (S.job === job) { job.fit = f; renderJobCard(); } }).catch(() => {});
   $("#insights").innerHTML = "";
   $("#emptyHero").innerHTML = "";
   $("#emptyState").innerHTML = "";
@@ -215,13 +215,20 @@ function setJob(job) {
 }
 
 // ================= job card =================
+const fitBody = (j) => ({ jd: j.description, role: j.role || j.title || "", location: j.location || "", market: j.market || "", remote: !!j.remote });
+// The screens a CV can't fix (level, location, contract, parked track), from the same check tailoring stops on.
+function gateNotice(g) {
+  if (!g || g.verdict === "ok") return "";
+  return `<div class="notice ${g.verdict === "stop" ? "notice--bad" : ""}"><b>${g.verdict === "stop" ? "Fails a screen" : "A stretch"}.</b> ${g.reasons.map(esc).join(" · ")}. Tailoring stops here unless you press Tailor anyway (worth it with a referral).</div>`;
+}
+
 function fitBlock(f) {
   if (!f) return "";
   const warn = (f.warnings || []).length ? `<div class="notice">This posting has text aimed at AI tools. JobMagnet reads it as text and never follows it:
       ${f.warnings.map((w) => `<div class="type-meta">“${esc(w)}”</div>`).join("")}</div>` : "";
-  if (!f.measured) return warn + `<p class="type-meta">This posting names too few standard skills to score. Read it before tailoring.</p>`;
+  if (!f.measured) return gateNotice(f.gate) + warn + `<p class="type-meta">This posting names too few standard skills to score. Read it before tailoring.</p>`;
   const list = (label, terms, cls) => terms.length ? `<div><span class="eyebrow">${label}</span><div class="chip-row">${terms.map((t) => `<span class="chip ${cls}"><span>${esc(t)}</span></span>`).join("")}</div></div>` : "";
-  return `<div class="job__fit">${warn}
+  return `<div class="job__fit">${gateNotice(f.gate)}${warn}
       <div class="job__foot"><span class="type-meta">Your CV <b class="num">${f.now}%</b> · can reach <b class="num">${f.reach}%</b>${f.minimum ? ` · your filter ${f.minimum}%` : ""}</span></div>
       <div style="position:relative" title="${f.now}% with your CV as it is; ${f.reach}% is the most your profile can truthfully reach">
         <div class="meter meter--segmented"><span class="meter__ceil" style="width:${f.reach}%"></span><span class="meter__fill" style="width:${f.now}%"></span></div></div>
@@ -252,7 +259,7 @@ function renderJobCard() {
   const state = running
     ? `<div><div class="progress"></div><div class="progress__text" id="jobStage">${esc(item.stage || "Working")}</div>
         <p class="type-meta" style="margin-top:4px">Usually one to three minutes. It carries on if you leave; follow it in Pipeline.</p></div>`
-    : failed && item.below_min ? `<div class="notice">${esc(item.stage)}</div><div class="job__foot"><span class="type-meta">Change the match filter in Discover.</span><button class="btn btn--primary" id="jForce">Tailor anyway</button></div>`
+    : failed && item.below_min ? `<div class="notice">${esc(item.stage)}</div><div class="job__foot"><span class="type-meta">${item.gate ? "Have a referral? It's worth it then." : "Change the match filter in Discover."}</span><button class="btn btn--primary" id="jForce">Tailor anyway</button></div>`
     : failed ? `<div class="notice notice--bad">${esc(item.stage)}</div><div class="job__foot"><span class="type-meta"></span><button class="btn btn--primary" id="jRetry">Try again</button></div>
         <button class="btn btn--sm btn--block" id="jManual" title="Copy the whole brief and paste it into Gemini or any AI chat">Copy prompt for another AI</button>`
     : done ? (S.app.scores.after < S.app.scores.ceiling - 3
@@ -1176,7 +1183,7 @@ function renderPipeline() {
         <button class="btn btn--sm btn--ghost" data-findc="${esc(r.id)}" data-stop title="Search the web for the people who hire for this role" ${PC.running[r.id] ? "disabled" : ""}>${PC.data[r.id] ? "Find contacts again" : "Find contacts"}</button>
       </div>${contactsHtml(r)}</div>`;
   const flightCard = (b) => b.below_min ? `<div class="card app-card" data-flight="${esc(b.id)}">
-      <div class="item"><span class="logo logo--sm">${initial(b.company || b.role)}</span><span class="item__body"><span class="item__title">${esc(b.company || "This job")}</span><span class="item__meta">${esc(b.role || "")}</span></span><span class="tag tag--warn">Below your filter</span></div>
+      <div class="item"><span class="logo logo--sm">${initial(b.company || b.role)}</span><span class="item__body"><span class="item__title">${esc(b.company || "This job")}</span><span class="item__meta">${esc(b.role || "")}</span></span><span class="tag tag--warn">${b.gate === "stop" ? "Fails a screen" : b.gate === "stretch" ? "A stretch" : "Below your filter"}</span></div>
       <div class="progress__text" style="margin-top:0">${esc(b.stage)}</div>
       <div class="app-card__acts"><button class="btn btn--sm btn--primary" data-force="${esc(b.id)}">Tailor anyway</button><button class="btn btn--sm btn--ghost" data-remove="${esc(b.id)}">Remove</button></div></div>`
     : `<div class="card app-card ${b.status === "error" ? "err" : ""}" data-flight="${esc(b.id)}">
@@ -2516,7 +2523,7 @@ async function fillMemory() {
 function memoryChanged() {
   fillMemory();
   const j = S.job;
-  if (j && j.description && !S.app) api("/api/fit", { body: { jd: j.description } }).then((f) => { if (S.job === j) { j.fit = f; renderJobCard(); } }).catch(() => {});
+  if (j && j.description && !S.app) api("/api/fit", { body: fitBody(j) }).then((f) => { if (S.job === j) { j.fit = f; renderJobCard(); } }).catch(() => {});
 }
 
 async function addMemory() {
