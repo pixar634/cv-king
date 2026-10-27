@@ -5,6 +5,7 @@ calls all go through one subscription."""
 import contextvars
 import datetime as dt
 import json
+import re
 import threading
 import uuid
 
@@ -93,6 +94,28 @@ def _work(item_id: str, req: dict, source: dict):
             _update(item_id, status="error", stage=str(e)[:400])
 
 
+def _keys(e: dict) -> set[str]:
+    """What identifies the job an entry asks for: its Discover id, its link, or its company and role."""
+    norm = lambda x: " ".join(re.findall(r"[a-z0-9]+", (x or "").lower()))
+    keys = {f"found:{e['found_id']}"} if e.get("found_id") else set()
+    for u in (e.get("url"), e.get("job_url")):
+        if u:
+            keys.add("url:" + norm(u.split("?")[0].split("#")[0]))
+    if norm(e.get("company")) and norm(e.get("role")):
+        keys.add(f"job:{norm(e['company'])}|{norm(e['role'])}")
+    return keys
+
+
+def _running(keys: set[str]) -> str | None:
+    """The queued or running item for the same job, if there is one: pressing Tailor twice must not write twice."""
+    for it in _mine().values():
+        # the entry as sent, plus the company and role read from the posting since
+        seen = _keys(it.get("entry") or {}) | _keys({"company": it.get("company"), "role": it.get("role")})
+        if it["status"] in ("queued", "running") and keys & seen:
+            return it["id"]
+    return None
+
+
 def add(entries: list[dict], defaults: dict, min_match: int = 0) -> list[str]:
     """entries: each {found_id} or {url} or {jd, company?, role?}, plus force to skip the match filter;
     defaults: market/track/variant/pages/engine; min_match: the Discover match filter, checked before writing."""
@@ -108,12 +131,17 @@ def add(entries: list[dict], defaults: dict, min_match: int = 0) -> list[str]:
         if source.get("found_id"):
             discover.keep(source["found_id"])   # Discover learns from what you act on, too
         with _lock:
-            _mine()[item_id] = {"id": item_id, "created": dt.datetime.now().isoformat(timespec="seconds"),
-                               "entry": e, "defaults": defaults,
-                               "status": "queued", "stage": "Waiting for a free slot", "company": e.get("company", ""),
-                               "role": e.get("role", ""), "market": req.get("market", ""), "app_id": None,
-                               "source": source | ({"text": True} if e.get("jd") else {})}
-            _save()
+            same = _running(_keys(e))   # checked and claimed under one lock, so two quick clicks can't both pass
+            if not same:
+                _mine()[item_id] = {"id": item_id, "created": dt.datetime.now().isoformat(timespec="seconds"),
+                                    "entry": e, "defaults": defaults,
+                                    "status": "queued", "stage": "Waiting for a free slot", "company": e.get("company", ""),
+                                    "role": e.get("role", ""), "market": req.get("market", ""), "app_id": None,
+                                    "source": source | ({"text": True} if e.get("jd") else {})}
+                _save()
+        if same:
+            ids.append(same)
+            continue
         ctx = contextvars.copy_context()   # the item belongs to the profile that queued it
         threading.Thread(target=ctx.run, args=(_work, item_id, req, source), daemon=True).start()
         ids.append(item_id)

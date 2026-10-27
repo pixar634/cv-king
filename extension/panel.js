@@ -132,7 +132,10 @@ function render() {
     return finish(parts);
   }
   const item = mem.itemId && S.items[mem.itemId];
-  if (item && (here || isForm) && item.status !== "done") parts.push(itemCard(item));
+  // Still writing for the posting this tab was on: keep saying so after Apply opens a form at another address,
+  // instead of offering to tailor the same job again.
+  const inFlight = item && ["queued", "running"].includes(item.status);
+  if (item && (here || isForm || inFlight) && item.status !== "done") parts.push(itemCard(item));
   else if (app) parts.push(appCard(app, S.reports[app.id]));
   else if (!busy) parts.push(postingCard(mem, here));
   if (isForm) parts.push(formCard(app, mem));
@@ -182,7 +185,8 @@ function itemCard(it) {
       <button class="btn btn--primary" id="retryItem">Try again</button></div>`;
   }
   return `<div class="card"><span class="eyebrow">Tailoring</span><h2>${esc(it.role || "This job")}</h2><div class="sub">${esc(it.company || "")}</div>
-    <div class="progress"></div><div class="meta">${esc(it.stage || "Working")}. Usually one to three minutes; it carries on if you close this.</div></div>`;
+    <div class="progress"></div><div class="meta">${esc(it.stage || "Working")}. Usually one to three minutes; it carries on if you close this.
+    To tailor a different job meanwhile, open it in a new tab.</div></div>`;
 }
 
 function appCard(row, rep) {
