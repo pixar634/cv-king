@@ -77,6 +77,23 @@ function matchApp(url) {
     || null;
 }
 
+async function probeTab(tabId) {
+  try {
+    return (await inPage("probe", null, { all: true, tabId })).reduce((a, p) => ({ fields: a.fields + p.fields, file: a.file || p.file,
+      thanks: a.thanks || p.thanks, password: a.password + (p.password || 0) }), { fields: 0, file: false, thanks: false, password: 0 });
+  } catch { return null; }
+}
+
+// Sites like Workday move from sign-in to each form step without loading a new page, so look again every few
+// seconds while the panel is open, and redraw only when what the page holds has changed.
+const probeSig = (p) => (p ? `${p.fields}|${p.file}|${p.thanks}|${p.password}` : "none");
+setInterval(async () => {
+  const c = S.ctx;
+  if (!c || document.hidden || S.busy[c.tab.id]) return;
+  const p = await probeTab(c.tab.id);
+  if (S.ctx === c && probeSig(p) !== probeSig(c.probe)) refresh();
+}, 3000);
+
 // ---------- refresh: which tab, which page, which application ----------
 let refreshing = null;
 function refresh() {
@@ -96,10 +113,10 @@ async function doRefresh() {
   S.rows = await api("/api/apps").catch(() => []);
   const mem = await memory(tab.id);
   let probe = null;
-  try { probe = (await inPage("probe", null, { all: true, tabId: tab.id })).reduce((a, p) => ({ fields: a.fields + p.fields, file: a.file || p.file, thanks: a.thanks || p.thanks }), { fields: 0, file: false, thanks: false }); }
-  catch { probe = null; }
+  probe = await probeTab(tab.id);
   if (S.tab.id !== tab.id) return;
-  const isForm = !!probe && (probe.fields >= 4 || (probe.file && probe.fields >= 2));
+  // A page you said is the form counts as one, however few fields it shows.
+  const isForm = !!probe && (probe.fields >= 4 || (probe.file && probe.fields >= 2) || (mem.formUrl === tab.url && probe.fields > 0));
   const here = mem.url && urlKey(mem.url) === urlKey(tab.url);
   // An application from this page, or the one you were tailoring in this tab when the form opened.
   const app = matchApp(tab.url) || ((isForm || here) && mem.appId ? S.rows.find((r) => r.id === mem.appId) : null);
@@ -140,7 +157,11 @@ function render() {
   else if (app) parts.push(appCard(app, S.reports[app.id]));
   else if (!busy) parts.push(postingCard(mem, here));
   if (isForm) parts.push(formCard(app, mem));
-  else if (app && !busy) parts.push(`<div class="card"><span class="eyebrow">Next</span><p class="sub" style="margin:0">Press <b>Apply</b> on the page. When the form opens, I'll fill it in for you to check.</p></div>`);
+  else if (app && !busy && probe.password) parts.push(`<div class="card"><span class="eyebrow">Sign in first</span>
+    <p class="sub" style="margin:0">This is the site's sign-in or create-account step. Sign in or create your account yourself: I never fill passwords. When the application form opens, I'll pick it up.</p>
+    ${probe.fields ? `<button class="btn btn--block" id="fillHere">Fill the email and other fields here</button>` : ""}</div>`);
+  else if (app && !busy) parts.push(`<div class="card"><span class="eyebrow">Next</span><p class="sub" style="margin:0">Press <b>Apply</b> on the page. When the form opens, I'll fill it in for you to check.</p>
+    ${probe.fields ? `<button class="btn btn--block" id="fillHere">This is the form: fill it</button>` : ""}</div>`);
   finish(parts);
 }
 
@@ -153,6 +174,7 @@ function finish(parts) {
   on("tailorForce", () => tailorHere(false, "", true));
   on("tailorAgain", () => tailorHere(false, S.ctx.app?.id));
   on("fill", fillForm);
+  on("fillHere", () => remember(S.tab.id, { formUrl: S.tab.url }).then(fillForm));
   on("submit", submitForm);
   on("markApplied", markApplied);
   on("retryItem", () => remember(S.tab.id, { itemId: null }).then(() => tailorHere(false)));

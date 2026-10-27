@@ -128,7 +128,9 @@
       && !["hidden", "submit", "button", "reset", "image", "search", "password"].includes((el.type || "").toLowerCase()) && !el.closest("header, nav, footer, [role=search]"));
     const thanks = /thank you for (applying|your application)|application (has been |was )?(submitted|received|sent)|we('ve| have) received your application/i
       .test((document.body?.innerText || "").slice(0, 20000));
-    return { fields: els.length, file: els.some((el) => el.type === "file"), url: location.href, thanks };
+    // A visible password box means a sign-in or create-account step: never filled, but worth telling apart from a form.
+    const password = [...document.querySelectorAll("input[type=password]")].filter((el) => !el.disabled && visible(el)).length;
+    return { fields: els.length, file: els.some((el) => el.type === "file"), url: location.href, thanks, password };
   }
 
   // ---------- filling ----------
