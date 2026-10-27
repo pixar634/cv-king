@@ -459,6 +459,17 @@ async function markApplied() {
 }
 
 // ---------- follow the tab you're on ----------
+// Look again now, without waiting for the next automatic check: the page, the application and its report.
+$("#reload").onclick = async () => {
+  const b = $("#reload");
+  if (b.classList.contains("spin")) return;
+  b.classList.add("spin");
+  clearTimeout(refreshing);
+  if (S.ctx?.app) delete S.reports[S.ctx.app.id];
+  if (S.ctx?.mem?.fit) await remember(S.ctx.tab.id, { fit: null });   // score the posting again, in case the profile changed
+  try { await doRefresh(); } finally { b.classList.remove("spin"); }
+};
+
 chrome.tabs.onActivated.addListener(refresh);
 chrome.tabs.onUpdated.addListener((id, info) => { if (id === S.tab?.id && (info.status === "complete" || info.url)) refresh(); });
 chrome.permissions.onAdded.addListener(() => { S.granted = true; refresh(); });

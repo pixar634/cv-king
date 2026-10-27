@@ -19,6 +19,13 @@ a { color: var(--accent); }
 .brand b { font-weight: 800; }
 .mark { width: 14px; height: 14px; background: var(--accent); box-shadow: 2px 2px 0 var(--accent-b), 1px 1px 0 var(--accent-r); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); }
+.top__acts { display: flex; align-items: center; gap: 10px; }
+.icon-btn { appearance: none; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0;
+  background: transparent; border: 1px solid var(--line-2); color: var(--text-2); cursor: pointer; }
+.icon-btn:hover { color: var(--text); border-color: var(--text-3); }
+.icon-btn.spin svg { animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .icon-btn.spin svg { animation: none; } }
 .dot.on { background: var(--ok); } .dot.off { background: var(--bad); }
 
 main { padding: 16px; display: grid; gap: 12px; }
