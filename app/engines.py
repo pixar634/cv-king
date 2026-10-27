@@ -92,6 +92,20 @@ class ClaudeCLI:
         return env.get("result", "")
 
 
+GEMINI_TOOLS = ["google_web_search", "web_fetch", "read_file", "read_many_files", "list_directory", "glob",
+                "grep_search", "search_file_content", "run_shell_command", "write_file", "replace", "save_memory",
+                "write_todos", "codebase_investigator", "cli_help", "get_internal_docs", "activate_skill",
+                "list_mcp_resources", "read_mcp_resource", "ask_user", "enter_plan_mode", "exit_plan_mode"]
+
+
+def _gemini_no_tools() -> Path:
+    """Gemini CLI system settings (they override the user's own) that leave the model no tools at all."""
+    f = Path(tempfile.gettempdir()) / "jobmagnet-gemini-no-tools.json"
+    f.write_text(json.dumps({"tools": {"core": ["none"], "exclude": GEMINI_TOOLS}, "mcp": {"allowed": ["none"]},
+                             "skills": {"enabled": False}, "admin": {"extensions": {"enabled": False}}}), "utf-8")
+    return f
+
+
 def _gemini_entry() -> Path | None:
     roots = []
     npm = shutil.which("npm")
@@ -132,7 +146,9 @@ class GeminiCLI:
             f.write(SYSTEM)
             system_path = f.name
         try:
-            env = os.environ | {"GEMINI_SYSTEM_MD": system_path}
+            # Plan mode still allows web search, web fetch, file reads, MCP and skills: with job text in the brief, a
+            # search query could carry your profile out. The brief needs none of them, so every tool is switched off.
+            env = os.environ | {"GEMINI_SYSTEM_MD": system_path, "GEMINI_CLI_SYSTEM_SETTINGS_PATH": str(_gemini_no_tools())}
             cmd = [shutil.which("node"), str(self._entry), "-p", INSTRUCTION, "-o", "json",
                    "--approval-mode", "plan", "--skip-trust"]
             if self.model:

@@ -59,6 +59,8 @@ REFUSED = {
 # ---------- small helpers ----------
 
 def _get(url: str, timeout: int = 15, accept: str = "application/json") -> bytes:
+    if not public_url(url):
+        raise ValueError(f"Not a public web address: {url[:120]}")
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": accept})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
@@ -78,6 +80,33 @@ def refused_reason(url: str) -> str | None:
         if h == dom or h.endswith("." + dom):
             return why
     return None
+
+
+def public_url(url: str, resolve: bool = True) -> bool:
+    """An http(s) link to a public address. A careers page's own data can name file:///... or http://127.0.0.1/...,
+    and opening that would put a local file or a local service's reply in front of the model."""
+    import ipaddress
+    import socket
+    try:
+        p = urlparse(url or "")
+    except ValueError:
+        return False
+    if p.scheme not in ("http", "https") or not p.hostname:
+        return False
+    host = p.hostname.strip("[]").lower()
+    if host in ("localhost",) or host.endswith((".localhost", ".local", ".internal")):
+        return False
+    try:
+        addrs = [ipaddress.ip_address(host)]
+    except ValueError:
+        if not resolve:
+            return True
+        try:
+            addrs = [ipaddress.ip_address(a[4][0].split("%")[0]) for a in socket.getaddrinfo(host, None)]
+        except (OSError, ValueError):
+            return True   # unresolvable here: the browser won't reach anything local either
+    return not any(a.is_private or a.is_loopback or a.is_link_local or a.is_reserved or a.is_multicast
+                   or a.is_unspecified for a in addrs)
 
 
 def robots_allows(url: str) -> bool:
@@ -131,6 +160,7 @@ def parse_posted(raw: str, today: dt.date | None = None) -> str:
 
 
 def _job(title, company, location, url, posted="", posted_raw="", description="", remote=None, method="", source=""):
+    url = url if public_url(url or "", resolve=False) else ""   # file:// or a local address: no link at all
     return {"id": hashlib.sha1((url or title + company).encode()).hexdigest()[:12],
             "title": (title or "").strip(), "company": (company or "").strip(), "location": (location or "").strip(),
             "url": url, "posted": posted, "posted_raw": posted_raw, "description": strip_html(description or "")[:12000],
@@ -256,6 +286,8 @@ def _jsonld_jobs(blobs: list[str], base: str) -> list[dict]:
 
 
 def render_page(url: str, wait_ms: int = 9000) -> dict:
+    if not public_url(url):
+        raise ValueError(f"Not a public web page: {url[:120]}")
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         browser = pw.chromium.launch(channel="chrome", headless=True)
