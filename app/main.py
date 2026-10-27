@@ -10,8 +10,8 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import (apply, areas, batch, db, discover, extract, letterfile, letters, memory, onboarding, profiles, strategy,
-               tailor, tracker)
+from . import (apply, areas, batch, db, discover, extract, insights, letterfile, letters, memory, onboarding, profiles,
+               strategy, tailor, tracker)
 from .config import STATIC, output_dir
 from .engines import ENGINES, EngineError
 from .jd import parse_jd
@@ -491,6 +491,12 @@ def app_track(app_id: str, body: dict = Body(...)):
 def app_history(app_id: str):
     """Every status change of one application, oldest first, from the local database."""
     return db.history(app_id)
+
+
+@app.get("/api/insights")
+def insights_view():
+    """What your own search says so far: how far applications get, reply rates by match score, who hasn't replied."""
+    return insights.compute()
 
 
 @app.post("/api/db/sync")

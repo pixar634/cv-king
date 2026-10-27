@@ -267,6 +267,14 @@
 .salary-form > * { min-width: 0; }
 .log-form { display: grid; grid-template-columns: 1fr 150px; gap: var(--s-2); }
 .mem__go { display: flex; align-items: center; gap: var(--s-3); }
+.insights { margin-bottom: var(--s-5); }
+.insights__body { display: grid; gap: var(--s-5); padding-top: var(--s-3); }
+.insights__tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--s-4); }
+.insights__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--s-5); align-items: start; }
+.insights table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.insights th, .insights td { text-align: left; padding: 6px 8px 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.insights th { color: var(--text-3); font-weight: 600; }
+.insights td.num, .insights th.num { text-align: right; }
 .mem { display: grid; gap: var(--s-2); padding: var(--s-3) 0; }
 .mem__head { display: flex; align-items: center; gap: var(--s-2); }
 .mem__head .type-meta { flex: 1; min-width: 0; }
