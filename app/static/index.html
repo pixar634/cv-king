@@ -295,6 +295,16 @@
       <div><button class="btn btn--sm" id="savePlaces">Save places</button></div>
     </section>
     <section class="drawer__section">
+      <h3 class="eyebrow">Pay floor</h3>
+      <p class="type-meta">Jobs that state pay below your floor are hidden; ones at or above it rank first. Abroad, the work permit's own salary threshold applies too. 0 means no floor.</p>
+      <div class="field-row"><label class="field"><span class="type-meta">In your city (LPA)</span><input type="number" min="0" step="1" id="payHome"></label>
+        <label class="field"><span class="type-meta">Remote from home (LPA)</span><input type="number" min="0" step="1" id="payRemote"></label>
+        <label class="field"><span class="type-meta">Abroad (€ a year)</span><input type="number" min="0" step="1000" id="payAbroad"></label></div>
+      <p class="type-meta">Few postings state pay. Note how well a company pays (from Levels.fyi or similar), one per line: <code>Databricks | top</code>, <code>Acme | good</code> or <code>Initech | low</code>.</p>
+      <textarea id="payTiers" rows="4" placeholder="Databricks | top"></textarea>
+      <div><button class="btn btn--sm" id="savePay">Save pay</button></div>
+    </section>
+    <section class="drawer__section">
       <h3 class="eyebrow">Remote and Europe job boards</h3>
       <p class="type-meta">Free public job feeds, searched with your career tracks on every scan. Each job links to the board's own posting.</p>
       <div class="list" id="boardList"></div>
