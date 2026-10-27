@@ -39,7 +39,7 @@ def _default_prefs(profile: dict) -> dict:
     from .profile import experience_months
     years = experience_months(profile) // 12
     return {"tracks": list(strategy.tracks()), "india": True, "remote": True, "abroad": True, "days": 14, "concurrency": 2,
-            "include_senior": False, "exclude_skills": [], "max_years_asked": years + 4, "offices": "",
+            "include_senior": False, "exclude_skills": [], "max_years_asked": years + 4, "offices": "", "min_match": 40,
             "regions": ["remote", "city", "country"],
             "defaults": {"market": "auto", "track": "auto", "variant": "flowcv", "max_pages": "auto", "engine": "claude:opus"}}
 
@@ -316,6 +316,7 @@ def update_profile(body: dict = Body(...)):
 def tailor_start(body: dict = Body(...)):
     if len((body.get("jd") or "").strip()) < 200:
         raise HTTPException(400, "Paste the full job description (at least a few paragraphs).")
+    body = {"min_match": _prefs(load_profile())["min_match"]} | body
     return {"job": start_job("tailor", lambda req, progress: tailor.run(req, progress), body)}
 
 
@@ -840,12 +841,13 @@ def batch_list():
 def batch_add(body: dict = Body(...)):
     prefs = _prefs(load_profile())
     batch.set_concurrency(prefs.get("concurrency", 2))
-    return {"ids": batch.add(body.get("items") or [], prefs["defaults"] | (body.get("defaults") or {}))}
+    return {"ids": batch.add(body.get("items") or [], prefs["defaults"] | (body.get("defaults") or {}), prefs["min_match"])}
 
 
 @app.post("/api/batch/{item_id}/retry")
-def batch_retry(item_id: str):
-    return {"ids": batch.retry(item_id)}
+def batch_retry(item_id: str, body: dict = Body(default={})):
+    """Try a failed item again; force=true tailors it even below the match filter."""
+    return {"ids": batch.retry(item_id, _prefs(load_profile())["min_match"], bool(body.get("force")))}
 
 
 @app.delete("/api/batch/{item_id}")

@@ -70,7 +70,8 @@ def _work(item_id: str, req: dict, source: dict):
                 req |= {"jd": j.get("description", ""), "company": req.get("company") or j.get("company", ""),
                         "role": req.get("role") or j.get("title", ""), "job_url": j.get("url", ""),
                         "job_id": extract._job_id_from_url(j.get("url", "")),
-                        "location": j.get("location", ""), "posted": j.get("posted", "")}
+                        "location": j.get("location", ""), "posted": j.get("posted", ""),
+                        "discover_match": j.get("match")}
                 if req.get("market") in (None, "", "auto"):
                     req["market"] = extract.market_for(j.get("location", ""), j.get("remote"))
             elif source.get("url"):
@@ -86,12 +87,15 @@ def _work(item_id: str, req: dict, source: dict):
             report = tailor.run(req, progress)
             _update(item_id, status="done", stage="Tailored", app_id=report["id"], company=report["company"],
                     role=report["role"], score=report["scores"]["after"], ceiling=report["scores"]["ceiling"])
+        except tailor.BelowMatch as e:   # stopped before writing; the card offers "Tailor anyway"
+            _update(item_id, status="error", stage=str(e), below_min=True, ceiling=e.reach)
         except Exception as e:  # one failed job must not stop the others
             _update(item_id, status="error", stage=str(e)[:400])
 
 
-def add(entries: list[dict], defaults: dict) -> list[str]:
-    """entries: each {found_id} or {url} or {jd, company?, role?}; defaults: market/track/variant/pages/engine."""
+def add(entries: list[dict], defaults: dict, min_match: int = 0) -> list[str]:
+    """entries: each {found_id} or {url} or {jd, company?, role?}, plus force to skip the match filter;
+    defaults: market/track/variant/pages/engine; min_match: the Discover match filter, checked before writing."""
     ids = []
     with _lock:
         _load()
@@ -99,7 +103,7 @@ def add(entries: list[dict], defaults: dict) -> list[str]:
         item_id = uuid.uuid4().hex[:10]
         req = {k: v for k, v in defaults.items() if v not in (None, "")} | {k: v for k, v in e.items() if k in (
             "jd", "company", "role", "job_url", "company_site", "market", "track", "variant", "max_pages", "engine",
-            "job_id", "location", "posted", "replace_id", "notes")}
+            "job_id", "location", "posted", "replace_id", "notes", "force")} | {"min_match": min_match}
         source = {k: e[k] for k in ("found_id", "url") if e.get(k)}
         if source.get("found_id"):
             discover.keep(source["found_id"])   # Discover learns from what you act on, too
@@ -116,14 +120,14 @@ def add(entries: list[dict], defaults: dict) -> list[str]:
     return ids
 
 
-def retry(item_id: str) -> list[str]:
+def retry(item_id: str, min_match: int = 0, force: bool = False) -> list[str]:
     with _lock:
         _load()
         it = _mine().pop(item_id, None)
         _save()
     if not it or not it.get("entry"):
         return []
-    return add([it["entry"]], it.get("defaults") or {})
+    return add([it["entry"] | ({"force": True} if force else {})], it.get("defaults") or {}, min_match)
 
 
 def remove(item_id: str) -> None:

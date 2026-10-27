@@ -151,6 +151,7 @@ function finish(parts) {
   on("submit", submitForm);
   on("markApplied", markApplied);
   on("retryItem", () => remember(S.tab.id, { itemId: null }).then(() => tailorHere(false)));
+  on("forceItem", () => remember(S.tab.id, { itemId: null }).then(() => tailorHere(false, "", true)));
   const pick = document.getElementById("pickApp");
   if (pick) pick.onchange = async () => { await remember(S.tab.id, { appId: pick.value || null }); refresh(); };
   document.querySelectorAll("[data-need]").forEach((b) => (b.onclick = () => fillNeed(b.dataset.need)));
@@ -172,6 +173,10 @@ function postingCard(mem, here) {
 }
 
 function itemCard(it) {
+  if (it.status === "error" && it.below_min) {
+    return `<div class="card"><span class="eyebrow">Tailoring</span><div class="notice">${esc(it.stage)}</div>
+      <button class="btn btn--primary" id="forceItem">Tailor anyway</button></div>`;
+  }
   if (it.status === "error") {
     return `<div class="card"><span class="eyebrow">Tailoring</span><div class="notice bad">${esc(it.stage)}</div>
       <button class="btn btn--primary" id="retryItem">Try again</button></div>`;
@@ -232,7 +237,7 @@ function formCard(app, mem) {
 }
 
 // ---------- posting -> tailored CV ----------
-async function tailorHere(readOnly, replaceId = "") {
+async function tailorHere(readOnly, replaceId = "", force = false) {
   await askAccess();
   const tabId = S.tab.id;
   const say = (m) => { S.busy[tabId] = m; if (S.tab.id === tabId) render(); };
@@ -246,7 +251,7 @@ async function tailorHere(readOnly, replaceId = "") {
       say("Starting the CV");
       const { ids } = await api("/api/batch", { body: { items: [{ jd: got.description, company: got.company, role: got.role,
         job_url: got.url, job_id: got.job_id, location: got.location, posted: got.posted, market: got.market || "auto",
-        ...(replaceId ? { replace_id: replaceId } : {}) }] } });
+        ...(replaceId ? { replace_id: replaceId } : {}), ...(force ? { force: true } : {}) }] } });
       await remember(tabId, { itemId: ids[0] });
       S.items[ids[0]] = { id: ids[0], status: "queued", stage: "Waiting for a free slot", company: got.company, role: got.role };
     }
