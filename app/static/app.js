@@ -236,6 +236,7 @@ function renderJobCard() {
   const state = running
     ? `<div><div class="progress"></div><div class="progress__text" id="jobStage">${esc(item.stage || "Working")}</div>
         <p class="type-meta" style="margin-top:4px">Usually one to three minutes. It carries on if you leave; follow it in Pipeline.</p></div>`
+    : failed && item.below_min ? `<div class="notice">${esc(item.stage)}</div><div class="job__foot"><span class="type-meta">Change the match filter in Discover.</span><button class="btn btn--primary" id="jForce">Tailor anyway</button></div>`
     : failed ? `<div class="notice notice--bad">${esc(item.stage)}</div><div class="job__foot"><span class="type-meta"></span><button class="btn btn--primary" id="jRetry">Try again</button></div>
         <button class="btn btn--sm btn--block" id="jManual" title="Copy the whole brief and paste it into Gemini or any AI chat">Copy prompt for another AI</button>`
     : done ? (S.app.scores.after < S.app.scores.ceiling - 3
@@ -279,6 +280,8 @@ function renderJobCard() {
   };
   const retry = $("#jRetry");
   if (retry) retry.onclick = () => { S.item = null; renderJobCard(); tailorJob(); };
+  const force = $("#jForce");
+  if (force) force.onclick = () => { S.item = null; renderJobCard(); tailorJob({ force: true }); };
   const prep = $("#jPrep");
   if (prep) prep.onclick = () => openInterview(S.app.id);
   const redo = $("#jRedo");
@@ -784,11 +787,14 @@ async function pollBatch(once) {
 // ================= discover =================
 function wireDiscover() {
   $("#days").value = String(S.prefs.days || 14);
-  $("#minMatch").value = String(store.get("cv.minMatch", 40));
+  // The match filter is saved with the profile: tailoring checks it too. An older browser-only choice moves over once.
+  const local = store.get("cv.minMatch", null);
+  if (local !== null) { store.set("cv.minMatch", null); if (local !== S.prefs.min_match) savePrefs({ min_match: local }); }
+  $("#minMatch").value = String(local ?? S.prefs.min_match ?? 40);
   $("#sortBy").value = store.get("cv.sortBy", "match");
   $("#days").onchange = async () => { await savePrefs({ days: +$("#days").value }); loadFound(); chromeReady().catch(() => {}); };
   chromeReady().catch(() => {});
-  $("#minMatch").onchange = () => { store.set("cv.minMatch", +$("#minMatch").value); loadFound(); };
+  $("#minMatch").onchange = async () => { await savePrefs({ min_match: +$("#minMatch").value }); loadFound(); };
   $("#sortBy").onchange = () => { store.set("cv.sortBy", $("#sortBy").value); loadFound(); };
   $("#scanAll").onclick = () => scanNow("all");
   $("#scanFav").onclick = () => scanNow("favourites");
@@ -904,6 +910,7 @@ function areaFilter(jobs) {
 }
 
 let FOUND = [];
+const companyKey = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 async function loadFound() {
   if (!$("#areaBar").innerHTML) renderAreaBar();
   // Favourites look back over the longest window the app keeps (30 days), whatever Posted within says.
@@ -912,8 +919,8 @@ async function loadFound() {
   const min = +$("#minMatch").value;
   // Favourite companies: their jobs ignore the match slider and sit pinned at the top.
   const favs = sources.filter((s) => s.favourite);
-  const favNames = favs.map((s) => (s.company || s.label || "").toLowerCase()).filter(Boolean);
-  const isFav = (j) => !!j.favourite || favNames.some((n) => (j.company || "").toLowerCase().includes(n));
+  const favNames = favs.map((s) => companyKey(s.company || s.label)).filter(Boolean);
+  const isFav = (j) => !!j.favourite || favNames.some((n) => { const c = companyKey(j.company); return c === n || c.startsWith(n + " "); });
   $("#scanFav").hidden = !favs.length;
   const jobs = areaFilter(all.filter((j) => j.match >= min && !isFav(j)));
   const below = areaFilter(all.filter((j) => j.match < min && !isFav(j))).length;   // favourites always show, pinned
@@ -1096,7 +1103,11 @@ function renderPipeline() {
         <button class="btn btn--sm btn--ghost" data-cold="${esc(r.id)}" data-stop title="Write a cold email for this job">Cold mail</button>
         <button class="btn btn--sm btn--ghost" data-findc="${esc(r.id)}" data-stop title="Search the web for the people who hire for this role" ${PC.running[r.id] ? "disabled" : ""}>${PC.data[r.id] ? "Find contacts again" : "Find contacts"}</button>
       </div>${contactsHtml(r)}</div>`;
-  const flightCard = (b) => `<div class="card app-card ${b.status === "error" ? "err" : ""}" data-flight="${esc(b.id)}">
+  const flightCard = (b) => b.below_min ? `<div class="card app-card" data-flight="${esc(b.id)}">
+      <div class="item"><span class="logo logo--sm">${initial(b.company || b.role)}</span><span class="item__body"><span class="item__title">${esc(b.company || "This job")}</span><span class="item__meta">${esc(b.role || "")}</span></span><span class="tag tag--warn">Below your filter</span></div>
+      <div class="progress__text" style="margin-top:0">${esc(b.stage)}</div>
+      <div class="app-card__acts"><button class="btn btn--sm btn--primary" data-force="${esc(b.id)}">Tailor anyway</button><button class="btn btn--sm btn--ghost" data-remove="${esc(b.id)}">Remove</button></div></div>`
+    : `<div class="card app-card ${b.status === "error" ? "err" : ""}" data-flight="${esc(b.id)}">
       <div class="item"><span class="logo logo--sm">${initial(b.company || b.role)}</span><span class="item__body"><span class="item__title">${esc(b.company || "Reading the posting")}</span><span class="item__meta">${esc(b.role || "")}</span></span><span class="tag ${b.status === "error" ? "tag--bad" : "tag--accent"}">${b.status === "error" ? "Failed" : "Writing"}</span></div>
       ${b.status === "error" ? "" : `<div class="progress"></div>`}
       <div class="progress__text" style="margin-top:0">${esc(b.status === "queued" ? "Waiting for a free slot" : b.stage || "Working")}</div>
@@ -1127,6 +1138,7 @@ function renderPipeline() {
   }));
   $$("[data-retry]").forEach((b) => (b.onclick = async () => { await api(`/api/batch/${b.dataset.retry}/retry`, { body: {} }); loadPipeline(); pollBatch(true); }));
   $$("[data-remove]").forEach((b) => (b.onclick = async () => { await api(`/api/batch/${b.dataset.remove}`, { method: "DELETE" }); loadPipeline(); }));
+  $$("[data-force]").forEach((b) => (b.onclick = async () => { await api(`/api/batch/${b.dataset.force}/retry`, { body: { force: true } }); loadPipeline(); pollBatch(true); }));
 }
 
 // ================= interview prep =================

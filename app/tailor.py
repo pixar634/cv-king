@@ -506,12 +506,38 @@ def _print(folder: Path, profile: dict, plan: dict, options: dict, company: str,
 
 # ---------- the pipeline ----------
 
+MIN_TERMS = 5   # fewer standard keywords than this and the reach number says little; never gate on it
+
+
+class BelowMatch(EngineError):
+    """The job is below the match filter: stopped before any writing, the user can tailor it anyway."""
+
+    def __init__(self, reach: int, minimum: int):
+        super().__init__(f"Your profile can reach {reach}% of this job's keywords, below your {minimum}% match filter. "
+                         "Nothing was written.")
+        self.reach, self.minimum = reach, minimum
+
+
+def reach(jd_text: str, profile: dict) -> int | None:
+    """The most this profile can truthfully reach for the job, measured before any writing: the same number as
+    the ceiling after tailoring. None when the posting names too few standard keywords to measure."""
+    kws = jd_keywords(jd_text)
+    if len(kws) < MIN_TERMS:
+        return None
+    return score(kws, profile_text(profile))["score"]
+
+
 def run(req: dict, progress=lambda m: None) -> dict:
     profile = load_profile()
     market_id = req.get("market") or home_market()
     jd = parse_jd(req["jd"])
     if len(jd["text"]) < 200:
         raise EngineError("That job description is too short to tailor against. Paste the full posting.")
+    minimum = int(req.get("min_match") or 0)
+    if minimum and not req.get("force"):
+        r = reach(jd["text"], profile)
+        if r is not None and r < minimum:
+            raise BelowMatch(r, minimum)
     company = (req.get("company") or jd["company"] or "").strip()
     role = (req.get("role") or jd["title"] or "").strip()
     if market_id == "auto":
@@ -564,7 +590,7 @@ def run(req: dict, progress=lambda m: None) -> dict:
         "gaps": raw.get("gaps") or [], "recruiter_note": raw.get("recruiter_note", ""),
         "cover_letter": cover, "fit_notes": raw.get("fit_notes") or [], "jd_meta": jd_meta,
         "options": options, "edited": False, "notes": (req.get("notes") or "").strip(),
-        "job": {k: req.get(k, "") for k in ("job_url", "job_id", "location", "posted")},
+        "job": {k: req.get(k, "") for k in ("job_url", "job_id", "location", "posted", "discover_match")},
     }
     (folder / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), "utf-8")
     tracker.add_from_report(report, req)
