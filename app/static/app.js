@@ -2624,7 +2624,7 @@ async function fillDrawer() {
   $("#dAvail").value = S.state.profile.basics.availability || "";
   $("#dRelease").value = S.state.profile.basics.notice_release || "";
   const on = new Set(S.prefs.tracks || []);
-  $("#rankTracks").innerHTML = Object.entries(S.state.tracks).map(([k, t]) => `<button data-v="${k}" class="chip ${on.has(k) ? "on" : ""}">${esc(t.label)}</button>`).join("");
+  $("#rankTracks").innerHTML = Object.entries(S.state.tracks).map(([k, t]) => `<button data-v="${k}" class="chip ${on.has(k) ? "on" : ""}" ${t.status === "parked" ? `title="Parked: for a referral or an internal move. Discover hides it and tailoring asks first."` : ""}>${esc(t.label)}${t.status === "parked" ? " (parked)" : ""}</button>`).join("");
   $("#rankTracks").onclick = async (e) => {
     const b = e.target.closest("button"); if (!b) return;
     on.has(b.dataset.v) ? on.delete(b.dataset.v) : on.add(b.dataset.v);

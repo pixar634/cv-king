@@ -75,7 +75,7 @@ async def pick_profile(request: Request, call_next):
 def _default_prefs(profile: dict) -> dict:
     from .profile import experience_months
     years = experience_months(profile) // 12
-    return {"tracks": list(strategy.tracks()), "india": True, "remote": True, "abroad": True, "days": 3, "concurrency": 2,
+    return {"tracks": strategy.active_tracks() or list(strategy.tracks()), "india": True, "remote": True, "abroad": True, "days": 3, "concurrency": 2,
             "include_senior": False, "exclude_skills": [], "max_years_asked": years + 2, "offices": "", "min_match": 40,
             "regions": ["remote", "city", "country"], "places": [], "fit_filter": "possible",
             "pay_floor_home_lpa": 0, "pay_floor_remote_lpa": 0, "pay_floor_abroad_eur": 0, "pay_tiers": "",
@@ -174,7 +174,8 @@ def state():
         "markets": {k: {"label": v["label"], "max_pages": v["max_pages"], "gdpr": v.get("gdpr_clause", False),
                         "header_line": tailor.default_header_line(k, profile)} for k, v in m.items()},
         "layouts": {k: {"label": v["label"], "blurb": v["blurb"]} for k, v in LAYOUTS.items()},
-        "tracks": {k: {"label": v["label"], "examples": v.get("headline_examples") or []} for k, v in tailor.tracks().items()},
+        "tracks": {k: {"label": v["label"], "examples": v.get("headline_examples") or [], "status": v.get("status", "primary")}
+                   for k, v in tailor.tracks().items()},
         "voices": {k: {"label": v["label"], "best_for": v["best_for"]} for k, v in letters.voices().items() if k != "banned_phrases"},
         "engines": [{"id": e.id, "label": e.label, "available": e.available()} for e in ENGINES.values()],
         "statuses": tracker.STATUSES,

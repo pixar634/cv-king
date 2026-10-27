@@ -152,6 +152,17 @@ def track_for(title: str) -> str:
     return default_track()
 
 
+def active_tracks() -> list[str]:
+    """Tracks for cold applications: every track not parked (parked ones are for referrals and internal moves)."""
+    return [tid for tid, t in tracks().items() if t.get("status") != "parked"]
+
+
+def parked_only(title: str) -> bool:
+    """The title is one of your parked tracks and none of your active ones."""
+    hits = matching_tracks(title)
+    return bool(hits) and all(tracks()[t].get("status") == "parked" for t in hits)
+
+
 def matching_tracks(title: str, wanted: list[str] | None = None) -> list[str]:
     return [tid for tid in (wanted or list(tracks())) if (p := track_pattern(tid, wide=True)) and p.search(title or "")]
 
