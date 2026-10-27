@@ -960,8 +960,8 @@ async function loadFound() {
       </div>
       <div><div class="job-card__title">${esc(j.title)}</div>
         <div class="job-card__where">${where}${(j.areas || []).length ? ` · <span class="zone">${esc(j.areas.join(" or "))}</span>` : ""}</div></div>
-      <div class="job-card__match ${tone(j.match)}" title="Keyword match your profile can reach for this job (the same measure as after tailoring)">
-        <span class="eyebrow">Match</span><span class="meter meter--sm"><span class="meter__fill" style="width:${j.match}%"></span></span><span class="num">${j.match}%</span></div>
+      <div class="job-card__match ${tone(j.match)}" title="${j.estimate ? "An estimate from a short description. Opening the job reads the full posting and scores it again." : "Keyword match your profile can reach for this job (the same measure as after tailoring)"}">
+        <span class="eyebrow">Match</span><span class="meter meter--sm"><span class="meter__fill" style="width:${j.match}%"></span></span><span class="num">${j.estimate ? "~" : ""}${j.match}%</span></div>
       <div class="job-card__why" title="${esc((j.reasons || []).join(", "))}">${esc((j.reasons || []).join(", "))}, via ${esc(j.source)}</div>
     </div>`;
   };

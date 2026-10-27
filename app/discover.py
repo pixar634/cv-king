@@ -487,7 +487,7 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 8
+RANK_VERSION = 9
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "regions")
 # Region filter keys. Older settings said "bengaluru" and "india" for the city and the rest of the country.
@@ -553,7 +553,7 @@ def rank(job: dict, evidence: set[str], prefs: dict, sig: str | None = None) -> 
     if cached and (cached.get("sig") == sig or job.get("_trimmed")):
         return job | {k: v for k, v in cached.items() if k != "sig"}
     out = _rank(job, evidence, prefs)
-    keep = {k: out[k] for k in ("match", "order", "reasons", "excluded", "areas", "skills") if k in out}
+    keep = {k: out[k] for k in ("match", "order", "reasons", "excluded", "areas", "skills", "estimate") if k in out}
     return out | {"_r": keep | {"sig": sig}}
 
 
@@ -602,8 +602,10 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
         # Same scorer, same keyword list rules as the Tailor screen's "most your profile can reach".
         score = keyword_score(jd_keywords(desc), prefs.get("_ptext", ""))["score"]
         reasons.append(f"you can cover {score}% of its keywords")
+        # A short text is often a search snippet, not the posting: the full page can score quite differently.
+        estimate = len(desc) < SNIPPET
     else:
-        score = 40
+        score, estimate = 40, True
         reasons.append("no description to measure yet")
     order = score - (0 if target else 10)
     # Level decides the order among jobs that match equally: at your level first, a step down last.
@@ -629,7 +631,7 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
         order -= 10
         reasons += [f"stretch: {r}" for r in level["reasons"]]
     from .areas import tag
-    return job | {"skills": skills, "match": max(0, min(100, score)), "order": order, "reasons": reasons, "excluded": False,
+    return job | {"skills": skills, "match": max(0, min(100, score)), "estimate": estimate, "order": order, "reasons": reasons, "excluded": False,
                   "areas": tag(job, prefs.get("offices", ""))}
 
 
@@ -936,13 +938,18 @@ def taste_rule(key: str, on: bool) -> None:
         _save_jobs(state)
 
 
-def job_detail(job_id: str) -> dict:
-    """Full JD for the tailoring form. Most ATS APIs already returned it; otherwise read the page."""
+SNIPPET = 1200   # characters: a description shorter than this is scored as an estimate until the full page is read
+
+
+def job_detail(job_id: str, prefs: dict | None = None) -> dict:
+    """Full JD for the tailoring form. Most ATS APIs already returned it; otherwise read the page.
+    prefs: the profile's Discover settings, to rank the job again once its full text is in."""
     state = _load_jobs()
     j = state["jobs"].get(job_id)
     if not j:
         raise KeyError(job_id)
-    if j.get("_trimmed") or len(j.get("description", "")) < 400:
+    if j.get("_trimmed") or len(j.get("description", "")) < SNIPPET:
+        short = len(j.get("description", ""))
         if j.get("detail_api"):
             d = _json(j["detail_api"])
             secs = (d.get("jobAd") or {}).get("sections") or {}
@@ -956,6 +963,14 @@ def job_detail(job_id: str) -> dict:
                 j["company"] = j["company"] or ld[0]["company"]
             else:
                 j["description"] = page["text"][:20000]
+        if len(j.get("description", "")) > short:
+            # Scored on a snippet: rank it again on the full posting, so the card shows what Tailor will.
+            # Without the settings, dropping the stored rank makes the next Discover load rank it afresh.
+            j = {k: v for k, v in j.items() if k not in ("_r", "_trimmed")}
+            if prefs is not None:
+                prefs, evidence = with_profile(prefs), strong_skills(load_profile())
+                ranked = rank(j, evidence, prefs, rank_signature(prefs, evidence))
+                j = j | {k: ranked[k] for k in ("match", "estimate", "reasons", "order", "excluded", "areas", "skills", "_r") if k in ranked}
         with _lock:
             state["jobs"][job_id] = j
             _save_jobs(state)

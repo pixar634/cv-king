@@ -971,7 +971,7 @@ def taste_rule(body: dict = Body(...)):
 @app.get("/api/found/{job_id}/detail")
 def found_detail(job_id: str):
     try:
-        return in_thread(discover.job_detail, job_id)
+        return in_thread(discover.job_detail, job_id, _prefs(load_profile()))
     except KeyError:
         raise HTTPException(404)
 
