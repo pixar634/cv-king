@@ -53,3 +53,16 @@ def test_pasted_reply_with_fences_and_curly_quotes():
 def test_pasted_reply_that_is_not_json():
     with pytest.raises(ValueError):
         discover._parse_pasted("no json here")
+
+
+def test_every_track_is_searched_before_any_gets_a_second_query(monkeypatch):
+    titles = {"ic_lead": ["Lead Software Engineer", "Tech Lead", "Engineering Lead"], "engineering_manager": ["Engineering Manager"],
+              "product_manager": ["Senior Product Manager"], "delivery_lead": ["Delivery Manager"], "staff": ["Staff Software Engineer"],
+              "forward_deployed": ["Forward Deployed Engineer"], "ai_engineer": ["AI Engineer"], "solutions_gtm": ["Solutions Architect"]}
+    monkeypatch.setattr(strategy, "search_titles", lambda: titles)
+    monkeypatch.setattr(strategy, "default_track", lambda: "ic_lead")
+    q = discover.jobspy_queries({"tracks": list(titles)})
+    assert q[:8] == ["Lead Software Engineer", "Engineering Manager", "Senior Product Manager", "Delivery Manager",
+                     "Staff Software Engineer", "Forward Deployed Engineer", "AI Engineer", "Solutions Architect"]
+    assert q[8] == "Tech Lead" and len(q) <= discover.JOBSPY_MAX_QUERIES
+    assert "Forward Deployed Engineer" in discover.board_terms({"tracks": list(titles)})

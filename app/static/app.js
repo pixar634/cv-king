@@ -600,6 +600,14 @@ function setTab(name, animate = true) {
   if (animate) FX.rise($(`#insights [data-panel=${name}]`).children, { y: 10 });
 }
 
+// The posting's own must-haves (years, domains, practices) aren't standard skill keywords, so the keyword score can
+// read 100% while several of them are missing: count them apart, from the writer's list of must-haves and gaps.
+function requirements(a) {
+  const missing = (a.gaps || []).filter((g) => g.must_have).length;
+  const total = Math.max((a.jd_meta?.must_have || []).length, missing);
+  return { total, missing, shown: total - missing };
+}
+
 function renderInsights() {
   const a = S.app;
   if (!a) { $("#insights").innerHTML = ""; return; }
@@ -616,16 +624,19 @@ function renderInsights() {
     : s.after >= s.ceiling - 2
       ? `This CV covers <b>${s.after}%</b> of the job's keywords, the most your profile can truthfully reach. Your current CV covers ${s.before}%.`
       : `This CV covers <b>${s.after}%</b> of the job's keywords; your profile could reach ${s.ceiling}%. Your current CV covers ${s.before}%.`;
+  const rq = requirements(a);
+  const reqNote = rq.missing ? ` But <b>${rq.missing} of the posting's ${rq.total} must-haves</b> aren't on it, such as years in a role or a domain: the keyword score only counts standard skills. They're listed under Gaps.` : "";
   const notes = (a.fit_notes || []).length || a.recruiter_note;
   const tabs = [["changes", "Changes", ""], ["keywords", "Keywords", `${covered}/${a.keywords.length}`], ["letter", "Letter", `<span id="letterCount"></span>`],
     ...(notes ? [["notes", "Notes", ""]] : []), ["ats", "ATS", `${passed}/${a.ats.length}`]];
   $("#insights").innerHTML = `
-    <section class="score ${tone(s.after)}">
+    <section class="score ${tone(rq.total ? Math.min(s.after, Math.round(100 * rq.shown / rq.total)) : s.after)}">
       <div class="score__top">
         <div class="stat stat--xl"><span class="eyebrow">Keyword match</span><span class="stat__value">${s.after}<small>%</small></span></div>
         <div class="score__stats">
           <div class="stat"><span class="eyebrow">Before</span><span class="stat__value">${s.before}<small>%</small></span></div>
           <div class="stat"><span class="eyebrow">Ceiling</span><span class="stat__value">${s.ceiling}<small>%</small></span></div>
+          ${rq.total ? `<div class="stat" title="The posting's must-haves this CV shows, as the writer judged them"><span class="eyebrow">Must-haves</span><span class="stat__value">${rq.shown}<small>/${rq.total}</small></span></div>` : ""}
         </div>
       </div>
       <div class="score__meter" title="Before ${s.before}%, now ${s.after}%, ceiling ${s.ceiling}%">
@@ -633,7 +644,7 @@ function renderInsights() {
         <span class="meter__mark" style="left:${s.before}%"></span>
         <div class="meter-legend"><span class="type-meta">${esc(a.headline)}</span><span class="type-meta num">${pages(a.pages)}, ${a.experience_years} years</span></div>
       </div>
-      <p class="score__verdict">${verdict}</p>
+      <p class="score__verdict">${verdict}${reqNote}</p>
       ${flags.length ? `<div>${flagsHtml(flags)}</div>` : ""}
     </section>
     <section class="report">
