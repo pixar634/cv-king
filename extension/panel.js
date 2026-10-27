@@ -480,7 +480,7 @@ async function submitForm() {
   const final = /submit|send/i.test(r.clicked);
   const left = after.thanks || (after.url && after.url !== f.url) || after.fields < before / 2;
   if (final && left) {
-    await api(`/api/apps/${app.id}/track`, { body: { status: "Applied" } }).catch(() => {});
+    await api(`/api/apps/${app.id}/track`, { body: { status: "Applied", source: "extension" } }).catch(() => {});
     await remember(tabId, { fill: null, submitted: r.clicked, submittedUrl: S.tab.url });
   } else if (!final) {
     await remember(tabId, { fill: null, step: r.clicked });
@@ -500,7 +500,7 @@ function stuck(msg) {
 async function markApplied() {
   const app = S.ctx.app;
   if (!app) return;
-  await api(`/api/apps/${app.id}/track`, { body: { status: "Applied" } }).catch(() => {});
+  await api(`/api/apps/${app.id}/track`, { body: { status: "Applied", source: "extension" } }).catch(() => {});
   await remember(S.tab.id, { fill: null, submitted: "Mark applied", submittedUrl: S.tab.url });
   S.warnedEmpty = false;
   refresh();

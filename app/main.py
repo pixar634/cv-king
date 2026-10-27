@@ -476,11 +476,18 @@ def letter_export(app_id: str, body: dict = Body(...)):
 @app.post("/api/apps/{app_id}/track")
 def app_track(app_id: str, body: dict = Body(...)):
     try:
-        return tracker.update(app_id, body)
+        return tracker.update(app_id, body, body.get("source") or "app")
     except KeyError:
         raise HTTPException(404, "Not in the tracker")
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+@app.get("/api/apps/{app_id}/history")
+def app_history(app_id: str):
+    """Every status change of one application, oldest first, from the local database."""
+    from . import db
+    return db.history(app_id)
 
 
 @app.get("/api/export.xlsx")
