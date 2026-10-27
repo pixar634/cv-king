@@ -105,6 +105,7 @@ async function doRefresh() {
   const app = matchApp(tab.url) || ((isForm || here) && mem.appId ? S.rows.find((r) => r.id === mem.appId) : null);
   S.ctx = { tab, mem, probe, isForm, here, app };
   if (mem.itemId && !mem.appId) watchItem(tab.id, mem.itemId);
+  if (here && mem.job && !mem.fit) S.ctx.mem = await remember(tab.id, { fit: await api("/api/fit", { body: { jd: mem.job.description } }).catch(() => null) });
   if (app && !S.reports[app.id]) S.reports[app.id] = await api(`/api/apps/${app.id}`).catch(() => null);
   render();
 }
@@ -146,6 +147,7 @@ function finish(parts) {
   on("access", () => askAccess().then(refresh));
   on("tailor", () => tailorHere(false));
   on("readOnly", () => tailorHere(true));
+  on("tailorForce", () => tailorHere(false, "", true));
   on("tailorAgain", () => tailorHere(false, S.ctx.app?.id));
   on("fill", fillForm);
   on("submit", submitForm);
@@ -157,13 +159,27 @@ function finish(parts) {
   document.querySelectorAll("[data-need]").forEach((b) => (b.onclick = () => fillNeed(b.dataset.need)));
 }
 
+// The job against your profile before any writing: measured in code, the same numbers tailoring will report.
+function fitHtml(f) {
+  if (!f) return "";
+  if (!f.measured) return `<p class="meta" style="margin:0">This posting names too few standard skills to score. Read it yourself before tailoring.</p>`;
+  const list = (label, terms, cls) => terms.length ? `<div class="fit__list"><span class="meta">${label}</span><div class="row">${terms.map((t) => `<span class="chip ${cls}">${esc(t)}</span>`).join("")}</div></div>` : "";
+  return `<div class="score"><div><span class="meta">Your CV</span><b>${f.now}%</b></div><div class="now"><span class="meta">Can reach</span><b>${f.reach}%</b></div><div><span class="meta">Your filter</span><b>${f.minimum ? `${f.minimum}%` : "Any"}</b></div></div>
+    <div class="meter" title="Keyword match: ${f.now}% with your CV as it is, ${f.reach}% is the most your profile can truthfully reach"><span style="width:${f.now}%"></span><i style="left:${f.reach}%"></i></div>
+    ${f.below ? `<div class="notice">Your profile can reach ${f.reach}% of this job's keywords, below your ${f.minimum}% filter. Worth a look before you spend a tailor on it.</div>` : ""}
+    ${list("Tailoring adds (in your profile, not yet in your CV)", f.adds, "ok")}
+    ${list("You don't have (not in your profile)", f.gaps, "warn")}`;
+}
+
 function postingCard(mem, here) {
   const j = here && mem.job;
   if (j) {
     return `<div class="card"><span class="eyebrow">This job</span><h2>${esc(j.role || "Untitled role")}</h2>
       <div class="sub">${esc(j.company)}${j.location ? ` · ${esc(j.location)}` : ""}</div>
       <div class="meta">${j.description.split(/\s+/).length} words read${j.posted ? `, posted ${esc(j.posted)}` : ""}</div>
-      <button class="btn btn--primary btn--block" id="tailor">Tailor my CV</button>
+      ${fitHtml(mem.fit)}
+      ${mem.fit?.below ? `<button class="btn btn--primary btn--block" id="tailorForce">Tailor anyway</button>`
+        : `<button class="btn btn--primary btn--block" id="tailor">Tailor my CV</button>`}
       <a class="btn btn--ghost btn--block" href="${SERVER}/?job=${esc(mem.jobJid)}" target="_blank">Review it in JobMagnet first</a></div>`;
   }
   return `<div class="card"><span class="eyebrow">This page</span>
@@ -246,7 +262,8 @@ async function tailorHere(readOnly, replaceId = "", force = false) {
     const [page] = await inPage("grab", null, { tabId });
     const { job } = await api("/api/clip", { body: page });
     const got = await pollJob(job, (l) => say(l.msg));
-    await remember(tabId, { url: page.url, job: got, jobJid: job, itemId: null, appId: null });
+    const fit = await api("/api/fit", { body: { jd: got.description } }).catch(() => null);
+    await remember(tabId, { url: page.url, job: got, jobJid: job, itemId: null, appId: null, fit });
     if (!readOnly) {
       say("Starting the CV");
       const { ids } = await api("/api/batch", { body: { items: [{ jd: got.description, company: got.company, role: got.role,

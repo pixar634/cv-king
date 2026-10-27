@@ -527,6 +527,21 @@ def reach(jd_text: str, profile: dict) -> int | None:
     return score(kws, profile_text(profile))["score"]
 
 
+def fit(jd_text: str, profile: dict, minimum: int = 0, show: int = 8) -> dict:
+    """How this job sits against you before any writing (code only, no model): your CV as it is, the most your
+    profile can truthfully reach, what tailoring can add, and what you don't have."""
+    kws = jd_keywords(jd_text)
+    if len(kws) < MIN_TERMS:
+        return {"measured": False, "terms": len(kws), "minimum": minimum}
+    original = original_cv_path().read_text("utf-8") if original_cv_path().exists() else ""
+    now, can = score(kws, original), score(kws, profile_text(profile))
+    rows = [(n, c) for n, c in zip(now["rows"], can["rows"])]   # both sorted by weight, heaviest first
+    return {"measured": True, "terms": len(kws), "minimum": minimum,
+            "now": now["score"], "reach": can["score"], "below": bool(minimum) and can["score"] < minimum,
+            "adds": [c["term"] for n, c in rows if c["covered"] and not n["covered"]][:show],
+            "gaps": [c["term"] for n, c in rows if not c["covered"]][:show]}
+
+
 def run(req: dict, progress=lambda m: None) -> dict:
     profile = load_profile()
     market_id = req.get("market") or home_market()

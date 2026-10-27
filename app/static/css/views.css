@@ -70,6 +70,7 @@
 .job__controls { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); }
 .job__foot { display: flex; align-items: center; gap: var(--s-3); }
 .job__foot .type-meta { flex: 1; }
+.job__fit { display: grid; gap: var(--s-2); }
 .job .disclosure { border-top: 1px solid var(--line); margin-bottom: calc(-1 * var(--s-3)); }
 
 /* score */
