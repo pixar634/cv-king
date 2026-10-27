@@ -9,6 +9,7 @@ import re
 from .coldmail import EMAIL_RE
 from .config import output_dir
 from .engines import get_engine, parse_json_reply
+from .untrusted import fence
 
 FILE = "contacts.json"
 
@@ -91,7 +92,7 @@ def find(app_id: str, progress=lambda m: None) -> dict:
     function = re.sub(r"(?i)\b(junior|jr\.?|associate|senior|sr\.?|lead|principal|staff|head of|manager|i{1,3})\b|[,(].*$", "",
                       report["role"]).strip() or report["role"]
     brief = BRIEF.format(company=report["company"], role=report["role"], where=f" in {loc}" if loc else "",
-                         city=city, country=country, function=function, region=loc or "the role's location", jd=jd[:8000])
+                         city=city, country=country, function=function, region=loc or "the role's location", jd=fence(jd[:8000]))
     raw = parse_json_reply(get_engine("claude:sonnet").run(brief, timeout=420, tools=["WebSearch"]))
     people, seen = [], set()
     for p in raw.get("people") or []:

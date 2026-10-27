@@ -217,9 +217,11 @@ function setJob(job) {
 // ================= job card =================
 function fitBlock(f) {
   if (!f) return "";
-  if (!f.measured) return `<p class="type-meta">This posting names too few standard skills to score. Read it before tailoring.</p>`;
+  const warn = (f.warnings || []).length ? `<div class="notice">This posting has text aimed at AI tools. JobMagnet reads it as text and never follows it:
+      ${f.warnings.map((w) => `<div class="type-meta">“${esc(w)}”</div>`).join("")}</div>` : "";
+  if (!f.measured) return warn + `<p class="type-meta">This posting names too few standard skills to score. Read it before tailoring.</p>`;
   const list = (label, terms, cls) => terms.length ? `<div><span class="eyebrow">${label}</span><div class="chip-row">${terms.map((t) => `<span class="chip ${cls}"><span>${esc(t)}</span></span>`).join("")}</div></div>` : "";
-  return `<div class="job__fit">
+  return `<div class="job__fit">${warn}
       <div class="job__foot"><span class="type-meta">Your CV <b class="num">${f.now}%</b> · can reach <b class="num">${f.reach}%</b>${f.minimum ? ` · your filter ${f.minimum}%` : ""}</span></div>
       <div style="position:relative" title="${f.now}% with your CV as it is; ${f.reach}% is the most your profile can truthfully reach">
         <div class="meter meter--segmented"><span class="meter__ceil" style="width:${f.reach}%"></span><span class="meter__fill" style="width:${f.now}%"></span></div></div>
