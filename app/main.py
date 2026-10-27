@@ -900,7 +900,7 @@ def fit_preview(body: dict = Body(...)):
         extract.market_for(body.get("location") or "", body.get("remote"))
     same = tracker.find_same(body.get("company") or "", body.get("role") or "", body.get("url") or "")
     return out | {"gate": gate.check(text, body.get("role") or "", body.get("location") or "", market, body.get("remote"),
-                                     profile, prefs),
+                                     profile, prefs, company=body.get("company") or ""),
                   "already": same and {"id": same["id"], "status": same.get("status"), "story": tracker.story(same),
                                        "sent": tracker.went_out(same)}}
 

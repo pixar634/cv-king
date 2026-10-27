@@ -521,7 +521,7 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 14
+RANK_VERSION = 15
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "regions", "places")
 
@@ -595,7 +595,8 @@ def rank_signature(prefs: dict, evidence: set[str]) -> str:
     # RANK_VERSION changes whenever the ranking rules do, so stored ranks never outlive the code that made them;
     # the strategy's own file changes them too (new tracks, a new level).
     sp = strategy.path()
-    blob = json.dumps([RANK_VERSION, {k: prefs.get(k) for k in RANK_KEYS}, sorted(evidence),
+    from .sponsors import _lists
+    blob = json.dumps([RANK_VERSION, _lists().get("fetched"), {k: prefs.get(k) for k in RANK_KEYS}, sorted(evidence),
                        hashlib.sha1(prefs.get("_ptext", "").encode()).hexdigest(),
                        sp.stat().st_mtime if sp.exists() else 0], sort_keys=True, default=str)
     return hashlib.sha1(blob.encode()).hexdigest()[:12]
@@ -729,6 +730,19 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
         reasons.append("remote")
     elif SPONSOR.search(desc) or reg == "abroad":
         reasons.append("sponsors visas" if SPONSOR.search(desc) else "abroad, check visa")
+    # The UK and Dutch sponsor registers settle most "doesn't say" cases for jobs there.
+    from .sponsors import check as sponsor_check
+    reg_hit = sponsor_check(job.get("company") or "", job.get("location") or "") if reg != "home" else None
+    if reg_hit and reg_hit["listed"]:
+        reasons.append("licensed UK sponsor" if reg_hit["register"] == "uk" else "IND recognised sponsor")
+        order += 6
+        if o["state"] == "unclear":
+            o = {"state": "open", "why": "on a sponsor register"}
+    elif reg_hit and reg_hit["register"] == "uk":
+        reasons.append("unlikely: not a licensed UK sponsor")
+        order -= 15
+    elif reg_hit:
+        reasons.append("not an IND recognised sponsor (the EU Blue Card still works)")
     # Open first; one that doesn't say is labelled and sits lower (opening it reads the full posting again).
     if o["state"] == "unclear":
         order -= 8
@@ -1078,6 +1092,8 @@ def _save_jobs(state: dict) -> None:
 
 
 def scan(source_ids: list[str] | None, days: int, prefs: dict, budget_s: int = 60, progress=lambda m: None) -> dict:
+    from .sponsors import refresh_soon
+    refresh_soon()   # the public sponsor registers, at most monthly, in the background
     # Indeed searches run only when asked for by id (Discover's Scan Indeed button), not on every scan.
     every = load_sources()
     sources = [s for s in every if s["id"] in source_ids] if source_ids else [s for s in every if s["kind"] != "indeed"]

@@ -16,5 +16,8 @@ CAREER_MAP.md
 # Local backups
 .backup/
 
+# Public lists downloaded by the app (visa sponsor registers)
+.cache/
+
 # Other people's profiles made in the app
 profiles/
