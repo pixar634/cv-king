@@ -289,6 +289,11 @@ function appCard(row, rep) {
       ${flags.length ? `<span class="chip warn">${flags.length} to check</span>` : ""}</div>
     <div class="score"><div><span class="meta">Before</span><b>${sc.before}%</b></div><div class="now"><span class="meta">Now</span><b>${sc.after}%</b></div><div><span class="meta">Ceiling</span><b>${sc.ceiling}%</b></div></div>
     <div class="meter" title="Keyword match: ${sc.after}% now, ${sc.ceiling}% is the most your profile can truthfully reach"><span style="width:${sc.after}%"></span><i style="left:${sc.ceiling}%"></i></div>
+    ${(() => {   // must-haves aren't standard keywords: a 100% match can still miss several
+      const missing = (rep?.gaps || []).filter((g) => g.must_have).length;
+      const total = Math.max((rep?.jd_meta?.must_have || []).length, missing);
+      return missing ? `<div class="notice">${missing} of the posting's ${total} must-haves aren't on this CV (years in a role, a domain, a practice). Open it in JobMagnet to see them.</div>` : "";
+    })()}
     ${failed.length ? `<ul class="list">${failed.map((a) => `<li><span class="chip warn">✕</span><span>${esc(a.label)}${a.detail ? `<span class="meta"> ${esc(a.detail)}</span>` : ""}</span></li>`).join("")}</ul>` : ""}
     ${flags.length ? `<details><summary>What to check</summary><ul class="list">${flags.map((f) => `<li>${esc(f.text)}</li>`).join("")}</ul></details>` : ""}
     <div class="row"><a class="btn btn--sm" href="${SERVER}/?app=${encodeURIComponent(row.id)}" target="_blank">Open in JobMagnet</a>

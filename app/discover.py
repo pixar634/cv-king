@@ -660,13 +660,19 @@ BOARDS = {
 }
 
 
+LEVEL_WORDS = {"lead", "senior", "sr", "staff", "principal", "junior", "jr", "associate", "head"}
+
+
 def board_terms(prefs: dict) -> list[str]:
-    """Short search terms from your career tracks: boards match "Software Engineer" better than a full title."""
+    """Search terms from your career tracks without the level word: boards match "Software Engineer" better than
+    "Lead Software Engineer", and "Forward Deployed Engineer" stays whole."""
     out = []
     for q in jobspy_queries(prefs):
         words = re.sub(r"[^\w\s+#-]", " ", q).split()
-        out.append(" ".join(words[-2:]) if len(words) > 2 else " ".join(words))
-    return list(dict.fromkeys(t for t in out if t))[:3]
+        while len(words) > 2 and words[0].lower() in LEVEL_WORDS:
+            words = words[1:]
+        out.append(" ".join(words))
+    return list(dict.fromkeys(t for t in out if t))[:8]
 
 
 def _epoch(v) -> str:
@@ -678,16 +684,16 @@ def from_board(board: str, prefs: dict) -> tuple[str, list[dict]]:
     terms = board_terms(prefs) or ["engineer"]
     out = []
     if board == "remotive":
-        for t in terms[:2]:
+        for t in terms:
             data = _json(f"https://remotive.com/api/remote-jobs?search={quote(t)}&limit=100", timeout=25)
             out += [_job(j.get("title"), j.get("company_name"), j.get("candidate_required_location") or "Worldwide", j.get("url"),
                          _iso(j.get("publication_date")), description=j.get("description", ""), remote=True, method="remotive")
                     for j in data.get("jobs", [])]
         return "Remotive API", out
     if board == "jobicy":
-        geos = list(dict.fromkeys(["europe"] + [p.split(",")[-1].strip().lower() for p in prefs.get("places") or []]))[:3]
+        geos = list(dict.fromkeys(["europe"] + [p.split(",")[-1].strip().lower() for p in prefs.get("places") or []]))[:2]
         for geo in geos:
-            for t in terms[:2]:
+            for t in terms[:4]:
                 try:
                     data = _json(f"https://jobicy.com/api/v2/remote-jobs?count=50&geo={quote(geo)}&tag={quote(t)}", timeout=25)
                 except urllib.error.HTTPError:   # a country Jobicy doesn't list (Luxembourg): skip it, keep the rest
@@ -697,8 +703,8 @@ def from_board(board: str, prefs: dict) -> tuple[str, list[dict]]:
                         for j in data.get("jobs", []) or []]
         return "Jobicy API", out
     if board == "himalayas":
-        for t in terms[:2]:
-            for page in (1, 2):
+        for t in terms[:6]:
+            for page in (1,):
                 data = _json(f"https://himalayas.app/jobs/api/search?q={quote(t)}&page={page}", timeout=25)
                 for j in data.get("jobs", []):
                     where = ", ".join(j.get("locationRestrictions") or []) or "Worldwide"
@@ -1130,16 +1136,17 @@ def _store(results: list[dict], days: int, prefs: dict, evidence: set[str], prog
 # searches for comes from the profile: the title queries of your career tracks, in your city.
 
 JOBSPY_SITES = ["linkedin", "indeed", "google", "naukri"]
-JOBSPY_MAX_QUERIES = 6
+JOBSPY_MAX_QUERIES = 10
 
 
 def jobspy_queries(prefs: dict) -> list[str]:
-    """Up to two title queries per career track you rank for (your profile's strategy), else your headline."""
+    """Title queries for the career tracks you rank for (your profile's strategy), else your headline. Tracks take
+    turns: every track's first title, then every track's second, so the cap never leaves a track unsearched."""
     titles = strategy.search_titles()
     picked = [t for t in (prefs.get("tracks") or list(titles)) if t in titles] or list(titles)
-    # The track at your own level goes first, so the query cap never cuts it.
+    # The track at your own level goes first in each turn.
     picked.sort(key=lambda t: t != strategy.default_track())
-    queries = [q for t in picked for q in titles[t][:2]]
+    queries = [titles[t][i] for i in range(2) for t in picked if len(titles[t]) > i]
     if not queries:
         try:
             queries = [load_profile()["basics"].get("headline") or ""]
