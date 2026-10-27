@@ -521,7 +521,7 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 16
+RANK_VERSION = 17
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "regions", "places", "pay_floor_home_lpa", "pay_floor_remote_lpa", "pay_floor_abroad_eur", "pay_tiers")
 
@@ -596,7 +596,8 @@ def rank_signature(prefs: dict, evidence: set[str]) -> str:
     # the strategy's own file changes them too (new tracks, a new level).
     sp = strategy.path()
     from .sponsors import _lists
-    blob = json.dumps([RANK_VERSION, _lists().get("fetched"), {k: prefs.get(k) for k in RANK_KEYS}, sorted(evidence),
+    # The day counts too: a posting's age is part of its fit label.
+    blob = json.dumps([RANK_VERSION, dt.date.today().isoformat(), _lists().get("fetched"), {k: prefs.get(k) for k in RANK_KEYS}, sorted(evidence),
                        hashlib.sha1(prefs.get("_ptext", "").encode()).hexdigest(),
                        sp.stat().st_mtime if sp.exists() else 0], sort_keys=True, default=str)
     return hashlib.sha1(blob.encode()).hexdigest()[:12]
@@ -643,7 +644,7 @@ def rank(job: dict, evidence: set[str], prefs: dict, sig: str | None = None) -> 
         return job | {k: v for k, v in cached.items() if k != "sig"}
     out = _rank(job, evidence, prefs)
     keep = {k: out[k] for k in ("match", "order", "reasons", "excluded", "areas", "skills", "estimate", "unscored", "open",
-                                     "pay")
+                                     "pay", "fit", "fit_why", "terms")
             if k in out}
     return out | {"_r": keep | {"sig": sig}}
 
@@ -702,10 +703,15 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     kws = jd_keywords(desc) if len(desc) >= 300 else {}
     # Too few specific skills to measure (or no description at all): no number, listed apart in Discover. Generic
     # terms every posting shares (Performance, Documentation) don't count toward the floor.
-    unscored = len([k for k in kws if k not in GENERIC]) < MIN_TERMS
+    terms = len([k for k in kws if k not in GENERIC])
+    unscored = terms < MIN_TERMS
+    must = (0, 0)
     if not unscored:
         # Same scorer, same keyword list rules as the Tailor screen's "most your profile can reach".
-        score = keyword_score(kws, prefs.get("_ptext", ""))["score"]
+        scored = keyword_score(kws, prefs.get("_ptext", ""))
+        score = scored["score"]
+        required = [r for r in scored["rows"] if r["tier"] == "required" and r["term"] not in GENERIC]
+        must = (sum(r["covered"] for r in required), len(required))
         reasons.append(f"you can cover {score}% of its keywords")
         # A short text is often a search snippet, not the posting: the full page can score quite differently.
         estimate = len(desc) < SNIPPET
@@ -761,9 +767,18 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     order += {"meets": 6, "likely": 3}.get(pv["label"], 0) - (6 if pv.get("tier") == "low" else 0)
     if pv["why"]:
         reasons.append(pv["why"])
+    # One label for the chance of a callback; it leads the order, the keyword match breaks ties within it.
+    from .fitlabel import compute as fit_label
+    from .tracker import _company
+    fit = fit_label(job, target=target, held_titles=prefs.get("_held", []), level=level["verdict"],
+                    at_level=named is not None and floor <= named <= mine, must=must, terms=terms,
+                    match=score if not unscored else 0, pay=pv, open_state=o["state"],
+                    warm=_company(job.get("company")) in prefs.get("_warm", ()))
+    order += fit["points"] * 6
     from .areas import tag
     return job | {"skills": skills, "match": max(0, min(100, score)), "estimate": estimate, "unscored": unscored, "order": order,
                   "reasons": reasons, "excluded": False, "open": o["state"], "pay": pv["label"],
+                  "fit": fit["label"], "fit_why": fit["why"], "terms": terms,
                   "areas": tag(job, prefs.get("offices", ""))}
 
 

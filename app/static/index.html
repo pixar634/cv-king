@@ -112,7 +112,11 @@
             <option value="1">Last 24 hours</option><option value="3">Last 3 days</option><option value="7">Last 7 days</option>
             <option value="14" selected>Last 14 days</option><option value="30">Last 30 days</option>
           </select></label>
-        <label class="field"><span class="eyebrow">Match</span>
+        <label class="field"><span class="eyebrow">Chance of a callback</span>
+          <select id="fitFilter" class="control--sm">
+            <option value="strong">Strong only</option><option value="possible" selected>Strong and possible</option><option value="all">Everything</option>
+          </select></label>
+        <label class="field"><span class="eyebrow">Tailor only above</span>
           <select id="minMatch" class="control--sm">
             <option value="0">Any match</option><option value="40">40% and up</option><option value="50" selected>50% and up</option><option value="60">60% and up</option><option value="70">70% and up</option>
           </select></label>

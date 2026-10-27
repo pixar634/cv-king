@@ -77,7 +77,7 @@ def _default_prefs(profile: dict) -> dict:
     years = experience_months(profile) // 12
     return {"tracks": list(strategy.tracks()), "india": True, "remote": True, "abroad": True, "days": 14, "concurrency": 2,
             "include_senior": False, "exclude_skills": [], "max_years_asked": years + 2, "offices": "", "min_match": 40,
-            "regions": ["remote", "city", "country"], "places": [],
+            "regions": ["remote", "city", "country"], "places": [], "fit_filter": "possible",
             "pay_floor_home_lpa": 0, "pay_floor_remote_lpa": 0, "pay_floor_abroad_eur": 0, "pay_tiers": "",
             "defaults": {"market": "auto", "track": "auto", "variant": "flowcv", "max_pages": "auto", "engine": "claude:opus"}}
 
@@ -900,6 +900,13 @@ def fit_preview(body: dict = Body(...)):
     market = body.get("market") if body.get("market") not in (None, "", "auto") else \
         extract.market_for(body.get("location") or "", body.get("remote"))
     same = tracker.find_same(body.get("company") or "", body.get("role") or "", body.get("url") or "")
+    # The same fit label Discover shows, for a job pasted, opened in the extension or about to be tailored.
+    from .fit import strong_skills
+    job = {"title": body.get("role") or "", "company": body.get("company") or "", "location": body.get("location") or "",
+           "remote": body.get("remote"), "description": text, "posted": body.get("posted") or "", "method": body.get("method") or ""}
+    ranked = discover._rank(job, strong_skills(profile), discover.with_profile(prefs))
+    out |= {"label": "Long shot" if ranked.get("excluded") else ranked.get("fit"),
+            "label_why": ranked.get("reasons", [])[:1] if ranked.get("excluded") else ranked.get("fit_why", [])}
     return out | {"gate": gate.check(text, body.get("role") or "", body.get("location") or "", market, body.get("remote"),
                                      profile, prefs, company=body.get("company") or ""),
                   "already": same and {"id": same["id"], "status": same.get("status"), "story": tracker.story(same),

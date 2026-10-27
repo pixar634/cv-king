@@ -229,7 +229,8 @@ function fitBlock(f) {
       ${f.warnings.map((w) => `<div class="type-meta">“${esc(w)}”</div>`).join("")}</div>` : "";
   if (!f.measured) return gateNotice(f.gate, f.already) + warn + `<p class="type-meta">This posting names too few standard skills to score. Read it before tailoring.</p>`;
   const list = (label, terms, cls) => terms.length ? `<div><span class="eyebrow">${label}</span><div class="chip-row">${terms.map((t) => `<span class="chip ${cls}"><span>${esc(t)}</span></span>`).join("")}</div></div>` : "";
-  return `<div class="job__fit">${gateNotice(f.gate, f.already)}${warn}
+  const label = f.label ? `<div class="job__foot"><span class="tag ${f.label === "Strong" ? "tag--ok" : f.label === "Long shot" ? "tag--warn" : ""}">${esc(f.label)}</span><span class="type-meta">${esc((f.label_why || []).join(", "))}</span></div>` : "";
+  return `<div class="job__fit">${gateNotice(f.gate, f.already)}${label}${warn}
       <div class="job__foot"><span class="type-meta">Your CV <b class="num">${f.now}%</b> · can reach <b class="num">${f.reach}%</b>${f.minimum ? ` · your filter ${f.minimum}%` : ""}</span></div>
       <div style="position:relative" title="${f.now}% with your CV as it is; ${f.reach}% is the most your profile can truthfully reach">
         <div class="meter meter--segmented"><span class="meter__ceil" style="width:${f.reach}%"></span><span class="meter__fill" style="width:${f.now}%"></span></div></div>
@@ -832,6 +833,8 @@ function wireDiscover() {
   $("#days").onchange = async () => { await savePrefs({ days: +$("#days").value }); loadFound(); chromeReady().catch(() => {}); };
   chromeReady().catch(() => {});
   $("#minMatch").onchange = async () => { await savePrefs({ min_match: +$("#minMatch").value }); loadFound(); };
+  $("#fitFilter").value = S.prefs.fit_filter || "possible";
+  $("#fitFilter").onchange = async () => { await savePrefs({ fit_filter: $("#fitFilter").value }); loadFound(); };
   $("#sortBy").onchange = () => { store.set("cv.sortBy", $("#sortBy").value); loadFound(); };
   $("#scanAll").onclick = () => scanNow("all");
   $("#scanFav").onclick = () => scanNow("favourites");
@@ -954,6 +957,8 @@ async function loadFound() {
   const [all, sources, scanLog, month, taste] = await Promise.all([api(`/api/found?days=${$("#days").value}`), api("/api/sources"), api("/api/scans"), api("/api/found?days=30"), api("/api/taste")]);
   const lastScan = scanLog.length ? scanLog[scanLog.length - 1] : null;
   const min = +$("#minMatch").value;
+  const want = $("#fitFilter").value;
+  const fits = (j) => want === "all" || j.fit === "Strong" || (want === "possible" && j.fit === "Possible") || !j.fit;
   // Favourite companies: their jobs ignore the match slider and sit pinned at the top.
   const favs = sources.filter((s) => s.favourite);
   const favNames = favs.map((s) => companyKey(s.company || s.label)).filter(Boolean);
@@ -961,14 +966,14 @@ async function loadFound() {
   $("#scanFav").hidden = !favs.length;
   // A job with no description has no match to filter on: it's listed apart, whatever the slider says.
   const unscored = areaFilter(all.filter((j) => j.unscored && !isFav(j)));
-  const jobs = areaFilter(all.filter((j) => !j.unscored && j.match >= min && !isFav(j)));
-  const below = areaFilter(all.filter((j) => !j.unscored && j.match < min && !isFav(j))).length;   // favourites always show, pinned
+  const jobs = areaFilter(all.filter((j) => !j.unscored && fits(j) && !isFav(j)));
+  const below = areaFilter(all.filter((j) => !j.unscored && !fits(j) && !isFav(j))).length;   // favourites always show, pinned
   const pinned = areaFilter(month.filter(isFav));
   if ($("#sortBy").value === "newest") jobs.sort((a, b) => (b.posted || "").localeCompare(a.posted || "") || b.match - a.match);
   FOUND = jobs;
   const last = sources.map((s) => s.last_scan).filter(Boolean).sort().pop();
   $("#discoverLede").textContent = sources.length
-    ? `${jobs.length} fresh posting${jobs.length === 1 ? "" : "s"} from ${sources.length} sources. Match is the share of each job's keywords your profile can truthfully cover, the same number tailoring reaches.${last ? ` Last scanned ${last.slice(11, 16)}.` : ""}${below ? ` ${below} more below ${min}%.` : ""}`
+    ? `${jobs.length} fresh posting${jobs.length === 1 ? "" : "s"} from ${sources.length} sources. The label is the chance of a callback: a title you've held, your level, must-haves, freshness, pay and where it's posted.${last ? ` Last scanned ${last.slice(11, 16)}.` : ""}${below ? ` ${below} more ${want === "strong" ? "possible or long shots" : "long shots"} hidden.` : ""}`
     : "Add a careers page or job board in Settings, then scan.";
   const isNew = (j) => lastScan && (j.first_seen || "") >= lastScan.at.slice(0, 16) && scanLog.length > 1;
   const card = (j) => {
@@ -989,7 +994,7 @@ async function loadFound() {
       <div><div class="job-card__title">${esc(j.title)}</div>
         <div class="job-card__where">${where}${(j.areas || []).length ? ` · <span class="zone">${esc(j.areas.join(" or "))}</span>` : ""}</div></div>
       <div class="job-card__match ${tone(j.match)}" title="${j.estimate ? "An estimate from a short description. Opening the job reads the full posting and scores it again." : "Keyword match your profile can reach for this job (the same measure as after tailoring)"}">
-        <span class="eyebrow">Match</span>${j.unscored ? `<span class="type-meta">Not scored yet</span>` : `<span class="meter meter--sm"><span class="meter__fill" style="width:${j.match}%"></span></span><span class="num">${j.estimate ? "~" : ""}${j.match}%</span>`}</div>
+        <span class="tag ${j.fit === "Strong" ? "tag--ok" : j.fit === "Long shot" ? "tag--warn" : ""}" title="${esc((j.fit_why || []).join(", "))}">${esc(j.fit || "Not rated")}</span>${j.unscored ? `<span class="type-meta">Not scored yet</span>` : (j.terms || 0) >= 8 ? `<span class="meter meter--sm"><span class="meter__fill" style="width:${j.match}%"></span></span><span class="num">${j.estimate ? "~" : ""}${j.match}%</span>` : `<span class="type-meta" title="Too few specific skills named for a percentage to mean much">few skills named</span>`}</div>
       <div class="job-card__why" title="${esc((j.reasons || []).join(", "))}">${esc((j.reasons || []).join(", "))}, via ${esc(j.source)}</div>
     </div>`;
   };
