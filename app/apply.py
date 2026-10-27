@@ -13,7 +13,7 @@ import re
 
 from .config import data_dir, output_dir
 from .engines import ENGINES, light_engine, parse_json_reply
-from .profile import brief_view, experience_years_label, load_profile
+from .profile import availability_for, brief_view, experience_years_label, load_profile, notice_days, release_note
 from .tailor import home_market, load_report
 from .untrusted import fence
 
@@ -76,23 +76,12 @@ def forget(question: str, market: str | None = None) -> list[dict]:
     return rows
 
 
-def notice_days(profile: dict) -> int | None:
-    """Your notice period in days: the profile's own field, else read from the availability line."""
-    b = profile["basics"]
-    if b.get("notice_days") not in (None, ""):
-        return int(b["notice_days"])
-    m = re.search(r"(\d+)\s*(day|week|month)s?\W{0,2}\s*notice", b.get("availability") or "", re.I)
-    if not m:
-        return None
-    return int(m.group(1)) * {"day": 1, "week": 7, "month": 30}[m.group(2).lower()]
-
-
 def _currency(text) -> str | None:
     hits = [c for c, pat in CURRENCIES.items() if re.search(pat, str(text or ""), re.I)]
     return hits[0] if len(hits) == 1 else None
 
 
-def _by_code(label: str, market: str, home: str, profile: dict) -> list:
+def _by_code(label: str, market: str, home: str, profile: dict, jd: str = "") -> list:
     """Answers code works out from where the job is and the profile, best first; [] when it can't."""
     if NEEDS_SPONSOR.search(label) and not re.search(r"without|not\s+require", label, re.I):
         # Working at home, or remote from home, needs no visa; a job abroad does.
@@ -106,7 +95,8 @@ def _by_code(label: str, market: str, home: str, profile: dict) -> list:
         return ["Immediate", "Immediately", "0 days"]
     words = {1: "one month", 2: "two months", 3: "three months"}
     months = days // 30 if days % 30 == 0 else 0
-    return [f"{days} days"] + ([f"{months} month{'s' if months > 1 else ''}", words.get(months, "")] if months else [])
+    note = release_note(profile, jd)   # a text field can carry it; a dropdown only takes the plain period
+    return ([f"{days} days ({note})"] if note else []) + [f"{days} days"] + ([f"{months} month{'s' if months > 1 else ''}", words.get(months, "")] if months else [])
 
 
 def _contact(profile: dict, report: dict) -> list[tuple[str, str]]:
@@ -205,6 +195,8 @@ def answer(app_id: str, fields: list[dict], url: str = "", progress=lambda m: No
     # Another market's legal or pay answer is never used here, by code or by the model.
     mine = [r for r in saved() if _market_of(r, home) in (None, market)]
     contact = _contact(profile, report)
+    jd_file = output_dir() / app_id / "jd.txt"
+    jd = jd_file.read_text("utf-8") if jd_file.exists() else ""
     answers, needs, files, ask = {}, [], {}, []
     progress("Matching the fields to your profile")
     first_file = True
@@ -219,7 +211,7 @@ def answer(app_id: str, fields: list[dict], url: str = "", progress=lambda m: No
                 needs.append({"id": fid, "label": label, "why": "a file only you have"})
             first_file = False
             continue
-        value = next((v for v in (_fits(f, c) for c in _by_code(label, market, home, profile)) if v is not None), None)
+        value = next((v for v in (_fits(f, c) for c in _by_code(label, market, home, profile, jd)) if v is not None), None)
         known = next((r["a"] for r in mine if _norm(r["q"]) == _norm(label)), None)
         if known is not None and _currency(label) and _currency(known) not in (None, _currency(label)):
             known = None   # a rupee figure is not an answer to a dollar question
@@ -237,7 +229,7 @@ def answer(app_id: str, fields: list[dict], url: str = "", progress=lambda m: No
             "CANDIDATE": brief_view(profile) | {"name": profile["basics"].get("name", ""),
                                                 "location": profile["basics"].get("location", ""),
                                                 "nationality": profile["basics"].get("nationality", ""),
-                                                "availability": profile["basics"].get("availability", ""),
+                                                "availability": availability_for(profile, jd),
                                                 "notice period in days": notice_days(profile),
                                                 "the job's market": market,
                                                 "years of experience": experience_years_label(profile)},
@@ -248,8 +240,6 @@ def answer(app_id: str, fields: list[dict], url: str = "", progress=lambda m: No
         }
         slim = [{k: f[k] for k in ("id", "kind", "label", "options", "required", "max") if f.get(k) not in (None, "", [])}
                 for f in ask]
-        jd_file = output_dir() / app_id / "jd.txt"
-        jd = jd_file.read_text("utf-8") if jd_file.exists() else ""
         raw = parse_json_reply(ENGINES[light_engine()].run(
             f"{BRIEF}\n\n{json.dumps(facts, ensure_ascii=False)}\n\nJOB DESCRIPTION:\n<<<\n{fence(jd[:8000])}\n>>>\n\n"
             f"FORM ({fence(url)}), its labels and options as the page wrote them:\n<<<\n{fence(json.dumps(slim, ensure_ascii=False))}\n>>>",

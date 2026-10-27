@@ -1,8 +1,20 @@
 """The master profile: the only source a tailored CV may draw facts from."""
 import datetime as dt
 import json
+import re
 
 from .config import data_dir
+
+# Postings that want someone who can start now or within a couple of weeks.
+WANTS_IMMEDIATE = re.compile(
+    r"immediate\s*joiners?|join(ing)?\s*immediately|immediate(ly)?\s*(available|start|joining)|"
+    r"notice\s*period\s*(of\s*)?(0|zero|nil)\s*(to|-|–)\s*(15|30)|serving\s*(their\s*)?notice|"
+    r"(less\s*than|within|max(imum)?\s*(of)?)\s*(15|fifteen)\s*days|short\s*notice", re.I)
+# What a CV must not say while the current role has no end date.
+CLAIMS_IMMEDIATE = re.compile(r"immediately\s*available|available\s*immediately|immediate\s*joiner|"
+                              r"can\s*(join|start)\s*immediately|available\s*to\s*(join|start)\s*immediately", re.I)
+# How much sooner than the notice period you can truly join; set in Settings, "" until you know.
+RELEASE = {"": "", "early": "early release negotiable", "buyout": "can join sooner with a notice buyout"}
 
 
 def profile_path():
@@ -16,6 +28,38 @@ def original_cv_path():
 
 def load_profile() -> dict:
     return json.loads(profile_path().read_text("utf-8"))
+
+
+def still_employed(profile: dict) -> bool:
+    return any(not r.get("end") for r in profile.get("experience", []) if not r.get("internship"))
+
+
+def notice_days(profile: dict) -> int | None:
+    """Your notice period in days: the profile's own field, else read from the availability line."""
+    b = profile["basics"]
+    if b.get("notice_days") not in (None, ""):
+        return int(b["notice_days"])
+    m = re.search(r"(\d+)\s*(day|week|month)s?\W{0,2}\s*notice", b.get("availability") or "", re.I)
+    if not m:
+        return None
+    return int(m.group(1)) * {"day": 1, "week": 7, "month": 30}[m.group(2).lower()]
+
+
+def wants_immediate(jd_text: str) -> bool:
+    return bool(WANTS_IMMEDIATE.search(jd_text or ""))
+
+
+def release_note(profile: dict, jd_text: str = "") -> str:
+    """'early release negotiable' or the buyout line, only for a posting that wants someone soon and only when your
+    profile says it's true."""
+    return RELEASE.get(profile["basics"].get("notice_release") or "", "") if wants_immediate(jd_text) else ""
+
+
+def availability_for(profile: dict, jd_text: str = "") -> str:
+    """The availability line for one job: your own, plus the true way to join sooner when the posting asks for it."""
+    base = (profile["basics"].get("availability") or "").strip()
+    note = release_note(profile, jd_text)
+    return f"{base}, {note}" if base and note else base
 
 
 def save_profile(profile: dict) -> None:
