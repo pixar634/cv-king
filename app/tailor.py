@@ -18,8 +18,8 @@ from .untrusted import fence, signals
 from .keywords import MIN_TERMS, SOFT, covered, jd_keywords, jd_spelling, score, taxonomy, title_match
 from .layouts import LAYOUTS
 from .letters import first_letter_rules, phrase_flags
-from .profile import (all_skills, brief_view, bullet_index, experience_years_label, fmt_month, load_profile,
-                      memory_notes, original_cv_path, profile_text)
+from .profile import (CLAIMS_IMMEDIATE, all_skills, availability_for, brief_view, bullet_index, experience_years_label, fmt_month,
+                      load_profile, memory_notes, original_cv_path, profile_text, still_employed)
 from .render import build_doc, fit_and_print, print_html, set_metadata
 
 BANNED_WORDS = ["spearheaded", "orchestrated", "leveraged", "leveraging", "pioneered", "synergy",
@@ -68,11 +68,11 @@ def home_market() -> str:
     return m if m in markets() and m != "remote" else "india"
 
 
-def default_header_line(market_id: str, profile: dict) -> str:
+def default_header_line(market_id: str, profile: dict, jd_text: str = "") -> str:
     """The market's status line, filled from the profile. A segment whose placeholders are all empty is left out;
     an empty value inside a filled segment just drops out ("Remote from Pune, India ()" -> "Remote from Pune, India")."""
     home = strategy.home()
-    values = {"availability": profile["basics"].get("availability", ""), "city": home["city"], "country": home["country"],
+    values = {"availability": availability_for(profile, jd_text), "city": home["city"], "country": home["country"],
               "nationality": profile["basics"].get("nationality", ""), "timezone": home["timezone"]}
     keep = []
     for seg in markets()[market_id]["header_line"].split(" · "):
@@ -170,7 +170,7 @@ def build_brief(profile: dict, jd: dict, market_id: str, company: str, role: str
         candidate_thoughts(thoughts),
         f"## EXPERIENCE_YEARS\n{years}",
         f"## TARGET\nCompany: {company or 'unknown'}\nRole: {role or 'see JD'}\nLocation: {jd.get('location') or 'see JD'}\n"
-        f"Candidate name for sign-offs: {profile['basics']['name']}\nAvailability: {profile['basics'].get('availability', '')}",
+        f"Candidate name for sign-offs: {profile['basics']['name']}\nAvailability: {availability_for(profile, jd['text'])}",
         f"## JOB DESCRIPTION\n<<<\n{fence(jd['text'])}\n>>>",
         keyword_guidance(jd["text"], profile),
         f"## PROFILE\n```json\n{json.dumps(brief_view(profile, track_id), indent=1, ensure_ascii=False)}\n```",
@@ -389,6 +389,20 @@ def _text_flags(text: str, ptext: str, allowed: set[str], kws, where: str) -> li
     return flags
 
 
+def availability_flags(profile: dict, text: str, cover_letter: str = "") -> list[dict]:
+    """"Immediately available" while your current role has no end date: a screener asks for your last working day and a
+    background check confirms it, so it costs the offer, not just the call."""
+    if not still_employed(profile):
+        return []
+    out = []
+    for where, said in (("CV", text), ("Cover letter", cover_letter)):
+        if m := CLAIMS_IMMEDIATE.search(said or ""):
+            out.append({"level": "error", "kind": "availability",
+                        "text": f"{where} says \"{m.group(0)}\", but your current role has no end date. Say your notice "
+                                "period instead (Settings, Availability)."})
+    return out
+
+
 def soften(flags: list[dict]) -> list[dict]:
     """In a letter, a JD term may be describing the role rather than claiming it: warn, and say what to check."""
     out = []
@@ -442,6 +456,7 @@ def analyse(pdf: Path, doc: dict, profile: dict, jd_text: str, jd_meta: dict, ma
                       "text": "The JD's exact word repeated more than 6 times (reads as keyword stuffing): " + ", ".join(stuffed)})
     if cover_letter:
         flags += soften(_text_flags(cover_letter, ptext, allowed_numbers, kws, "Cover letter")) + phrase_flags(cover_letter)
+    flags[:0] = availability_flags(profile, text, cover_letter)
 
     return {
         "scores": {"before": before["score"], "after": after["score"], "ceiling": ceiling["score"]},
@@ -476,13 +491,13 @@ def _allowed_numbers(header_line: str, years: str) -> set[str]:
     return _num_tokens(header_line) | _num_tokens(GDPR_TEXT) | _num_tokens(years) | {years.rstrip("+")}
 
 
-def resolve_options(req: dict, market_id: str, profile: dict) -> dict:
+def resolve_options(req: dict, market_id: str, profile: dict, jd_text: str = "") -> dict:
     m = markets()[market_id]
     pages = req.get("max_pages") or "auto"
     max_pages = m["max_pages"] if pages == "auto" else int(pages)
     header_line = req.get("header_line")
     if header_line is None:
-        header_line = default_header_line(market_id, profile)
+        header_line = default_header_line(market_id, profile, jd_text)
     return {"market": market_id, "header_line": header_line,
             "gdpr": m.get("gdpr_clause") if req.get("gdpr") is None else bool(req["gdpr"]),
             "include_interests": req.get("include_interests", True),
@@ -564,7 +579,7 @@ def run(req: dict, progress=lambda m: None) -> dict:
         req = req | {"market": market_id}
     years = experience_years_label(profile)
     engine = get_engine(req.get("engine") or "claude:opus")
-    options = resolve_options(req, market_id, profile)
+    options = resolve_options(req, market_id, profile, jd["text"])
     if options["track"] == "auto":
         options["track"] = track_for(role or jd["text"].strip().splitlines()[0][:120])
 

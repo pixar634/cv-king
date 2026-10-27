@@ -16,7 +16,7 @@ from .config import STATIC, output_dir
 from .engines import ENGINES, EngineError
 from .jd import parse_jd
 from .layouts import LAYOUTS
-from .profile import experience_years_label, load_profile, profile_path, save_profile
+from .profile import RELEASE, experience_years_label, load_profile, profile_path, save_profile
 from .render import in_thread
 
 app = FastAPI(title="JobMagnet")
@@ -300,6 +300,8 @@ def update_profile(body: dict = Body(...)):
     profile = load_profile()
     if "availability" in body:
         profile["basics"]["availability"] = body["availability"].strip()
+    if body.get("notice_release") in RELEASE:
+        profile["basics"]["notice_release"] = body["notice_release"]
     if body.get("confirm"):
         have = set(profile.get("confirmed_skills", []))
         profile["confirmed_skills"] = sorted(have | {s.strip() for s in body["confirm"] if s.strip()})

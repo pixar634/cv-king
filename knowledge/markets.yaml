@@ -73,7 +73,7 @@ remote:
   label: Remote
   spelling: Match the JD's English variant (American for US companies, British for UK/EU); never mix.
   max_pages: 2
-  header_line: "Remote from {city}, {country} ({timezone}) · {availability}"
+  header_line: "Remote from {city}, {country} ({timezone}) · Full-time, through a local entity or employer of record · No visa sponsorship needed · {availability}"
   show_nationality: false
   gdpr_clause: false
   rules:

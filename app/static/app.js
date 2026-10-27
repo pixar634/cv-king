@@ -2562,6 +2562,11 @@ function wireDrawer() {
     S.state = await api("/api/state"); S.prefs = S.state.profile.preferences;
     toast("Availability saved. New CVs use it.");
   };
+  $("#dRelease").onchange = async () => {
+    await api("/api/profile", { body: { notice_release: $("#dRelease").value } });
+    S.state = await api("/api/state"); S.prefs = S.state.profile.preferences;
+    toast("Saved. Postings that want someone sooner get that line.");
+  };
   $("#favBtn").onclick = addFavourite;
   $("#favAdd").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); addFavourite(); } };
   $("#addUrl").onclick = () => addSource("url", $("#srcUrl"));
@@ -2590,6 +2595,7 @@ async function fillDrawer() {
   $("#places").value = (S.prefs.places || []).join("\n");
   fillBoards();
   $("#dAvail").value = S.state.profile.basics.availability || "";
+  $("#dRelease").value = S.state.profile.basics.notice_release || "";
   const on = new Set(S.prefs.tracks || []);
   $("#rankTracks").innerHTML = Object.entries(S.state.tracks).map(([k, t]) => `<button data-v="${k}" class="chip ${on.has(k) ? "on" : ""}">${esc(t.label)}</button>`).join("");
   $("#rankTracks").onclick = async (e) => {
