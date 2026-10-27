@@ -179,11 +179,18 @@ def get_engine(engine_id: str) -> Engine:
 
 
 def parse_json_reply(text: str) -> dict:
-    """The reply should be bare JSON; tolerate fences or a stray sentence around it."""
-    start, end = text.find("{"), text.rfind("}")
-    if start < 0 or end <= start:
+    """The reply should be bare JSON; tolerate fences, a stray sentence around it, or a note after it.
+    The first complete object wins: a model sometimes adds a remark (with braces) or a second object after it."""
+    start = text.find("{")
+    if start < 0:
         raise EngineError("The model's reply contained no JSON object.")
-    try:
-        return json.loads(text[start:end + 1])
-    except json.JSONDecodeError as e:
-        raise EngineError(f"The model's JSON did not parse: {e}") from e
+    decoder, first = json.JSONDecoder(), None
+    while start >= 0:
+        try:
+            obj, _ = decoder.raw_decode(text, start)
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError as e:
+            first = first or e
+        start = text.find("{", start + 1)
+    raise EngineError(f"The model's JSON did not parse: {first}")
