@@ -42,7 +42,7 @@ def _default_prefs(profile: dict) -> dict:
     years = experience_months(profile) // 12
     return {"tracks": list(strategy.tracks()), "india": True, "remote": True, "abroad": True, "days": 14, "concurrency": 2,
             "include_senior": False, "exclude_skills": [], "max_years_asked": years + 4, "offices": "", "min_match": 40,
-            "regions": ["remote", "city", "country"],
+            "regions": ["remote", "city", "country"], "places": [],
             "defaults": {"market": "auto", "track": "auto", "variant": "flowcv", "max_pages": "auto", "engine": "claude:opus"}}
 
 
@@ -910,6 +910,19 @@ def batch_remove(item_id: str):
 @app.get("/api/sources")
 def sources():
     return discover.load_sources()
+
+
+@app.get("/api/boards")
+def boards():
+    on = {r["value"] for r in discover.load_sources() if r["kind"] == "board"}
+    return [{"id": b, "label": label, "on": b in on} for b, label in discover.BOARDS.items()]
+
+
+@app.post("/api/boards")
+def boards_set(body: dict = Body(...)):
+    """Switch the public remote and Europe job boards on or off."""
+    discover.set_boards(body.get("on") or [])
+    return boards()
 
 
 @app.post("/api/sources")

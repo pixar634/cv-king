@@ -421,10 +421,11 @@ growth log the next map reads.
 |---|---|
 | Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Recruitee, Personio | Their public job-board APIs |
 | Any other careers page | schema.org job data in the page, else the page read by the AI, with every link checked to be real. `robots.txt` is respected. |
+| Remotive, Jobicy, Himalayas, Arbeitnow (switch them on in Settings) | Their free public job APIs, searched with your career tracks. Remote jobs worldwide and in Europe; Arbeitnow lists many jobs in Germany and Europe with visa sponsorship. Each job links to the board's own posting. |
 | Web searches you save | Claude's web search |
 | Indeed | Indeed's official Claude connector (needs a claude.ai sign-in) |
 | Claude in Chrome, the Chrome extension | Your own signed-in browser reads pages you open yourself |
-| **Scan with JobSpy** (optional) | The open-source [JobSpy](https://github.com/speedyapply/JobSpy) library scrapes LinkedIn, Indeed, Google Jobs and Naukri. **Their terms of service don't allow scraping**, and they may block it. It's a separate button, never part of a normal scan. Use it at your own risk. |
+| **Scan with JobSpy** (optional) | The open-source [JobSpy](https://github.com/speedyapply/JobSpy) library scrapes LinkedIn, Indeed, Google Jobs and Naukri, around your city and in each place you'd move to (Settings, e.g. Amsterdam or Luxembourg). **Their terms of service don't allow scraping**, and they may block it. It's a separate button, never part of a normal scan. Use it at your own risk. |
 
 Sites whose terms forbid automated access (LinkedIn, Naukri, Glassdoor and others) are refused as scan sources.
 

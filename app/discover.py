@@ -15,11 +15,12 @@ import json
 import re
 import threading
 import time
+import urllib.error
 import urllib.request
 import urllib.robotparser
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from urllib.parse import quote, urljoin, urlparse
 
 from . import strategy, taste
 from .config import data_dir, output_dir
@@ -487,9 +488,16 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 9
+RANK_VERSION = 10
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
-             "offices", "regions")
+             "offices", "regions", "places")
+
+
+def places_pattern(prefs: dict) -> re.Pattern | None:
+    """Places you'd move to ("Amsterdam, Netherlands", "Luxembourg"): a job in one is wanted whatever the region
+    switches say. Each part of a place counts, so a posting that names only the country matches too."""
+    parts = [p.strip() for place in prefs.get("places") or [] for p in place.split(",") if len(p.strip()) > 2]
+    return strategy.any_of(parts) if parts else None
 # Region filter keys. Older settings said "bengaluru" and "india" for the city and the rest of the country.
 REGION_KEYS = {"bengaluru": "city", "india": "country"}
 
@@ -569,6 +577,9 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     city = strategy.city_pattern()
     bucket = {"home": "city" if city and city.search(job.get("location") or "") else "country",
               "abroad": "world", "remote": "remote", "unknown": "unknown"}.get(reg, "excluded")
+    places = places_pattern(prefs)
+    if places and reg != "home" and places.search(job.get("location") or ""):
+        bucket, wanted = "place", wanted | {"place"}
     if bucket == "excluded" or (bucket != "unknown" and bucket not in wanted):
         return job | {"match": 0, "reasons": [f"outside your regions ({(job.get('location') or '')[:40]})"], "excluded": True}
     for skill in prefs.get("exclude_skills") or []:
@@ -636,6 +647,88 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
 
 
 # ---------- sources and scans ----------
+
+# ---------- remote and Europe job boards with public APIs ----------
+# Each board asks for credit and a link back: every card says "via <board>" and opens the board's own posting.
+
+BOARDS = {
+    "remotive": "Remotive: remote jobs",
+    "jobicy": "Jobicy: remote jobs in Europe",
+    "himalayas": "Himalayas: remote jobs",
+    "arbeitnow": "Arbeitnow: Germany and Europe, many with visa sponsorship",
+}
+
+
+def board_terms(prefs: dict) -> list[str]:
+    """Short search terms from your career tracks: boards match "Software Engineer" better than a full title."""
+    out = []
+    for q in jobspy_queries(prefs):
+        words = re.sub(r"[^\w\s+#-]", " ", q).split()
+        out.append(" ".join(words[-2:]) if len(words) > 2 else " ".join(words))
+    return list(dict.fromkeys(t for t in out if t))[:3]
+
+
+def _epoch(v) -> str:
+    """Boards send epoch seconds as text ("1793110671") as often as numbers."""
+    return _iso(int(v)) if str(v or "").isdigit() else _iso(v)
+
+
+def from_board(board: str, prefs: dict) -> tuple[str, list[dict]]:
+    terms = board_terms(prefs) or ["engineer"]
+    out = []
+    if board == "remotive":
+        for t in terms[:2]:
+            data = _json(f"https://remotive.com/api/remote-jobs?search={quote(t)}&limit=100", timeout=25)
+            out += [_job(j.get("title"), j.get("company_name"), j.get("candidate_required_location") or "Worldwide", j.get("url"),
+                         _iso(j.get("publication_date")), description=j.get("description", ""), remote=True, method="remotive")
+                    for j in data.get("jobs", [])]
+        return "Remotive API", out
+    if board == "jobicy":
+        geos = list(dict.fromkeys(["europe"] + [p.split(",")[-1].strip().lower() for p in prefs.get("places") or []]))[:3]
+        for geo in geos:
+            for t in terms[:2]:
+                try:
+                    data = _json(f"https://jobicy.com/api/v2/remote-jobs?count=50&geo={quote(geo)}&tag={quote(t)}", timeout=25)
+                except urllib.error.HTTPError:   # a country Jobicy doesn't list (Luxembourg): skip it, keep the rest
+                    break
+                out += [_job(j.get("jobTitle"), j.get("companyName"), j.get("jobGeo") or "Europe", j.get("url"),
+                             _iso(j.get("pubDate")), description=j.get("jobDescription", ""), remote=True, method="jobicy")
+                        for j in data.get("jobs", []) or []]
+        return "Jobicy API", out
+    if board == "himalayas":
+        for t in terms[:2]:
+            for page in (1, 2):
+                data = _json(f"https://himalayas.app/jobs/api/search?q={quote(t)}&page={page}", timeout=25)
+                for j in data.get("jobs", []):
+                    where = ", ".join(j.get("locationRestrictions") or []) or "Worldwide"
+                    out.append(_job(j.get("title"), j.get("companyName"), where, j.get("applicationLink") or j.get("guid"),
+                                    _epoch(j.get("pubDate")), description=j.get("description", ""), remote=True, method="himalayas"))
+        return "Himalayas API", out
+    if board == "arbeitnow":
+        for page in (1, 2):
+            data = _json(f"https://www.arbeitnow.com/api/job-board-api?page={page}", timeout=30)
+            for j in data.get("data", []):
+                remote = bool(j.get("remote"))
+                where = j.get("location") or ""
+                out.append(_job(j.get("title"), j.get("company_name"), f"Remote, {where}" if remote and where else where,
+                                j.get("url"), _epoch(j.get("created_at")), description=j.get("description", ""),
+                                remote=remote, method="arbeitnow"))
+        return "Arbeitnow API", out
+    raise ValueError(f"Unknown job board {board!r}")
+
+
+def set_boards(on: list[str]) -> list[dict]:
+    """Switch the public job boards on or off: each one on is a source in every scan."""
+    every = load_sources()
+    keep = {r["value"]: r for r in every if r["kind"] == "board"}
+    rows = [r for r in every if r["kind"] != "board"]
+    for b in on:
+        if b in BOARDS:
+            rows.append(keep.get(b) or {"id": hashlib.sha1(f"board:{b}".encode()).hexdigest()[:10], "kind": "board", "value": b,
+                                        "label": BOARDS[b], "last_scan": "", "last_count": 0})
+    save_sources(rows)
+    return rows
+
 
 def load_sources() -> list[dict]:
     f = _sources_file()
@@ -795,10 +888,12 @@ def saved(days: int, prefs: dict) -> list[dict]:
     return _dedupe_sort(out)
 
 
-def scan_one(src: dict, days: int) -> dict:
+def scan_one(src: dict, days: int, prefs: dict | None = None) -> dict:
     t = time.time()
     try:
-        if src["kind"] == "websearch":
+        if src["kind"] == "board":
+            method, jobs = from_board(src["value"], prefs or {})
+        elif src["kind"] == "websearch":
             method, jobs = from_websearch(src["value"], days)
         elif src["kind"] == "indeed":
             method, jobs = from_indeed(src["value"], days)
@@ -838,7 +933,7 @@ def scan(source_ids: list[str] | None, days: int, prefs: dict, budget_s: int = 6
     # Indeed searches run only when asked for by id (Discover's Scan Indeed button), not on every scan.
     every = load_sources()
     sources = [s for s in every if s["id"] in source_ids] if source_ids else [s for s in every if s["kind"] != "indeed"]
-    url_sources = [s for s in sources if s["kind"] == "url"]
+    url_sources = [s for s in sources if s["kind"] in ("url", "board")]
     web_sources = [s for s in sources if s["kind"] in ("websearch", "people", "indeed")]
     n_indeed = sum(1 for x in sources if x["kind"] == "indeed")
     if n_indeed == len(sources):
@@ -864,7 +959,7 @@ def scan(source_ids: list[str] | None, days: int, prefs: dict, budget_s: int = 6
             return out
 
         in_profile = lambda fn, *a: pool.submit(contextvars.copy_context().run, fn, *a)
-        futs = {in_profile(scan_one, s, days): s for s in ordered}
+        futs = {in_profile(scan_one, s, days, prefs): s for s in ordered}
         if indeed:
             futs[in_profile(indeed_in_turn)] = None
         deadline = time.time() + budget_s + (120 if web_sources else 0) + 150 * len(indeed)
@@ -1056,7 +1151,8 @@ def _txt(v) -> str:
 
 def from_jobspy(query: str, location: str, country: str, days: int) -> list[dict]:
     from jobspy import scrape_jobs
-    sites = [s for s in JOBSPY_SITES if s != "naukri" or country.lower() == "india"]
+    # Naukri is India only; Indeed needs a country it has a site for (without one it's left out).
+    sites = [s for s in JOBSPY_SITES if (s != "naukri" or country.lower() == "india") and (s != "indeed" or country)]
     df = scrape_jobs(site_name=sites, search_term=query, google_search_term=f"{query} jobs near {location}",
                      location=location, results_wanted=20, hours_old=max(24, days * 24),
                      country_indeed=country.lower() or "india", linkedin_fetch_description=True,
@@ -1083,22 +1179,35 @@ def from_jobspy(query: str, location: str, country: str, days: int) -> list[dict
     return out
 
 
+def indeed_country(place: str) -> str:
+    """The Indeed site JobSpy can search for a place ("Amsterdam, Netherlands" -> netherlands), or "" if none."""
+    from jobspy.model import Country
+    name = place.split(",")[-1].strip().lower()
+    try:
+        return Country(name).value
+    except ValueError:
+        return ""
+
+
 def scan_jobspy(days: int, prefs: dict, progress=lambda m: None) -> dict:
     home = strategy.home()
-    location = home["city"] or home["country"]
     queries = jobspy_queries(prefs)
     if not queries:
         raise EngineError("Your profile has no career tracks or headline to search for yet. Set them up first.")
+    # Home with every query; each place you'd move to with the two queries at your own level, to keep scans short.
+    searches = [(q, home["city"] or home["country"], home["country"]) for q in queries]
+    for place in prefs.get("places") or []:
+        searches += [(q, place.split(",")[0].strip(), indeed_country(place)) for q in queries[:2]]
     evidence = strong_skills(load_profile())
     results = []
-    for k, q in enumerate(queries):
-        progress(f"JobSpy {k + 1} of {len(queries)}: {q}, {location}")
+    for k, (q, location, country) in enumerate(searches):
+        progress(f"JobSpy {k + 1} of {len(searches)}: {q}, {location}")
         t = time.time()
         try:
-            jobs = from_jobspy(q, location, home["country"], days)
-            res = {"source": f"jobspy:{q}", "method": "jobspy", "jobs": jobs}
+            jobs = from_jobspy(q, location, country, days)
+            res = {"source": f"jobspy:{q}|{location}", "method": "jobspy", "jobs": jobs}
         except Exception as e:  # one search failing must not sink the rest
-            res = {"source": f"jobspy:{q}", "jobs": [], "error": f"{type(e).__name__}: {str(e)[:240]}"}
+            res = {"source": f"jobspy:{q}|{location}", "jobs": [], "error": f"{type(e).__name__}: {str(e)[:240]}"}
         res["seconds"] = round(time.time() - t, 1)
         progress(f"{q}: {len(res['jobs'])} jobs" + (f" ({res['error'][:100]})" if res.get("error") else ""))
         results.append(res)
