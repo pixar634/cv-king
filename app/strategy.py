@@ -176,6 +176,27 @@ def level() -> dict:
     return lv
 
 
+# IT-services and consulting firms: product companies usually read their "Lead" as a Senior (SDE-2 or SDE-3).
+SERVICES = re.compile(
+    r"\b(tech mahindra|tcs|tata consultancy|infosys|wipro|hcl\w*|cognizant|accenture|capgemini|ltimindtree|mindtree|"
+    r"larsen|l&t|lti|mphasis|hexaware|persistent systems|zensar|birlasoft|coforge|niit tech\w*|mastek|virtusa|"
+    r"sonata software|cyient|kpit|ust global|ibm|deloitte|kpmg|pwc|genpact|nagarro|globallogic|epam|dxc|ntt data|"
+    r"atos|sopra steria|igate|syntel|happiest minds|tavant|quest global|mathco|mu sigma|fractal analytics|"
+    r"tiger analytics|latentview|ey gds|ernst)\b", re.I)
+
+
+def calibrated_rank(profile: dict | None = None) -> int:
+    """Your level as a product company reads it: a services firm's title one step down (Lead reads as Senior).
+    The strategy can say so itself (`level.services_title`); otherwise the current employer decides."""
+    lv = level()
+    if "services_title" in lv:
+        services = bool(lv["services_title"])
+    else:
+        current = next((r for r in (profile or {}).get("experience", []) if not r.get("end")), None)
+        services = bool(current and SERVICES.search(current.get("company") or ""))
+    return lv["rank"] - 1 if services and lv["rank"] >= 3 else lv["rank"]
+
+
 def title_level(title: str, strategy: dict | None = None) -> int | None:
     """The seniority a title's words name, or None when it names none ("Business Analyst", "Product Manager")."""
     title = title or ""

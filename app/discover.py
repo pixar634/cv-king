@@ -489,7 +489,7 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 11
+RANK_VERSION = 12
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "regions", "places")
 
@@ -509,7 +509,8 @@ def regions(prefs: dict) -> list[str]:
 
 def with_profile(prefs: dict) -> dict:
     profile = load_profile()
-    return prefs | {"_ptext": profile_text(profile), "_held": [r.get("title", "") for r in profile["experience"]]}
+    return prefs | {"_ptext": profile_text(profile), "_held": [r.get("title", "") for r in profile["experience"]],
+                    "_floor": strategy.calibrated_rank(profile)}
 
 
 def rank_signature(prefs: dict, evidence: set[str]) -> str:
@@ -588,25 +589,27 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
             return job | {"match": 0, "reasons": [f"needs {skill}"], "excluded": True}
     from .fit import level_check
     years = prefs.get("candidate_years", 3)
-    level = level_check(title, desc, years, evidence, prefs.get("max_years_asked", years + 4),
+    level = level_check(title, desc, years, evidence, prefs.get("max_years_asked", years + 2),
                         {"experience": [{"title": t} for t in prefs.get("_held", [])]})
     if level["verdict"] == "above" and not prefs.get("include_above"):
         return job | {"match": 0, "reasons": ["above your level: " + "; ".join(level["reasons"])], "excluded": True}
     # Below the candidate's level only when the title says so; a sideways move into another kind of role isn't a step down.
+    # A services firm's Lead is a product company's Senior, so that title is at your level, not below it.
     mine = strategy.level()["rank"]
+    floor = min(mine, prefs.get("_floor", mine))
     named = strategy.title_level(title)
     sideways = strategy.lateral(title)
-    if named is not None and named < mine and not sideways and not prefs.get("include_senior"):
+    if named is not None and named < floor and not sideways and not prefs.get("include_senior"):
         return job | {"match": 0, "reasons": ["below your level"], "excluded": True}
     target = bool(strategy.matching_tracks(title, tracks))
     reasons.append("target role" if target else "related role")
-    if named is not None and named == mine:
+    if named is not None and floor <= named <= mine:
         reasons.append("at your level")
     elif named is not None and named > mine:
         reasons.append("a step up")
     elif sideways:
         reasons.append("career move")
-    elif named is not None and named < mine:
+    elif named is not None and named < floor:
         reasons.append("below your level")
     skills = job_skills(job)
     from .keywords import jd_keywords, score as keyword_score
@@ -627,9 +630,9 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
             return job | {"match": 0, "reasons": ["not scored, and the title isn't one of your tracks"], "excluded": True}
     order = score - (0 if target else 10)
     # Level decides the order among jobs that match equally: at your level first, a step down last.
-    if named is not None and named == mine:
+    if named is not None and floor <= named <= mine:
         order += 8
-    elif named is not None and named < mine and not sideways:
+    elif named is not None and named < floor and not sideways:
         order -= 12
     loc = f"{job.get('location', '')} {title} {desc[:3000]}"
     where = job.get("location", "") or ""
