@@ -13,6 +13,7 @@ from .engines import get_engine, parse_json_reply
 from .keywords import jd_keywords
 from .letters import HUMAN_RULES, banned_phrases, phrase_flags, voices
 from .profile import brief_view, load_profile, profile_text
+from .untrusted import fence
 
 FILE = "coldmail.json"
 ROLES = {
@@ -164,7 +165,7 @@ def write(owner: str, req: dict, engine_id: str = "claude:opus", progress=lambda
         context=f"CONTEXT FROM THE CANDIDATE: {context}" if context else "No shared context: this is a genuinely cold email.",
         human=HUMAN_RULES, banned="; ".join(banned_phrases()), voice=f"{v['label']}: {v['brief']}",
         linkedin=b.get("linkedin", ""), availability=b.get("availability", ""),
-        research=json.dumps(job["research"], ensure_ascii=False)[:8000], jd=jd[:10000],
+        research=json.dumps(job["research"], ensure_ascii=False)[:8000], jd=fence(jd[:10000]),
         plan=json.dumps(job["plan"], ensure_ascii=False)[:10000] if job["plan"] else
              "None tailored yet: write from the PROFILE, leading with what matches this job, and say a CV is attached.",
         profile=json.dumps(brief_view(profile), ensure_ascii=False)[:18000])

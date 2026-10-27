@@ -26,6 +26,7 @@ from . import strategy, taste
 from .config import data_dir, output_dir
 from .engines import ENGINES, EngineError, parse_json_reply
 from .jd import strip_html
+from .untrusted import fence
 from .keywords import taxonomy
 from .fit import strong_skills
 from .profile import load_profile, profile_text
@@ -294,7 +295,7 @@ def from_page(url: str, engine_id: str = "") -> tuple[str, list[dict]]:
         return "schema.org JobPosting", jobs
     links = {l["h"]: l["t"] for l in page["links"]}
     link_lines = "\n".join(f"{t} -> {h}" for h, t in list(links.items())[:600] if t)
-    brief = f"{EXTRACT_BRIEF}\n\nPAGE: {url}\nTITLE: {page['title']}\n\nTEXT:\n<<<\n{page['text'][:24000]}\n>>>\n\nLINKS:\n{link_lines}"
+    brief = f"{EXTRACT_BRIEF}\n\nPAGE: {url}\nTITLE: {fence(page['title'])}\n\nTEXT:\n<<<\n{fence(page['text'][:24000])}\n>>>\n\nLINKS:\n{link_lines}"
     raw = parse_json_reply(ENGINES[engine_id].run(brief, timeout=90))
     out = []
     for j in raw.get("jobs") or []:

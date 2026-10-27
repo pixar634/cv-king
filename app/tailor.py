@@ -14,6 +14,7 @@ from . import atscheck, strategy, tracker
 from .config import KNOWLEDGE, output_dir
 from .engines import EngineError, get_engine, parse_json_reply
 from .jd import parse_jd
+from .untrusted import fence, signals
 from .keywords import SOFT, covered, jd_keywords, jd_spelling, score, taxonomy, title_match
 from .layouts import LAYOUTS
 from .letters import first_letter_rules, phrase_flags
@@ -170,7 +171,7 @@ def build_brief(profile: dict, jd: dict, market_id: str, company: str, role: str
         f"## EXPERIENCE_YEARS\n{years}",
         f"## TARGET\nCompany: {company or 'unknown'}\nRole: {role or 'see JD'}\nLocation: {jd.get('location') or 'see JD'}\n"
         f"Candidate name for sign-offs: {profile['basics']['name']}\nAvailability: {profile['basics'].get('availability', '')}",
-        f"## JOB DESCRIPTION\n<<<\n{jd['text']}\n>>>",
+        f"## JOB DESCRIPTION\n<<<\n{fence(jd['text'])}\n>>>",
         keyword_guidance(jd["text"], profile),
         f"## PROFILE\n```json\n{json.dumps(brief_view(profile, track_id), indent=1, ensure_ascii=False)}\n```",
         f"## OUTPUT\nReturn only this JSON object:\n{OUTPUT_SPEC}",
@@ -535,11 +536,11 @@ def fit(jd_text: str, profile: dict, minimum: int = 0, show: int = 8) -> dict:
     profile can truthfully reach, what tailoring can add, and what you don't have."""
     kws = jd_keywords(jd_text)
     if len(kws) < MIN_TERMS:
-        return {"measured": False, "terms": len(kws), "minimum": minimum}
+        return {"measured": False, "terms": len(kws), "minimum": minimum, "warnings": signals(jd_text)}
     original = original_cv_path().read_text("utf-8") if original_cv_path().exists() else ""
     now, can = score(kws, original), score(kws, profile_text(profile))
     rows = [(n, c) for n, c in zip(now["rows"], can["rows"])]   # both sorted by weight, heaviest first
-    return {"measured": True, "terms": len(kws), "minimum": minimum,
+    return {"measured": True, "terms": len(kws), "minimum": minimum, "warnings": signals(jd_text),
             "now": now["score"], "reach": can["score"], "below": bool(minimum) and can["score"] < minimum,
             "adds": [c["term"] for n, c in rows if c["covered"] and not n["covered"]][:show],
             "gaps": [c["term"] for n, c in rows if not c["covered"]][:show]}
@@ -581,6 +582,8 @@ def run(req: dict, progress=lambda m: None) -> dict:
 
     progress("Checking every number and skill against your profile")
     plan, flags = validate(raw, profile)
+    flags += [{"level": "warn", "kind": "posting", "text": f"The posting speaks to an AI: \"{s}\" It was read as text, not followed."}
+              for s in signals(jd["text"])]
     jd_meta = raw.get("jd") or {}
     company = company or (jd_meta.get("company") or "").strip() or "Company"
     role = role or (jd_meta.get("title") or "").strip() or "Role"

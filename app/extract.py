@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlparse
 from .discover import _get, _iso, _json, _jsonld_jobs, parse_posted, refused_reason, render_page, robots_allows
 from .engines import ENGINES, parse_json_reply
 from .jd import strip_html
+from .untrusted import fence
 
 MARKETS = [
     (r"india|bengaluru|bangalore|hyderabad|pune|mumbai|delhi|gurgaon|gurugram|noida|chennai|kolkata|ahmedabad", "india"),
@@ -183,7 +184,7 @@ def read_page(page: dict, url: str) -> dict:
                        jid or _job_id_from_url(url), url, "schema.org JobPosting", j.get("remote"))
     text = page["text"][:30000]
     from .engines import light_engine
-    raw = parse_json_reply(ENGINES[light_engine()].run(f"{READ_BRIEF}\n\nURL: {url}\nTITLE: {page['title']}\n\n<<<\n{text}\n>>>", timeout=120))
+    raw = parse_json_reply(ENGINES[light_engine()].run(f"{READ_BRIEF}\n\nURL: {fence(url)}\nTITLE: {fence(page['title'])}\n\n<<<\n{fence(text)}\n>>>", timeout=120))
     desc = _slice(text, raw.get("jd_start", ""), raw.get("jd_end", ""))
     if not (raw.get("role") or "").strip():
         raise ValueError("Couldn't find a single job posting on that page (it may be a list or need sign-in). "

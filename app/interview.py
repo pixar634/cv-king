@@ -19,6 +19,7 @@ import re
 from .config import output_dir
 from .engines import get_engine, parse_json_reply
 from .profile import brief_view, experience_years_label, load_profile
+from .untrusted import fence
 
 FILE, CODE_FILE = "interview.json", "codetest.json"
 LEVELS = ("basic", "intermediate", "advanced")
@@ -224,7 +225,7 @@ def _app(app_id: str) -> tuple[dict, dict, str]:
 
 def _research(company: str, role: str, jd: str, progress) -> dict:
     progress(f"Researching what {company} builds, what it values and how it interviews (1 to 3 minutes)")
-    reply = get_engine("claude:sonnet").run(RESEARCH.format(company=company, role=role, jd=jd[:12000]),
+    reply = get_engine("claude:sonnet").run(RESEARCH.format(company=company, role=role, jd=fence(jd[:12000])),
                                             timeout=600, tools=["WebSearch"])
     raw = parse_json_reply(reply)
     return {"summary": str(raw.get("summary") or "").strip(), "team_guess": str(raw.get("team_guess") or "").strip(),
@@ -271,7 +272,7 @@ def generate(app_id: str, options: dict, engine_id: str = "claude:opus", progres
         years=experience_years_label(profile), headline=report.get("headline", ""), gaps=gaps,
         focus=(options.get("focus") or "").strip() or "nothing specific", say_rules=SAY_RULES,
         research=json.dumps(research, indent=1, ensure_ascii=False),
-        jd=jd[:12000], plan=json.dumps(plan, indent=1, ensure_ascii=False)[:12000],
+        jd=fence(jd[:12000]), plan=json.dumps(plan, indent=1, ensure_ascii=False)[:12000],
         profile=json.dumps(brief_view(profile), ensure_ascii=False)[:20000])
     # The writer follows the top bar's choice; the research above always runs on Claude, which has web search.
     raw = parse_json_reply(get_engine(engine_id).run(brief, timeout=900))
@@ -352,7 +353,7 @@ def _write_problems(report: dict, jd: str, engine_id: str, n: int, avoid: list[s
     note = f"\nAvoid these problems, already set: {'; '.join(avoid)}." if avoid else ""
     if only_level:
         note += f"\nThis time write {n} problems at level {only_level} only."
-    brief = CODETEST.format(role=report["role"], company=report["company"], n=n, avoid=note, jd=jd[:10000])
+    brief = CODETEST.format(role=report["role"], company=report["company"], n=n, avoid=note, jd=fence(jd[:10000]))
     raw = parse_json_reply(get_engine(engine_id).run(brief, timeout=900))
     probs = [x for x in (_problem(p) for p in raw.get("problems") or []) if x]
     return [p for p in probs if not only_level or p["level"] == only_level]

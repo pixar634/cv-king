@@ -13,6 +13,7 @@ from .config import data_dir, output_dir
 from .engines import ENGINES, light_engine, parse_json_reply
 from .profile import brief_view, experience_years_label, load_profile
 from .tailor import load_report
+from .untrusted import fence
 
 CHOICE = ("select", "radio", "combobox")
 
@@ -170,8 +171,9 @@ def answer(app_id: str, fields: list[dict], url: str = "", progress=lambda m: No
         jd_file = output_dir() / app_id / "jd.txt"
         jd = jd_file.read_text("utf-8") if jd_file.exists() else ""
         raw = parse_json_reply(ENGINES[light_engine()].run(
-            f"{BRIEF}\n\n{json.dumps(facts, ensure_ascii=False)}\n\nJOB DESCRIPTION:\n{jd[:8000]}\n\n"
-            f"FORM ({url}):\n{json.dumps(slim, ensure_ascii=False)}", timeout=240))
+            f"{BRIEF}\n\n{json.dumps(facts, ensure_ascii=False)}\n\nJOB DESCRIPTION:\n<<<\n{fence(jd[:8000])}\n>>>\n\n"
+            f"FORM ({fence(url)}), its labels and options as the page wrote them:\n<<<\n{fence(json.dumps(slim, ensure_ascii=False))}\n>>>",
+            timeout=240))
         got, why = raw.get("answers") or {}, raw.get("why") or {}
         for f in ask:
             value = _fits(f, got.get(f["id"]))

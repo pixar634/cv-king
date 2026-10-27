@@ -11,6 +11,7 @@ from .config import KNOWLEDGE, output_dir
 from .engines import get_engine, parse_json_reply
 from .keywords import jd_keywords
 from .profile import brief_view, load_profile, profile_text
+from .untrusted import fence
 
 HUMAN_RULES = """How a human professional writes (follow all of these):
 - Specific beats general: name the system, the stack, the number. Never claim a quality ("detail-oriented",
@@ -76,7 +77,7 @@ def write_letter(app_id: str, voice_id: str, engine_id: str) -> dict:
         f"## TARGET\nCompany: {report['company']}\nRole: {report['role']}\nCandidate: {profile['basics']['name']}\n"
         f"Availability: {profile['basics'].get('availability', '')}\nStatus line on the CV: {report['options']['header_line']}",
         "## THE TAILORED CV (lead with what it leads with)\n" + json.dumps(plan, indent=1, ensure_ascii=False),
-        f"## JOB DESCRIPTION\n<<<\n{jd_text}\n>>>",
+        f"## JOB DESCRIPTION\n<<<\n{fence(jd_text)}\n>>>",
         f"## PROFILE\n```json\n{json.dumps(brief_view(profile), indent=1, ensure_ascii=False)}\n```",
     ])
     engine = get_engine(engine_id)
