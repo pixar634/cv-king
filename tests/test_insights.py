@@ -58,3 +58,23 @@ def test_missing_skills_are_counted_across_jobs():
             {"term": t, "tier": "required", "weight": 3, "covered": False, "covered_before": False, "in_profile": False} for t in terms]
             + [{"term": "Python", "tier": "required", "weight": 3, "covered": True, "covered_before": True, "in_profile": True}]}), "utf-8")
     assert insights.compute(TODAY)["missing"] == [{"term": "Kubernetes", "jobs": 2}, {"term": "Go", "jobs": 1}]
+
+
+def test_a_reply_from_before_the_history_has_no_date():
+    tracker._save([{"id": "s", "created": "2026-10-01T10:00:00", "company": "Co", "role": "Lead Engineer", "status": "Rejected",
+                    "applied_on": "2026-10-02", "domain": "", "logo": False, "score_ceiling": 70}])
+    d = insights.compute(TODAY)
+    assert d["funnel"]["replied"] == 1 and d["days_to_reply"] == {"median": None, "n": 0} and d["approximate"]
+
+
+def test_a_skill_the_profile_has_now_is_not_listed_missing():
+    import json
+
+    from app.config import output_dir
+    add("a", 60, [])
+    folder = output_dir() / "a"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "report.json").write_text(json.dumps({"keywords": [   # React was missing then; the test profile has it now
+        {"term": t, "tier": "required", "weight": 3, "covered": False, "covered_before": False, "in_profile": False}
+        for t in ("React", "Kubernetes")]}), "utf-8")
+    assert [m["term"] for m in insights.compute(TODAY)["missing"]] == ["Kubernetes"]

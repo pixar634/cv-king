@@ -7,6 +7,8 @@ import statistics
 from contextlib import closing
 
 from . import db
+from .keywords import taxonomy
+from .profile import load_profile, profile_text
 
 MIN_N = 5
 REPLIED = {"Recruiter call", "Interviewing", "Offer", "Rejected"}   # a rejection is a reply too
@@ -30,9 +32,12 @@ def compute(today: dt.date | None = None) -> dict:
         events: dict[str, list[dict]] = {}
         for e in con.execute("SELECT app_id, to_status, at, source FROM status_events ORDER BY at, id"):
             events.setdefault(e["app_id"], []).append(dict(e))
-        missing = [dict(r) for r in con.execute(
+        gaps = [dict(r) for r in con.execute(
             "SELECT term, COUNT(DISTINCT app_id) AS jobs FROM keywords WHERE in_profile = 0 AND tier = 'required' "
-            "GROUP BY term ORDER BY jobs DESC, term LIMIT 10")]
+            "GROUP BY term ORDER BY jobs DESC, term")]
+    # Each report says what the profile lacked when it was tailored; skip what the profile (or memory) has now.
+    ptext, terms = profile_text(load_profile()), taxonomy().terms
+    missing = [g for g in gaps if not (g["term"] in terms and any(p.search(ptext) for p in terms[g["term"]].patterns))][:10]
 
     rows = []
     for a in apps:
@@ -40,10 +45,12 @@ def compute(today: dt.date | None = None) -> dict:
         reached = {e["to_status"] for e in ev} | {a["status"]}
         applied_at = next((e["at"] for e in ev if e["to_status"] != "Generated"), None) or a["applied_on"]
         reply = next((e for e in ev if e["to_status"] in REPLIED), None)
+        # A reply seeded from before the history began carries the applied day, not its own: its date is unknown.
+        reply_day = _day(reply["at"]) if reply and reply["source"] != "seed" else None
         rows.append(a | {
             "applied": bool(reached - {"Generated"}),
             "replied": bool(reached & REPLIED), "interview": bool(reached & INTERVIEW), "offer": "Offer" in reached,
-            "applied_day": _day(applied_at or ""), "reply_day": _day(reply["at"]) if reply else None,
+            "applied_day": _day(applied_at or ""), "reply_day": reply_day,
             "approx": any(e["source"] == "seed" for e in ev if e["to_status"] != "Generated"),
         })
     applied = [r for r in rows if r["applied"]]
