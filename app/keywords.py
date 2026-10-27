@@ -191,6 +191,10 @@ def jd_spelling(kw: Keyword, jd_text: str) -> str:
     return kw.name
 
 
+# Fewer standard keywords than this and a match share says little (one skill named, one covered: "100%").
+MIN_TERMS = 5
+
+
 def score(kws: dict[str, Keyword], cv_text: str) -> dict:
     rows, total, got = [], 0.0, 0.0
     for k in sorted(kws.values(), key=lambda k: -k.weight):

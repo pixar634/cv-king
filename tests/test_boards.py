@@ -13,7 +13,8 @@ def ranked(job, p):
 
 
 AMS = {"id": "j1", "title": "Lead Software Engineer", "company": "Acme", "location": "Amsterdam, North Holland, Netherlands",
-       "url": "https://jobs.example.com/1", "posted": "", "remote": False, "description": "Python and React. " * 30}
+       "url": "https://jobs.example.com/1", "posted": "", "remote": False,
+       "description": "Python, FastAPI, React, TypeScript, AWS and Kubernetes on our platform. " * 8}
 
 
 def test_a_place_you_would_move_to_is_wanted_without_the_abroad_switch():
@@ -79,3 +80,29 @@ def test_a_country_jobicy_rejects_is_skipped(monkeypatch):
     monkeypatch.setattr(discover, "_json", feed)
     _, jobs = discover.from_board("jobicy", prefs(places=["Luxembourg"]))
     assert jobs and all(j["location"] == "Netherlands" for j in jobs)
+
+
+def test_work_in_finland_keeps_your_roles_and_describes_what_it_may(monkeypatch):
+    feed = {"jobs": [
+        {"title": "Lead Software Engineer", "employer": {"name": "Acme", "city": "Helsinki"}, "externalUrl": "https://thehub.fi/jobs/1"},
+        {"title": "Staff Software Engineer", "employer": {"name": "Beta", "city": "Espoo"}, "externalUrl": "https://www.jobly.fi/en/job/2"},
+        {"title": "Warehouse Worker", "employer": {"name": "Gamma", "city": "Oulu"}, "externalUrl": "https://thehub.fi/jobs/3"},
+    ]}
+    page = ('<html><script type="application/ld+json">{"@type": "JobPosting", "title": "Lead Software Engineer", '
+            '"datePosted": "2026-10-20", "description": "<p>Python, FastAPI and React for our platform.</p>", '
+            '"hiringOrganization": {"name": "Acme"}}</script></html>')
+    monkeypatch.setattr(discover, "_json", lambda url, timeout=15: feed)
+    monkeypatch.setattr(discover, "_get", lambda url, timeout=15, accept="": page.encode())
+    monkeypatch.setattr(discover, "robots_allows", lambda url: True)
+    method, jobs = discover.from_board("workinfinland", prefs())
+    by = {j["company"]: j for j in jobs}
+    assert set(by) == {"Acme", "Beta"}                                   # not a target role: left out
+    assert "FastAPI" in by["Acme"]["description"] and by["Acme"]["posted"] == "2026-10-20" and by["Acme"]["location"] == "Helsinki, Finland"
+    assert by["Beta"]["description"] == ""                               # Jobly refuses automated reading
+
+
+def test_a_job_with_no_description_is_unscored_not_forty_percent():
+    p = prefs(regions=["city", "country", "remote", "world"])
+    bare = ranked(AMS | {"description": ""}, p)
+    assert bare["unscored"] and not bare["excluded"]
+    assert not ranked(AMS, p)["unscored"]
