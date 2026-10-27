@@ -950,8 +950,10 @@ async function loadFound() {
   const favNames = favs.map((s) => companyKey(s.company || s.label)).filter(Boolean);
   const isFav = (j) => !!j.favourite || favNames.some((n) => { const c = companyKey(j.company); return c === n || c.startsWith(n + " "); });
   $("#scanFav").hidden = !favs.length;
-  const jobs = areaFilter(all.filter((j) => j.match >= min && !isFav(j)));
-  const below = areaFilter(all.filter((j) => j.match < min && !isFav(j))).length;   // favourites always show, pinned
+  // A job with no description has no match to filter on: it's listed apart, whatever the slider says.
+  const unscored = areaFilter(all.filter((j) => j.unscored && !isFav(j)));
+  const jobs = areaFilter(all.filter((j) => !j.unscored && j.match >= min && !isFav(j)));
+  const below = areaFilter(all.filter((j) => !j.unscored && j.match < min && !isFav(j))).length;   // favourites always show, pinned
   const pinned = areaFilter(month.filter(isFav));
   if ($("#sortBy").value === "newest") jobs.sort((a, b) => (b.posted || "").localeCompare(a.posted || "") || b.match - a.match);
   FOUND = jobs;
@@ -976,7 +978,7 @@ async function loadFound() {
       <div><div class="job-card__title">${esc(j.title)}</div>
         <div class="job-card__where">${where}${(j.areas || []).length ? ` · <span class="zone">${esc(j.areas.join(" or "))}</span>` : ""}</div></div>
       <div class="job-card__match ${tone(j.match)}" title="${j.estimate ? "An estimate from a short description. Opening the job reads the full posting and scores it again." : "Keyword match your profile can reach for this job (the same measure as after tailoring)"}">
-        <span class="eyebrow">Match</span><span class="meter meter--sm"><span class="meter__fill" style="width:${j.match}%"></span></span><span class="num">${j.estimate ? "~" : ""}${j.match}%</span></div>
+        <span class="eyebrow">Match</span>${j.unscored ? `<span class="type-meta">Not scored yet</span>` : `<span class="meter meter--sm"><span class="meter__fill" style="width:${j.match}%"></span></span><span class="num">${j.estimate ? "~" : ""}${j.match}%</span>`}</div>
       <div class="job-card__why" title="${esc((j.reasons || []).join(", "))}">${esc((j.reasons || []).join(", "))}, via ${esc(j.source)}</div>
     </div>`;
   };
@@ -1006,7 +1008,11 @@ async function loadFound() {
           ${dated.length ? `<div class="card-grid">${dated.map(card).join("")}</div>` : ""}
           ${unknown.length ? `<div class="eyebrow group-title">Posting date unknown. Check the posting before you spend time on it.</div><div class="card-grid">${unknown.map(card).join("")}</div>` : ""}</details>`;
       }).join("")
-    : pinned.length ? "" : `<div class="empty">${sources.length ? "Nothing fresh at this match level. Widen the window or lower the match, or scan again." : "No sources yet. Open <b>Settings</b> and add a favourite company or a careers page, like https://jobs.lever.co/cred."}</div>`);
+    : pinned.length || unscored.length ? "" : `<div class="empty">${sources.length ? "Nothing fresh at this match level. Widen the window or lower the match, or scan again." : "No sources yet. Open <b>Settings</b> and add a favourite company or a careers page, like https://jobs.lever.co/cred."}</div>`);
+  if (unscored.length) $("#foundList").insertAdjacentHTML("beforeend", `<details class="disclosure disclosure--lg day"><summary><span>Not scored yet</span>
+      <span class="disclosure__sub num">${unscored.length} job${unscored.length === 1 ? "" : "s"}</span><span class="disclosure__aside">titled like your roles, no description to measure</span></summary>
+      <p class="type-meta">These boards list the title but not the job description, so there's no match yet. Opening one in Tailor reads the posting and scores it.</p>
+      <div class="card-grid">${unscored.map(card).join("")}</div></details>`);
   $$(".job-card").forEach((el) => {
     $(".job-card__pass", el).onclick = (e) => { e.stopPropagation(); passOn(el); };
     el.onclick = (e) => {

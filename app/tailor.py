@@ -15,7 +15,7 @@ from .config import KNOWLEDGE, output_dir
 from .engines import EngineError, get_engine, parse_json_reply
 from .jd import parse_jd
 from .untrusted import fence, signals
-from .keywords import SOFT, covered, jd_keywords, jd_spelling, score, taxonomy, title_match
+from .keywords import MIN_TERMS, SOFT, covered, jd_keywords, jd_spelling, score, taxonomy, title_match
 from .layouts import LAYOUTS
 from .letters import first_letter_rules, phrase_flags
 from .profile import (all_skills, brief_view, bullet_index, experience_years_label, fmt_month, load_profile,
@@ -510,7 +510,6 @@ def _print(folder: Path, profile: dict, plan: dict, options: dict, company: str,
 
 # ---------- the pipeline ----------
 
-MIN_TERMS = 5   # fewer standard keywords than this and the reach number says little; never gate on it
 
 
 class BelowMatch(EngineError):

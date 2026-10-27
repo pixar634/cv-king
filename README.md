@@ -421,7 +421,7 @@ growth log the next map reads.
 |---|---|
 | Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Recruitee, Personio | Their public job-board APIs |
 | Any other careers page | schema.org job data in the page, else the page read by the AI, with every link checked to be real. `robots.txt` is respected. |
-| Remotive, Jobicy, Himalayas, Arbeitnow (switch them on in Settings) | Their free public job APIs, searched with your career tracks. Remote jobs worldwide and in Europe; Arbeitnow lists many jobs in Germany and Europe with visa sponsorship. Each job links to the board's own posting. |
+| Remotive, Jobicy, Himalayas, Arbeitnow, Work in Finland (switch them on in Settings) | Their free public job APIs, searched with your career tracks. Remote jobs worldwide and in Europe; Arbeitnow lists many jobs in Germany and Europe with visa sponsorship; Work in Finland lists jobs open to international talent, and gives descriptions only where the posting site allows reading (The Hub), so the rest show as *Not scored yet* until you open them. Each job links to the board's own posting. |
 | Web searches you save | Claude's web search |
 | Indeed | Indeed's official Claude connector (needs a claude.ai sign-in) |
 | Claude in Chrome, the Chrome extension | Your own signed-in browser reads pages you open yourself |

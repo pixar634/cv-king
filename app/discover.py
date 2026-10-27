@@ -27,7 +27,7 @@ from .config import data_dir, output_dir
 from .engines import ENGINES, EngineError, parse_json_reply
 from .jd import strip_html
 from .untrusted import fence
-from .keywords import taxonomy
+from .keywords import MIN_TERMS, taxonomy
 from .fit import strong_skills
 from .profile import load_profile, profile_text
 
@@ -489,7 +489,7 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 10
+RANK_VERSION = 11
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "regions", "places")
 
@@ -562,7 +562,7 @@ def rank(job: dict, evidence: set[str], prefs: dict, sig: str | None = None) -> 
     if cached and (cached.get("sig") == sig or job.get("_trimmed")):
         return job | {k: v for k, v in cached.items() if k != "sig"}
     out = _rank(job, evidence, prefs)
-    keep = {k: out[k] for k in ("match", "order", "reasons", "excluded", "areas", "skills", "estimate") if k in out}
+    keep = {k: out[k] for k in ("match", "order", "reasons", "excluded", "areas", "skills", "estimate", "unscored") if k in out}
     return out | {"_r": keep | {"sig": sig}}
 
 
@@ -610,15 +610,21 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
         reasons.append("below your level")
     skills = job_skills(job)
     from .keywords import jd_keywords, score as keyword_score
-    if len(desc) >= 300:
+    kws = jd_keywords(desc) if len(desc) >= 300 else {}
+    # Too few specific skills to measure (or no description at all): no number, listed apart in Discover. Generic
+    # terms every posting shares (Performance, Documentation) don't count toward the floor.
+    unscored = len([k for k in kws if k not in GENERIC]) < MIN_TERMS
+    if not unscored:
         # Same scorer, same keyword list rules as the Tailor screen's "most your profile can reach".
-        score = keyword_score(jd_keywords(desc), prefs.get("_ptext", ""))["score"]
+        score = keyword_score(kws, prefs.get("_ptext", ""))["score"]
         reasons.append(f"you can cover {score}% of its keywords")
         # A short text is often a search snippet, not the posting: the full page can score quite differently.
         estimate = len(desc) < SNIPPET
     else:
         score, estimate = 40, True
-        reasons.append("no description to measure yet")
+        reasons.append("no description to measure yet" if len(desc) < 300 else "names too few skills to measure")
+        if not target:   # with nothing to measure, only a title that is one of your tracks earns a place
+            return job | {"match": 0, "reasons": ["not scored, and the title isn't one of your tracks"], "excluded": True}
     order = score - (0 if target else 10)
     # Level decides the order among jobs that match equally: at your level first, a step down last.
     if named is not None and named == mine:
@@ -643,7 +649,8 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
         order -= 10
         reasons += [f"stretch: {r}" for r in level["reasons"]]
     from .areas import tag
-    return job | {"skills": skills, "match": max(0, min(100, score)), "estimate": estimate, "order": order, "reasons": reasons, "excluded": False,
+    return job | {"skills": skills, "match": max(0, min(100, score)), "estimate": estimate, "unscored": unscored, "order": order,
+                  "reasons": reasons, "excluded": False,
                   "areas": tag(job, prefs.get("offices", ""))}
 
 
@@ -657,7 +664,42 @@ BOARDS = {
     "jobicy": "Jobicy: remote jobs in Europe",
     "himalayas": "Himalayas: remote jobs",
     "arbeitnow": "Arbeitnow: Germany and Europe, many with visa sponsorship",
+    "workinfinland": "Work in Finland: jobs in Finland open to international talent",
 }
+
+WIF_API = "https://www.workinfinland.com/api/jobs/?"   # the feed behind workinfinland.com/en/open-jobs; robots.txt allows it
+DESCRIBED_HOSTS = ("thehub.fi", "thehub.io")           # posting sites that allow reading and carry schema.org job data
+MAX_DESCRIBED = 60
+
+
+def from_work_in_finland() -> list[dict]:
+    """Work in Finland lists every job with its title, employer, city and link, but no description. Jobs titled like
+    your roles are kept; those on a site that allows reading and carries schema.org job data (The Hub) get their
+    description now, the rest arrive unscored until you open them (the posting is read then)."""
+    relevant = strategy.relevant_pattern()
+    jobs = []
+    for j in _json(WIF_API, timeout=40).get("jobs") or []:
+        title, url = (j.get("title") or "").strip(), j.get("externalUrl") or ""
+        if not url.startswith("http") or (relevant and not relevant.search(title)):
+            continue
+        emp = j.get("employer") or {}
+        city = (emp.get("city") or "").strip()
+        jobs.append(_job(title, emp.get("name"), f"{city}, Finland" if city else "Finland", url, method="workinfinland"))
+
+    def describe(job):
+        if _host(job["url"]).removeprefix("www.") not in DESCRIBED_HOSTS or not robots_allows(job["url"]):
+            return
+        try:
+            page = _get(job["url"], timeout=15, accept="text/html").decode("utf-8", "replace")
+        except Exception:   # one posting that won't load leaves that job unscored, nothing more
+            return
+        ld = _jsonld_jobs(re.findall(r"<script[^>]+application/ld\+json[^>]*>(.*?)</script>", page, re.S), job["url"])
+        if ld and ld[0]["description"]:
+            job["description"], job["posted"] = ld[0]["description"], job["posted"] or ld[0]["posted"]
+
+    with cf.ThreadPoolExecutor(max_workers=6) as pool:
+        list(pool.map(describe, [j for j in jobs if _host(j["url"]).removeprefix("www.") in DESCRIBED_HOSTS][:MAX_DESCRIBED]))
+    return jobs
 
 
 LEVEL_WORDS = {"lead", "senior", "sr", "staff", "principal", "junior", "jr", "associate", "head"}
@@ -711,6 +753,8 @@ def from_board(board: str, prefs: dict) -> tuple[str, list[dict]]:
                     out.append(_job(j.get("title"), j.get("companyName"), where, j.get("applicationLink") or j.get("guid"),
                                     _epoch(j.get("pubDate")), description=j.get("description", ""), remote=True, method="himalayas"))
         return "Himalayas API", out
+    if board == "workinfinland":
+        return "Work in Finland feed", from_work_in_finland()
     if board == "arbeitnow":
         for page in (1, 2):
             data = _json(f"https://www.arbeitnow.com/api/job-board-api?page={page}", timeout=30)
@@ -1072,7 +1116,8 @@ def job_detail(job_id: str, prefs: dict | None = None) -> dict:
             if prefs is not None:
                 prefs, evidence = with_profile(prefs), strong_skills(load_profile())
                 ranked = rank(j, evidence, prefs, rank_signature(prefs, evidence))
-                j = j | {k: ranked[k] for k in ("match", "estimate", "reasons", "order", "excluded", "areas", "skills", "_r") if k in ranked}
+                j = j | {k: ranked[k] for k in ("match", "estimate", "unscored", "reasons", "order", "excluded", "areas", "skills", "_r")
+                         if k in ranked}
         with _lock:
             state["jobs"][job_id] = j
             _save_jobs(state)

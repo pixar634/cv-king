@@ -22,12 +22,20 @@ def test_snippet_scores_are_marked_as_estimates():
     assert stored_job()["estimate"]
 
 
+def test_a_snippet_with_enough_skills_is_scored_as_an_estimate(monkeypatch):
+    job = stored_job() | {"description": "Lead engineer for Python, FastAPI, React, TypeScript and AWS services. " * 6}
+    prefs = discover.with_profile(main._prefs(load_profile()))
+    evidence = discover.strong_skills(load_profile())
+    got = discover.rank({k: v for k, v in job.items() if k != "_r"}, evidence, prefs, discover.rank_signature(prefs, evidence))
+    assert not got["unscored"] and got["estimate"]
+
+
 def test_reading_the_full_posting_scores_it_again(monkeypatch):
     before = stored_job()
     monkeypatch.setattr(discover, "_json", lambda url: {"jobAd": {"sections": {"a": {"title": "", "text": FULL}}}})
     after = discover.job_detail("j1", main._prefs(load_profile()))
     assert not before["excluded"] and not after["excluded"]
-    assert not after["estimate"] and after["match"] != before["match"]
+    assert before["unscored"] and not after["unscored"] and not after["estimate"]   # a snippet naming one skill isn't scored
     assert discover._load_jobs()["jobs"]["j1"]["match"] == after["match"]   # the card shows it on the next load
 
 
