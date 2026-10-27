@@ -521,7 +521,7 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 17
+RANK_VERSION = 18
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "regions", "places", "pay_floor_home_lpa", "pay_floor_remote_lpa", "pay_floor_abroad_eur", "pay_tiers")
 
@@ -721,6 +721,13 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
         if not target:   # with nothing to measure, only a title that is one of your tracks earns a place
             return job | {"match": 0, "reasons": ["not scored, and the title isn't one of your tracks"], "excluded": True}
     order = score - (0 if target else 10)
+    # Fresh first: an application in the first few days is read before the shortlist fills.
+    from .fitlabel import days_old
+    age = days_old(job)
+    if age is not None:
+        order += 10 if age <= 3 else -10 if age > 14 else 0
+        if not job.get("posted"):
+            reasons.append(f"no posting date; first seen {age} day{'s' if age != 1 else ''} ago")
     # Level decides the order among jobs that match equally: at your level first, a step down last.
     if named is not None and floor <= named <= mine:
         order += 8
@@ -1050,6 +1057,10 @@ def add_favourite(value: str) -> dict:
     return row
 
 
+# Past this many days a posting has usually had its shortlist; favourites stay whatever their age.
+STALE_DAYS = 21
+
+
 def saved(days: int, prefs: dict) -> list[dict]:
     """Jobs from earlier scans, re-ranked and re-filtered, without touching the network."""
     state = _load_jobs()
@@ -1060,8 +1071,11 @@ def saved(days: int, prefs: dict) -> list[dict]:
     dismissed = set(state.get("dismissed", []))
     learned = taste.model(state)
     out, changed = [], False
+    stale = (dt.date.today() - dt.timedelta(days=STALE_DAYS)).isoformat()
     for jid, j in state["jobs"].items():
-        if jid in dismissed or (j["posted"] and j["posted"] < cutoff):
+        # A posting with no date counts from the day it was first seen, so "Posted within" applies to it too.
+        when = j["posted"] or (j.get("first_seen") or "")[:10]
+        if jid in dismissed or (when and when < cutoff) or (when and when < stale and not j.get("favourite")):
             continue
         r = rank(j, evidence, prefs, sig)
         if r.get("_r") is not j.get("_r"):
