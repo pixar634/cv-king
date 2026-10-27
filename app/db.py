@@ -3,7 +3,9 @@
 Two kinds of table:
 - `status_events` is the record nothing else keeps: every status change, the moment it happens. Never rebuilt.
 - The rest are copies of the JSON files (the source of truth), rebuilt whole by `sync()`, so they can be queried
-  together: applications, their job descriptions and keyword results, and every job Discover has seen.
+  together: applications, their job descriptions and keyword results, every job Discover has seen, the profile with
+  its memory and settings, sources, the career map, goal, salary and growth logs, form answers, cold mails, contacts
+  and interview prep. Contact details of the candidate stay out.
 
 Read it with any SQLite tool, or `python scripts/query.py "SELECT ..."` (read-only)."""
 import contextvars
@@ -16,7 +18,7 @@ from contextlib import closing
 
 from .config import data_dir, output_dir
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS status_events (
@@ -54,6 +56,42 @@ CREATE TABLE IF NOT EXISTS jobs_seen (
   dismissed INTEGER
 );
 CREATE TABLE IF NOT EXISTS scans (at TEXT, sources INTEGER, read INTEGER, new INTEGER);
+
+-- The profile and everything around it (contact details stay out). Nested files go in documents as JSON:
+-- query them with json_extract, e.g. json_extract(json, '$.goal') FROM documents WHERE name = 'career_map'.
+CREATE TABLE IF NOT EXISTS profile_basics (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS roles (
+  id TEXT PRIMARY KEY, position INTEGER, title TEXT, company TEXT, client TEXT,
+  start_month TEXT, end_month TEXT, location TEXT, stack TEXT
+);
+CREATE TABLE IF NOT EXISTS bullets (role_id TEXT, id TEXT, position INTEGER, text TEXT);
+CREATE TABLE IF NOT EXISTS projects (name TEXT, role TEXT, start_month TEXT, end_month TEXT, stack TEXT, bullets TEXT);
+CREATE TABLE IF NOT EXISTS education (degree TEXT, institution TEXT, year TEXT, details TEXT);
+CREATE TABLE IF NOT EXISTS certifications (name TEXT, issuer TEXT, detail TEXT);
+CREATE TABLE IF NOT EXISTS skills (grp TEXT, skill TEXT, confirmed INTEGER);
+CREATE TABLE IF NOT EXISTS memory (id TEXT PRIMARY KEY, role_id TEXT, text TEXT, created TEXT);
+CREATE TABLE IF NOT EXISTS memory_facts (entry_id TEXT, role_id TEXT, position INTEGER, fact TEXT);
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);   -- value is JSON
+CREATE TABLE IF NOT EXISTS tracks (id TEXT PRIMARY KEY, label TEXT, titles TEXT, lateral INTEGER);
+CREATE TABLE IF NOT EXISTS sources (
+  id TEXT, kind TEXT, label TEXT, value TEXT, favourite INTEGER, method TEXT,
+  last_scan TEXT, last_count INTEGER, last_error TEXT
+);
+CREATE TABLE IF NOT EXISTS career_paths (id TEXT, name TEXT, fit TEXT, reaches_goal TEXT, why TEXT);
+CREATE TABLE IF NOT EXISTS career_goal (role TEXT, salary REAL, unit TEXT, year INTEGER);
+CREATE TABLE IF NOT EXISTS salary_log (id TEXT, year INTEGER, amount REAL, unit TEXT, note TEXT);
+CREATE TABLE IF NOT EXISTS growth_log (id TEXT, kind TEXT, text TEXT, date TEXT, use_on_cv INTEGER);
+CREATE TABLE IF NOT EXISTS form_answers (question TEXT, answer TEXT);      -- answer is JSON
+CREATE TABLE IF NOT EXISTS cold_mails (
+  id TEXT, app_id TEXT, created TEXT, to_name TEXT, to_email TEXT, to_role TEXT, tone TEXT,
+  subject TEXT, body TEXT, sent_at TEXT
+);
+CREATE TABLE IF NOT EXISTS contacts (
+  app_id TEXT, name TEXT, title TEXT, team TEXT, location TEXT, email TEXT, profile_url TEXT, confidence TEXT, source TEXT
+);
+CREATE TABLE IF NOT EXISTS interviews (app_id TEXT, generated_at TEXT, engine TEXT, needs_coding INTEGER, rounds INTEGER, questions INTEGER);
+CREATE TABLE IF NOT EXISTS documents (name TEXT, app_id TEXT, json TEXT);        -- strategy, career_map
+CREATE TABLE IF NOT EXISTS app_documents (name TEXT, app_id TEXT, json TEXT);    -- interview, codetest, contacts per application
 """
 SOURCES = ("tailor", "app", "extension", "seed")
 
@@ -160,17 +198,101 @@ def sync() -> dict:
                      ranked.get("match", j.get("match")), int(bool(ranked.get("estimate", j.get("estimate")))),
                      int(bool(ranked.get("excluded", j.get("excluded")))), "; ".join(reasons)[:300], int(j["id"] in gone)))
     scans = [(s.get("at"), s.get("sources"), s.get("read"), s.get("new")) for s in state.get("scans") or []]
+    tables = {"applications": apps, "job_descriptions": descs, "keywords": kws, "jobs_seen": seen, "scans": scans}
+    tables |= _profile_tables() | _career_tables() | _per_application_tables([r["id"] for r in tracker.load()])
     with closing(connect()) as con, con:
         _seed(con)
-        for table in ("applications", "job_descriptions", "keywords", "jobs_seen", "scans"):
+        for table, rows in tables.items():
             con.execute(f"DELETE FROM {table}")
-        con.executemany(f"INSERT INTO applications VALUES ({','.join('?' * 22)})", apps)
-        con.executemany("INSERT INTO job_descriptions VALUES (?, ?, ?, ?)", descs)
-        con.executemany("INSERT INTO keywords VALUES (?, ?, ?, ?, ?, ?, ?)", kws)
-        con.executemany(f"INSERT OR REPLACE INTO jobs_seen VALUES ({','.join('?' * 15)})", seen)
-        con.executemany("INSERT INTO scans VALUES (?, ?, ?, ?)", scans)
+            if rows:
+                verb = "INSERT OR REPLACE" if table == "jobs_seen" else "INSERT"
+                con.executemany(f"{verb} INTO {table} VALUES ({','.join('?' * len(rows[0]))})", rows)
         con.execute("INSERT OR REPLACE INTO meta VALUES ('synced', ?)", (_now(),))
-    return {"applications": len(apps), "job_descriptions": len(descs), "keywords": len(kws), "jobs_seen": len(seen), "scans": len(scans)}
+    return {table: len(rows) for table, rows in tables.items()}
+
+
+def _dumps(v) -> str:
+    return json.dumps(v, ensure_ascii=False)
+
+
+def _profile_tables() -> dict[str, list[tuple]]:
+    """The master profile: roles, bullets, skills, memory, and the settings saved with it. Contact details stay out."""
+    p = _json(data_dir() / "base_cv.json") or {}
+    if not p:
+        return {}
+    b = p.get("basics") or {}
+    basics = [(k, str(v)) for k, v in {"name": b.get("name"), "headline": b.get("headline"), "location": b.get("location"),
+                                       "availability": b.get("availability"), "summary": p.get("summary"),
+                                       "interests": p.get("interests")}.items() if v]
+    roles, bullets = [], []
+    for i, r in enumerate(p.get("experience") or []):
+        roles.append((r["id"], i, r.get("title"), r.get("company"), r.get("client"), r.get("start"), r.get("end"),
+                      r.get("location"), ", ".join(r.get("stack") or [])))
+        bullets += [(r["id"], x.get("id"), j, x.get("text")) for j, x in enumerate(r.get("bullets") or [])]
+    confirmed = set(p.get("confirmed_skills") or [])
+    skills = [(g, s, int(s in confirmed)) for g, items in (p.get("skills") or {}).items() for s in items]
+    skills += [("Confirmed", s, 1) for s in sorted(confirmed)]
+    memory = [(m["id"], m.get("role", ""), m.get("text"), m.get("created")) for m in p.get("memory") or []]
+    facts = [(m["id"], m.get("role", ""), i, f) for m in p.get("memory") or [] for i, f in enumerate(m.get("facts") or [])]
+    prefs = p.get("preferences") or {}
+    settings = [(f"defaults.{k}", _dumps(v)) for k, v in (prefs.get("defaults") or {}).items()]
+    settings += [(k, _dumps(v)) for k, v in prefs.items() if k != "defaults"]
+    return {
+        "profile_basics": basics, "roles": roles, "bullets": bullets, "skills": skills, "memory": memory,
+        "memory_facts": facts, "settings": settings,
+        "projects": [(x.get("name"), x.get("role"), x.get("start"), x.get("end"), ", ".join(x.get("stack") or []),
+                      _dumps([y.get("text") for y in x.get("bullets") or []])) for x in p.get("projects") or []],
+        "education": [(e.get("degree"), e.get("institution"), e.get("year"), _dumps(e.get("details") or [])) for e in p.get("education") or []],
+        "certifications": [(c.get("name"), c.get("issuer"), c.get("detail")) for c in p.get("certifications") or []],
+    }
+
+
+def _career_tables() -> dict[str, list[tuple]]:
+    """Strategy, sources, the career map, goal, salary and growth logs, and saved form answers."""
+    d = data_dir()
+    strategy = _json(d / "strategy.json") or {}
+    cmap = _json(d / "career_map.json") or {}
+    goal = _json(d / "career_goal.json") or {}
+    docs = [(name, "", _dumps(v)) for name, v in (("strategy", strategy), ("career_map", cmap)) if v]
+    return {
+        "tracks": [(k, t.get("label"), _dumps(t.get("titles") or []), int(bool(t.get("lateral"))))
+                   for k, t in (strategy.get("tracks") or {}).items()],
+        "sources": [(s.get("id"), s.get("kind"), s.get("label"), s.get("value"), int(bool(s.get("favourite"))), s.get("method"),
+                     s.get("last_scan"), s.get("last_count"), s.get("last_error")) for s in _json(d / "sources.json") or []],
+        "career_paths": [(x.get("id"), x.get("name"), x.get("fit"), _dumps(x.get("reaches_goal")), x.get("why"))
+                         for x in cmap.get("paths") or []],
+        "career_goal": [(goal.get("role"), goal.get("salary"), goal.get("unit"), goal.get("year"))] if goal else [],
+        "salary_log": [(s.get("id"), s.get("year"), s.get("amount"), s.get("unit"), s.get("note")) for s in _json(d / "salary.json") or []],
+        "growth_log": [(g.get("id"), g.get("kind"), g.get("text"), g.get("date"), int(bool(g.get("use_on_cv"))))
+                       for g in _json(d / "growth_log.json") or []],
+        "form_answers": [(a.get("q"), _dumps(a.get("a"))) for a in _json(d / "answers.json") or []],
+        "documents": docs,
+    }
+
+
+def _per_application_tables(app_ids: list[str]) -> dict[str, list[tuple]]:
+    """Cold mails, contacts found and interview prep, per application; the full files go in `documents` as JSON."""
+    mails, people, prep, docs = [], [], [], []
+    folders = [(a, output_dir() / a) for a in app_ids] + [("", f) for f in sorted((output_dir() / "_coldmail").glob("*.json"))]
+    for app_id, where in folders:
+        cm = _json(where / "coldmail.json" if where.is_dir() else where) or {}
+        mails += [(m.get("id"), app_id, m.get("created"), m.get("to_name"), m.get("to_email"), m.get("to_role"), m.get("tone"),
+                   m.get("subject"), m.get("body"), m.get("sent_at") or None) for m in cm.get("mails") or []]
+        if not where.is_dir():
+            continue
+        ct = _json(where / "contacts.json") or {}
+        people += [(app_id, x.get("name"), x.get("title"), x.get("team"), x.get("location"), x.get("email"), x.get("profile_url"),
+                    x.get("confidence"), x.get("source")) for x in ct.get("people") or []]
+        iv = _json(where / "interview.json")
+        if iv:
+            rounds = iv.get("rounds") or []
+            prep.append((app_id, iv.get("generated_at"), iv.get("engine"), int(bool(iv.get("needs_coding"))), len(rounds),
+                         sum(len(r.get("questions") or []) for r in rounds)))
+        for name in ("interview", "codetest", "contacts"):
+            v = iv if name == "interview" else _json(where / f"{name}.json")
+            if v:
+                docs.append((name, app_id, _dumps(v)))
+    return {"cold_mails": mails, "contacts": people, "interviews": prep, "app_documents": docs}
 
 
 _timers: dict[str, threading.Timer] = {}

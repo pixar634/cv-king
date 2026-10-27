@@ -100,7 +100,8 @@ def rows(sql):
 def test_sync_copies_applications_descriptions_keywords_and_jobs():
     write_app("a1")
     store_jobs()
-    assert db.sync() == {"applications": 1, "job_descriptions": 1, "keywords": 2, "jobs_seen": 2, "scans": 1}
+    got = db.sync()
+    assert {k: got[k] for k in ("applications", "job_descriptions", "keywords", "jobs_seen", "scans")} ==         {"applications": 1, "job_descriptions": 1, "keywords": 2, "jobs_seen": 2, "scans": 1}
     assert rows("SELECT company, discover_match, seniority FROM applications") == [("Acme", 64, "Lead")]
     assert rows("SELECT term FROM keywords WHERE covered = 0") == [("Kubernetes",)]
     assert rows("SELECT id, match, excluded, dismissed FROM jobs_seen ORDER BY id") == [("j1", 71, 0, 1), ("j2", 0, 1, 0)]
@@ -130,3 +131,48 @@ def test_the_query_script_is_read_only(monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["query.py", "DELETE FROM applications"])
     with pytest.raises(sqlite3.OperationalError):
         query.main()
+
+
+def test_sync_copies_the_profile_and_everything_around_it():
+    import json
+
+    from app.config import data_dir, output_dir
+    from app.profile import load_profile, save_profile
+    p = load_profile()
+    p["basics"] |= {"email": "someone@example.com", "phone": "+1 555 0100"}
+    p["confirmed_skills"] = ["Okta"]
+    p["memory"] = [{"id": "m1", "role": "acme", "text": "Built SSO with Okta.", "facts": ["Built SSO with Okta."], "skills": [], "created": ""}]
+    p["preferences"] = {"min_match": 60, "places": ["Amsterdam, Netherlands"], "defaults": {"engine": "claude:opus"}}
+    save_profile(p)
+    d = data_dir()
+    (d / "salary.json").write_text(json.dumps([{"id": "s1", "year": 2026, "amount": 30, "unit": "LPA", "note": ""}]), "utf-8")
+    (d / "career_goal.json").write_text(json.dumps({"role": "Engineering Manager", "salary": 60, "unit": "LPA", "year": 2030}), "utf-8")
+    (d / "sources.json").write_text(json.dumps([{"id": "b1", "kind": "board", "label": "Remotive", "value": "remotive"}]), "utf-8")
+    (d / "answers.json").write_text(json.dumps([{"q": "Notice period?", "a": "30 days"}]), "utf-8")
+    write_app("a1")
+    folder = output_dir() / "a1"
+    (folder / "coldmail.json").write_text(json.dumps({"mails": [{"id": "c1", "created": "2026-10-20", "to_name": "Ana",
+                                                                 "subject": "Hello", "body": "Hi Ana", "sent_at": ""}]}), "utf-8")
+    (folder / "interview.json").write_text(json.dumps({"generated_at": "2026-10-21", "engine": "claude:opus", "needs_coding": True,
+                                                       "rounds": [{"questions": [1, 2]}, {"questions": [3]}]}), "utf-8")
+    got = db.sync()
+    assert got["roles"] == 2 and got["memory_facts"] == 1 and got["cold_mails"] == 1 and got["app_documents"] == 1
+    assert rows("SELECT skill FROM skills WHERE confirmed = 1") == [("Okta",)]
+    assert rows("SELECT value FROM settings WHERE key = 'min_match'") == [("60",)]
+    assert rows("SELECT value FROM settings WHERE key = 'defaults.engine'") == [('"claude:opus"',)]
+    assert rows("SELECT role, salary FROM career_goal") == [("Engineering Manager", 60)]
+    assert rows("SELECT kind, value FROM sources") == [("board", "remotive")]
+    assert rows("SELECT rounds, questions FROM interviews") == [(2, 3)]
+    assert rows("SELECT key FROM profile_basics WHERE value LIKE '%example.com%' OR value LIKE '%555%'") == []   # contact details stay out
+
+
+def test_query_across_every_profile(monkeypatch, capsys):
+    import sys
+    sys.path.insert(0, "scripts")
+    import query
+    write_app("a1")
+    db.sync()
+    monkeypatch.setattr(sys, "argv", ["query.py", "--all", "SELECT profile, company FROM applications"])
+    assert query.main() == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "profile	company" and out[1].endswith("	Acme")
