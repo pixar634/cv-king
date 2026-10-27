@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from . import apply, areas, batch, discover, extract, letterfile, letters, onboarding, profiles, strategy, tailor, tracker
 from .config import STATIC, output_dir
 from .engines import ENGINES, EngineError
+from .jd import parse_jd
 from .layouts import LAYOUTS
 from .profile import experience_years_label, load_profile, profile_path, save_profile
 from .render import in_thread
@@ -793,6 +794,13 @@ def career_search(body: dict = Body(...)):
 @app.post("/api/extract")
 def extract_start(body: dict = Body(...)):
     return {"job": start_job("extract", lambda v, progress: extract.extract(v, progress), body.get("url", ""))}
+
+
+@app.post("/api/fit")
+def fit_preview(body: dict = Body(...)):
+    """A job's match before tailoring, in well under a second: no model call."""
+    profile = load_profile()
+    return tailor.fit(parse_jd(body.get("jd") or "")["text"], profile, _prefs(profile)["min_match"])
 
 
 @app.post("/api/clip")

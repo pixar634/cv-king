@@ -206,6 +206,8 @@ function setJob(job) {
   S.job = job; S.app = null; S.item = null;
   $("#side").classList.add("has-job");
   renderJobCard();
+  // The job against your profile before any writing: code only, back in well under a second.
+  if (job.description) api("/api/fit", { body: { jd: job.description } }).then((f) => { if (S.job === job) { job.fit = f; renderJobCard(); } }).catch(() => {});
   $("#insights").innerHTML = "";
   $("#emptyHero").innerHTML = "";
   $("#emptyState").innerHTML = "";
@@ -213,6 +215,17 @@ function setJob(job) {
 }
 
 // ================= job card =================
+function fitBlock(f) {
+  if (!f) return "";
+  if (!f.measured) return `<p class="type-meta">This posting names too few standard skills to score. Read it before tailoring.</p>`;
+  const list = (label, terms, cls) => terms.length ? `<div><span class="eyebrow">${label}</span><div class="chip-row">${terms.map((t) => `<span class="chip ${cls}"><span>${esc(t)}</span></span>`).join("")}</div></div>` : "";
+  return `<div class="job__fit">
+      <div class="job__foot"><span class="type-meta">Your CV <b class="num">${f.now}%</b> · can reach <b class="num">${f.reach}%</b>${f.minimum ? ` · your filter ${f.minimum}%` : ""}</span></div>
+      <div style="position:relative" title="${f.now}% with your CV as it is; ${f.reach}% is the most your profile can truthfully reach">
+        <div class="meter meter--segmented"><span class="meter__ceil" style="width:${f.reach}%"></span><span class="meter__fill" style="width:${f.now}%"></span></div></div>
+      ${f.below ? `<div class="notice">Your profile can reach ${f.reach}% of this job's keywords, below your ${f.minimum}% filter.</div>` : ""}
+      ${list("Tailoring adds", f.adds, "chip--ok")}${list("You don't have", f.gaps, "chip--warn")}</div>`;
+}
 function marketOptions(cur) {
   const auto = `<option value="auto" ${cur === "auto" ? "selected" : ""}>Detect from location</option>`;
   return auto + Object.entries(S.state.markets).map(([k, m]) => `<option value="${k}" ${k === cur ? "selected" : ""}>${esc(m.label)}</option>`).join("");
@@ -243,11 +256,11 @@ function renderJobCard() {
         ? `<div class="job__foot"><span class="type-meta">Your profile can now reach ${S.app.scores.ceiling}% for this job; this CV is at ${S.app.scores.after}%.</span><button class="btn btn--primary btn--sm" id="jRedo">Re-tailor</button></div>`
         : `<div class="job__foot"><span class="type-meta">Tailored from your profile only. Every number and skill was checked against it.</span><button class="btn btn--sm" id="jRedo" title="Rewrite this CV with your current profile">Re-tailor</button></div>`)
         + `<button class="btn btn--primary btn--block" id="jPrep">Prepare for the interview ${ICON.arrow}</button>`
-    : `<div class="job__controls">
+    : fitBlock(j.fit) + `<div class="job__controls">
         <label class="field"><span class="eyebrow">Market</span><select id="jMarket" class="control--sm">${marketOptions(market)}</select></label>
         <label class="field"><span class="eyebrow">Career track</span><select id="jTrack" class="control--sm"><option value="auto" ${D().track === "auto" ? "selected" : ""}>From the job title</option>${Object.entries(S.state.tracks).map(([k, t]) => `<option value="${k}" ${k === D().track ? "selected" : ""}>${esc(t.label)}</option>`).join("")}</select></label>
       </div>
-      <button class="btn btn--accent btn--lg btn--block" id="jGo" title="Ctrl+Enter">Tailor my CV ${ICON.arrow}</button>
+      <button class="btn btn--accent btn--lg btn--block" id="jGo" title="Ctrl+Enter">${j.fit?.below ? "Tailor anyway" : "Tailor my CV"} ${ICON.arrow}</button>
       <button class="btn btn--sm btn--ghost btn--block" id="jManual" title="Claude's usage used up? Copy the whole brief (rules, your CV, this job) and paste it into Gemini or any AI chat. You get sections to copy into your CV builder.">Copy prompt for another AI</button>`;
   $("#jobCard").innerHTML = `
     <article class="card plunk job">
@@ -265,7 +278,7 @@ function renderJobCard() {
         <div class="disclosure__body" style="padding-left:0"><div class="textbox textbox--scroll">${esc(j.description)}</div></div></details>` : ""}
     </article>`;
   const go = $("#jGo");
-  if (go) go.onclick = () => tailorJob();
+  if (go) go.onclick = () => tailorJob(j.fit?.below ? { force: true } : {});
   const manual = $("#jManual");
   if (manual) manual.onclick = async () => {
     manual.disabled = true;
