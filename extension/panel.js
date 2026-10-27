@@ -172,6 +172,13 @@ function finish(parts) {
   on("tailor", () => tailorHere(false));
   on("readOnly", () => tailorHere(true));
   on("tailorForce", () => tailorHere(false, "", true));
+  on("memSave", saveMemory);
+  on("memCancel", () => { S.mem = null; render(); });
+  // The panel redraws now and then (a page change, a finished CV): keep what you're typing across redraws.
+  const mt = document.getElementById("memText"), mr = document.getElementById("memRole");
+  if (mt) mt.oninput = () => { if (S.mem) S.mem.text = mt.value; };
+  if (mr) mr.onchange = () => { if (S.mem) S.mem.role = mr.value; };
+  document.querySelectorAll("[data-gap]").forEach((b) => (b.onclick = () => openMemory(b.dataset.gap)));
   on("tailorAgain", () => tailorHere(false, S.ctx.app?.id));
   on("fill", fillForm);
   on("fillHere", () => remember(S.tab.id, { formUrl: S.tab.url }).then(fillForm));
@@ -193,7 +200,48 @@ function fitHtml(f) {
     <div class="meter" title="Keyword match: ${f.now}% with your CV as it is, ${f.reach}% is the most your profile can truthfully reach"><span style="width:${f.now}%"></span><i style="left:${f.reach}%"></i></div>
     ${f.below ? `<div class="notice">Your profile can reach ${f.reach}% of this job's keywords, below your ${f.minimum}% filter. Worth a look before you spend a tailor on it.</div>` : ""}
     ${list("Tailoring adds (in your profile, not yet in your CV)", f.adds, "ok")}
-    ${list("You don't have (not in your profile)", f.gaps, "warn")}`;
+    ${f.gaps.length ? `<div class="fit__list"><span class="meta">You don't have (not in your profile). Have one after all? Click it.</span>
+      <div class="row">${f.gaps.map((t) => `<button class="chip warn chip--btn" data-gap="${esc(t)}" title="I have this: say where">${esc(t)}</button>`).join("")}</div></div>` : ""}
+    ${memoryForm()}`;
+}
+
+// Add to your memory from a skill this job says you don't have: where you used it, in your own words.
+function memoryForm() {
+  const m = S.mem;
+  if (!m || m.tabId !== S.tab?.id) return "";
+  return `<div class="memform"><span class="eyebrow">Add to your memory</span>
+    <select id="memRole" aria-label="Where you did it">${m.roles.map((r) => `<option value="${esc(r.id)}" ${r.id === m.role ? "selected" : ""}>${esc(r.label)}</option>`).join("")}</select>
+    <textarea id="memText" rows="3" aria-label="What you did">${esc(m.text)}</textarea>
+    <div class="row"><button class="btn btn--sm btn--primary" id="memSave" ${m.busy ? "disabled" : ""}>${m.busy ? esc(m.busy) : "Remember this"}</button>
+      <button class="btn btn--sm btn--ghost" id="memCancel">Cancel</button></div>
+    ${m.error ? `<div class="notice bad">${esc(m.error)}</div>` : ""}
+    <p class="meta" style="margin:0">It's tidied into facts that every score and CV may use. Keep to what you can talk about in an interview.</p></div>`;
+}
+
+async function openMemory(term) {
+  const { roles } = await api("/api/memory");
+  S.mem = { tabId: S.tab.id, roles, role: roles[0]?.id || "", text: `${term}: `, busy: "", error: "" };
+  render();
+  const t = document.getElementById("memText");
+  if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
+}
+
+async function saveMemory() {
+  const m = S.mem, tabId = S.tab.id;
+  const role = m.role;
+  if (m.text.trim().length < 10) { m.error = "Write a sentence or two about where and how you used it."; render(); return; }
+  m.busy = "Tidying your note"; m.error = "";
+  render();
+  try {
+    const { job } = await api("/api/memory", { body: { role, text: m.text.trim() } });
+    await pollJob(job, () => {});
+    S.mem = null;
+    await remember(tabId, { fit: null });   // score the job again with what you just added
+    await doRefresh();
+  } catch (e) {
+    m.busy = ""; m.error = e.message;
+    render();
+  }
 }
 
 function postingCard(mem, here) {
