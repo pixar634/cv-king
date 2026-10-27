@@ -10,7 +10,8 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import apply, areas, batch, discover, extract, letterfile, letters, onboarding, profiles, strategy, tailor, tracker
+from . import (apply, areas, batch, discover, extract, letterfile, letters, memory, onboarding, profiles, strategy, tailor,
+               tracker)
 from .config import STATIC, output_dir
 from .engines import ENGINES, EngineError
 from .jd import parse_jd
@@ -794,6 +795,39 @@ def career_search(body: dict = Body(...)):
 @app.post("/api/extract")
 def extract_start(body: dict = Body(...)):
     return {"job": start_job("extract", lambda v, progress: extract.extract(v, progress), body.get("url", ""))}
+
+
+# ---------- memory: what the CV leaves out ----------
+
+@app.get("/api/memory")
+def memory_list():
+    profile = load_profile()
+    return {"entries": memory.entries(profile), "roles": memory.roles(profile)}
+
+
+@app.post("/api/memory")
+def memory_add(body: dict = Body(...)):
+    """A note about your work -> tidy facts, kept against a role. Tidying uses the lighter Claude model."""
+    engine = _prefs(load_profile())["defaults"].get("engine", "claude:opus")
+    engine = "claude:sonnet" if engine.startswith("claude:") else engine
+    text, role = (body.get("text") or "").strip(), body.get("role") or ""
+    if len(text) < 10:
+        raise HTTPException(400, "Write a sentence or two about what you did.")
+    return {"job": start_job("memory", lambda progress: memory.add(role, text, engine, progress))}
+
+
+@app.post("/api/memory/{entry_id}")
+def memory_edit(entry_id: str, body: dict = Body(...)):
+    try:
+        return memory.edit(entry_id, body.get("facts") or [])
+    except KeyError:
+        raise HTTPException(404)
+
+
+@app.delete("/api/memory/{entry_id}")
+def memory_remove(entry_id: str):
+    memory.remove(entry_id)
+    return {"ok": True}
 
 
 @app.post("/api/fit")
