@@ -82,7 +82,7 @@ def openness(text: str, title: str = "", location: str = "", remote=None, market
 
 
 def check(jd_text: str, title: str = "", location: str = "", market: str = "", remote=None,
-          profile: dict | None = None, prefs: dict | None = None, track: str = "") -> dict:
+          profile: dict | None = None, prefs: dict | None = None, track: str = "", company: str = "") -> dict:
     """{"verdict": "ok" | "stretch" | "stop", "reasons": [...]}: the same verdict everywhere a job can be tailored."""
     from .profile import load_profile
     profile = profile or load_profile()
@@ -100,6 +100,12 @@ def check(jd_text: str, title: str = "", location: str = "", market: str = "", r
     o = openness(text, title, location, remote, market)
     if o["state"] == "closed":
         stops.append(o["why"])
+    elif o["state"] != "open" or o["why"] != "at home":
+        from .sponsors import check as sponsor_check
+        hit = sponsor_check(company, location)
+        if hit and hit["register"] == "uk" and not hit["listed"] and not SPONSOR.search(text):
+            stretches.append("Not on the UK register of licensed sponsors, so it can't sponsor a Skilled Worker visa "
+                             "unless it gets a licence")
 
     tid = track or strategy.track_for(title)
     t = strategy.tracks().get(tid) or {}
