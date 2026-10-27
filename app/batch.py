@@ -89,6 +89,9 @@ def _work(item_id: str, req: dict, source: dict):
             report = tailor.run(req, progress)
             _update(item_id, status="done", stage="Tailored", app_id=report["id"], company=report["company"],
                     role=report["role"], score=report["scores"]["after"], ceiling=report["scores"]["ceiling"])
+        except tailor.AlreadyApplied as e:   # the same job again: say what happened to the first one
+            _update(item_id, status="error", stage=str(e), below_min=not e.sent, dup=e.row.get("id"),
+                    company=e.row.get("company", ""), role=e.row.get("role", ""))
         except tailor.BelowMatch as e:   # stopped before writing; the card offers "Tailor anyway"
             _update(item_id, status="error", stage=str(e), below_min=True, ceiling=e.reach)
         except NotEligible as e:   # fails a hard screen: stopped before writing, "Tailor anyway" goes through

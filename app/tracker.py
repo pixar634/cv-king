@@ -2,6 +2,7 @@
 import datetime as dt
 import io
 import json
+import re
 import threading
 import urllib.request
 from pathlib import Path
@@ -43,6 +44,60 @@ def _save(rows: list[dict]) -> None:
     tmp = f.with_suffix(".tmp")
     tmp.write_text(json.dumps(rows, indent=2, ensure_ascii=False), "utf-8")
     tmp.replace(f)
+
+
+# Words that don't tell two employers or two roles apart: "Okta, Inc." is Okta, "Sr." is Senior.
+COMPANY_NOISE = re.compile(r"\b(inc|incorporated|ltd|limited|llc|plc|gmbh|ag|bv|b v|pvt|private|corp|corporation|co|"
+                           r"technologies|technology|labs|india|the)\b")
+
+
+def _norm(s: str) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", (s or "").lower().replace("sr.", "senior ").replace("sr ", "senior ")))
+
+
+def _company(s: str) -> str:
+    return " ".join(COMPANY_NOISE.sub(" ", _norm(s)).split())
+
+
+def _link(url: str) -> str:
+    """A job link without its tracking: "?gh_jid=123" names the job, "?utm_source=x" doesn't."""
+    base, _, query = (url or "").split("#")[0].partition("?")
+    keep = sorted(q for q in query.split("&") if q and not re.match(r"(utm_\w+|ref|refid|source|src|gh_src|trk|"
+                                                                 r"lever-source[^=]*|origin)=", q, re.I))
+    return re.sub(r"^https?://(www\.)?", "", base.rstrip("/").lower()) + ("?" + "&".join(keep) if keep else "")
+
+
+def find_same(company: str, role: str, job_url: str = "", job_id: str = "", rows: list[dict] | None = None) -> dict | None:
+    """The application already made for this job, if any: the same link, the same posting id at the same employer,
+    or the same employer and title. One that went out wins over a CV that was only written."""
+    hits = []
+    for r in load() if rows is None else rows:
+        same_company = _company(r.get("company")) == _company(company) and bool(_company(company))
+        if (job_url and _link(r.get("job_url")) == _link(job_url)) or \
+                (job_id and str(r.get("job_id") or "") == str(job_id) and same_company) or \
+                (same_company and _norm(role) and _norm(r.get("role")) == _norm(role)):
+            hits.append(r)
+    hits.sort(key=lambda r: (r.get("status") != "Generated", r.get("created", "")), reverse=True)
+    return hits[0] if hits else None
+
+
+def went_out(row: dict) -> bool:
+    return row.get("status") not in (None, "", "Generated") or bool(row.get("applied_on"))
+
+
+def story(row: dict) -> str:
+    """'Applied 12 Oct, Rejected 24 Oct': what happened to an application, from its status history."""
+    day = lambda at: dt.date.fromisoformat(at[:10]).strftime("%d %b").lstrip("0") if at else ""
+    parts = [f"Written {day(row.get('created'))}"]
+    if row.get("applied_on"):
+        parts.append(f"Applied {day(row['applied_on'])}")
+    try:
+        last = next((e for e in reversed(db.history(row["id"])) if e["to_status"] == row.get("status")), None)
+    except Exception:  # the history is a nicety; the tracker row is what counts
+        last = None
+    if row.get("status") not in (None, "Generated", "Applied"):
+        parts.append(f"{row['status']} {day(last['at']) if last else ''}".strip())
+    return ", ".join(parts)
 
 
 def domain_from_url(url: str) -> str:
