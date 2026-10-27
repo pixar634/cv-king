@@ -2408,6 +2408,23 @@ async function generateCareer() {
 // ================= settings drawer =================
 function openDrawer() { FX.show($("#scrim"), "scrim"); FX.show($("#drawer"), "drawer"); fillDrawer(); fillStrategy(); }
 
+async function fillBoards() {
+  const boards = await api("/api/boards");
+  // These boards are remote jobs: with Remote off in the regions, every one of them would be hidden.
+  const remoteOff = !(S.prefs.regions || []).includes("remote");
+  $("#boardList").innerHTML = boards.map((b) => `<label class="check"><input type="checkbox" data-board="${esc(b.id)}" ${b.on ? "checked" : ""}> ${esc(b.label)}</label>`).join("")
+    + (remoteOff && boards.some((b) => b.on) ? `<div class="notice">Remote is off in "Discover only shows", so remote jobs from these boards stay hidden.
+        <div style="margin-top:8px"><button class="btn btn--sm" id="remoteOn">Show remote jobs</button></div></div>` : "");
+  const ro = $("#remoteOn");
+  if (ro) ro.onclick = async () => { await savePrefs({ regions: [...new Set([...(S.prefs.regions || []), "remote"])] }); toast("Discover shows remote jobs now."); fillDrawer(); };
+  $("#boardList").onchange = async () => {
+    const on = $$("#boardList [data-board]").filter((x) => x.checked).map((x) => x.dataset.board);
+    await api("/api/boards", { body: { on } });
+    toast(on.length ? "Saved. They're searched on the next scan." : "Saved.");
+    fillDrawer();
+  };
+}
+
 // ================= memory: what your CV leaves out =================
 async function fillMemory() {
   const { entries, roles } = await api("/api/memory");
@@ -2494,6 +2511,11 @@ function wireDrawer() {
   $("#addQuery").onclick = () => addSource("websearch", $("#srcQuery"));
   $("#savePeople").onclick = savePeople;
   $("#saveOffices").onclick = async () => { await savePrefs({ offices: $("#offices").value }); toast("Saved. Discover shows those areas now."); };
+  $("#savePlaces").onclick = async () => {
+    const places = $("#places").value.split("\n").map((s) => s.trim()).filter(Boolean);
+    await savePrefs({ places });
+    toast(places.length ? `Saved. The next JobSpy scan searches ${places.join(", ")} too.` : "Saved.");
+  };
   $("#excludeBtn").onclick = async () => {
     const v = $("#excludeAdd").value.trim(); if (!v) return;
     await savePrefs({ exclude_skills: [...new Set([...(S.prefs.exclude_skills || []), v])] });
@@ -2508,6 +2530,8 @@ async function fillDrawer() {
   $("#dSenior").checked = !!S.prefs.include_senior;
   $("#dMaxYears").value = String(S.prefs.max_years_asked || 11);
   $("#offices").value = S.prefs.offices || "";
+  $("#places").value = (S.prefs.places || []).join("\n");
+  fillBoards();
   $("#dAvail").value = S.state.profile.basics.availability || "";
   const on = new Set(S.prefs.tracks || []);
   $("#rankTracks").innerHTML = Object.entries(S.state.tracks).map(([k, t]) => `<button data-v="${k}" class="chip ${on.has(k) ? "on" : ""}">${esc(t.label)}</button>`).join("");
