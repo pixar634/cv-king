@@ -206,7 +206,8 @@ function fitHtml(f) {
     ${f.warnings.map((w) => `<div class="meta">“${esc(w)}”</div>`).join("")}</div>` : "";
   if (!f.measured) return gateHtml(f.gate, f.already) + warn + `<p class="meta" style="margin:0">This posting names too few standard skills to score. Read it yourself before tailoring.</p>`;
   const list = (label, terms, cls) => terms.length ? `<div class="fit__list"><span class="meta">${label}</span><div class="row">${terms.map((t) => `<span class="chip ${cls}">${esc(t)}</span>`).join("")}</div></div>` : "";
-  return `${gateHtml(f.gate, f.already)}${warn}<div class="score"><div><span class="meta">Your CV</span><b>${f.now}%</b></div><div class="now"><span class="meta">Can reach</span><b>${f.reach}%</b></div><div><span class="meta">Your filter</span><b>${f.minimum ? `${f.minimum}%` : "Any"}</b></div></div>
+  const label = f.label ? `<div class="row"><span class="chip ${f.label === "Strong" ? "ok" : f.label === "Long shot" ? "warn" : ""}">${esc(f.label)}</span><span class="meta">${esc((f.label_why || []).join(", "))}</span></div>` : "";
+  return `${gateHtml(f.gate, f.already)}${label}${warn}<div class="score"><div><span class="meta">Your CV</span><b>${f.now}%</b></div><div class="now"><span class="meta">Can reach</span><b>${f.reach}%</b></div><div><span class="meta">Your filter</span><b>${f.minimum ? `${f.minimum}%` : "Any"}</b></div></div>
     <div class="meter" title="Keyword match: ${f.now}% with your CV as it is, ${f.reach}% is the most your profile can truthfully reach"><span style="width:${f.now}%"></span><i style="left:${f.reach}%"></i></div>
     ${f.below ? `<div class="notice">Your profile can reach ${f.reach}% of this job's keywords, below your ${f.minimum}% filter. Worth a look before you spend a tailor on it.</div>` : ""}
     ${list("Tailoring adds (in your profile, not yet in your CV)", f.adds, "ok")}
