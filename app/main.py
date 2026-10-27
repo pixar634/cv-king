@@ -27,6 +27,40 @@ SYNCED: set[str] = set()   # profiles whose local database was synced since the 
 ONBOARDING: dict[str, str] = {}   # profile id -> the setup job reading its CV
 
 
+LOCAL_HOSTS = {"127.0.0.1", "localhost"}
+
+
+def _origin_ok(origin: str) -> bool:
+    """The app's own pages and the browser extension; nothing else may change anything here."""
+    if origin.startswith("chrome-extension://"):
+        return True
+    from urllib.parse import urlparse
+    try:
+        p = urlparse(origin)
+    except ValueError:
+        return False
+    return p.scheme == "http" and (p.hostname or "") in LOCAL_HOSTS
+
+
+@app.middleware("http")
+async def local_only(request: Request, call_next):
+    """Any web page you visit can send requests to 127.0.0.1. A Host check stops DNS rebinding (a site's own name
+    pointed at this machine, which could then read your profile); an Origin and Content-Type check on writes stops a
+    page from changing your profile, form answers or CVs. A cross-site POST with a JSON body needs a CORS preflight,
+    which this app never grants."""
+    host = (request.headers.get("host") or "").rsplit(":", 1)[0].strip("[]").lower()
+    if host not in LOCAL_HOSTS:
+        return JSONResponse({"detail": "JobMagnet answers only at 127.0.0.1 or localhost."}, status_code=403)
+    if request.method == "POST":
+        origin = request.headers.get("origin")
+        if origin is not None and not _origin_ok(origin):
+            return JSONResponse({"detail": "Requests from other sites are refused."}, status_code=403)
+        ctype = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
+        if ctype != "application/json":
+            return JSONResponse({"detail": "Send JSON (Content-Type: application/json)."}, status_code=415)
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def pick_profile(request: Request, call_next):
     """Whose data this request is about: the profile in the cookie (the last one used when there is none)."""
