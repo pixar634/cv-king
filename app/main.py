@@ -864,8 +864,11 @@ def fit_preview(body: dict = Body(...)):
     out = tailor.fit(text, profile, prefs["min_match"])
     market = body.get("market") if body.get("market") not in (None, "", "auto") else \
         extract.market_for(body.get("location") or "", body.get("remote"))
+    same = tracker.find_same(body.get("company") or "", body.get("role") or "", body.get("url") or "")
     return out | {"gate": gate.check(text, body.get("role") or "", body.get("location") or "", market, body.get("remote"),
-                                     profile, prefs)}
+                                     profile, prefs),
+                  "already": same and {"id": same["id"], "status": same.get("status"), "story": tracker.story(same),
+                                       "sent": tracker.went_out(same)}}
 
 
 @app.post("/api/clip")

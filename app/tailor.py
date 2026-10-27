@@ -527,6 +527,17 @@ def _print(folder: Path, profile: dict, plan: dict, options: dict, company: str,
 
 
 
+class AlreadyApplied(EngineError):
+    """A CV was already written, or an application already sent, for this job: stopped before any writing."""
+
+    def __init__(self, row: dict):
+        from .tracker import story, went_out
+        self.row, self.sent = row, went_out(row)
+        super().__init__(f"You already have this one: {row.get('company', '')}, {row.get('role', '')} ({story(row)}). "
+                         + ("Nothing was written. To write it again, open it in Pipeline and use Replace." if self.sent else
+                            "Nothing was written. Open it in Pipeline, or Tailor anyway for a second CV."))
+
+
 class BelowMatch(EngineError):
     """The job is below the match filter: stopped before any writing, the user can tailor it anyway."""
 
@@ -577,6 +588,12 @@ def run(req: dict, progress=lambda m: None) -> dict:
         from .extract import market_for
         market_id = market_for(req.get("location") or jd.get("location") or jd["text"][:800])
         req = req | {"market": market_id}
+    if not req.get("replace_id"):
+        from .tracker import find_same
+        same = find_same(company, role, req.get("job_url") or "", req.get("job_id") or "")
+        # An application that went out is never written again from here; only Replace re-writes it.
+        if same and (not req.get("force") or same.get("status") != "Generated" or same.get("applied_on")):
+            raise AlreadyApplied(same)
     if not req.get("force"):
         from .gate import NotEligible, check
         g = check(jd["text"], role, req.get("location") or jd.get("location") or "", market_id, req.get("remote"), profile,
