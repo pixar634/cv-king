@@ -224,7 +224,8 @@ function fitBlock(f) {
       <div style="position:relative" title="${f.now}% with your CV as it is; ${f.reach}% is the most your profile can truthfully reach">
         <div class="meter meter--segmented"><span class="meter__ceil" style="width:${f.reach}%"></span><span class="meter__fill" style="width:${f.now}%"></span></div></div>
       ${f.below ? `<div class="notice">Your profile can reach ${f.reach}% of this job's keywords, below your ${f.minimum}% filter.</div>` : ""}
-      ${list("Tailoring adds", f.adds, "chip--ok")}${list("You don't have", f.gaps, "chip--warn")}</div>`;
+      ${list("Tailoring adds", f.adds, "chip--ok")}
+      ${f.gaps.length ? `<div><span class="eyebrow">You don't have</span> <span class="type-meta">Have one after all? Click it to add it to your memory.</span><div class="chip-row">${f.gaps.map((t) => `<button class="chip chip--warn" data-gap="${esc(t)}" title="I have this: say where"><span>${esc(t)}</span></button>`).join("")}</div></div>` : ""}</div>`;
 }
 function marketOptions(cur) {
   const auto = `<option value="auto" ${cur === "auto" ? "selected" : ""}>Detect from location</option>`;
@@ -277,6 +278,7 @@ function renderJobCard() {
       ${j.description ? `<details class="disclosure"><summary>Job description<span class="disclosure__aside num">${words} words${j.method === "pasted" ? ", pasted" : ""}</span></summary>
         <div class="disclosure__body" style="padding-left:0"><div class="textbox textbox--scroll">${esc(j.description)}</div></div></details>` : ""}
     </article>`;
+  $$("[data-gap]").forEach((b) => (b.onclick = () => openMemory(b.dataset.gap)));
   const go = $("#jGo");
   if (go) go.onclick = () => tailorJob(j.fit?.below ? { force: true } : {});
   const manual = $("#jManual");
@@ -2405,11 +2407,71 @@ async function generateCareer() {
 
 // ================= settings drawer =================
 function openDrawer() { FX.show($("#scrim"), "scrim"); FX.show($("#drawer"), "drawer"); fillDrawer(); fillStrategy(); }
+
+// ================= memory: what your CV leaves out =================
+async function fillMemory() {
+  const { entries, roles } = await api("/api/memory");
+  const sel = $("#memRole"), keep = sel.value;
+  sel.innerHTML = roles.map((r) => `<option value="${esc(r.id)}">${esc(r.label)}</option>`).join("");
+  if (keep && roles.some((r) => r.id === keep)) sel.value = keep;
+  const label = Object.fromEntries(roles.map((r) => [r.id, r.label]));
+  $("#memList").innerHTML = entries.slice().reverse().map((m) => `<div class="mem" data-mem-id="${esc(m.id)}">
+      <div class="mem__head"><span class="type-meta">${esc(label[m.role] || "A role no longer in your profile")}</span>
+        <button class="btn btn--sm btn--ghost" data-mem-edit>Edit</button>
+        <button class="icon-btn icon-btn--sm" data-mem-del aria-label="Forget this" title="Forget this">${ICON.x}</button></div>
+      <ul class="mem__facts">${m.facts.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
+      ${m.skills.length ? `<div class="chip-row">${m.skills.map((s) => `<span class="chip chip--muted"><span>${esc(s)}</span></span>`).join("")}</div>` : ""}
+    </div>`).join("") || `<p class="type-meta">Nothing yet.</p>`;
+  $("#memList").onclick = async (e) => {
+    const box = e.target.closest("[data-mem-id]"); if (!box) return;
+    const id = box.dataset.memId, m = entries.find((x) => x.id === id);
+    if (e.target.closest("[data-mem-del]")) { await api(`/api/memory/${id}`, { method: "DELETE" }); toast("Forgotten"); memoryChanged(); return; }
+    if (e.target.closest("[data-mem-save]")) {
+      await api(`/api/memory/${id}`, { body: { facts: box.querySelector("textarea").value.split("\n") } });
+      toast("Saved"); memoryChanged(); return;
+    }
+    if (e.target.closest("[data-mem-edit]")) {
+      box.querySelector(".mem__facts").outerHTML = `<textarea rows="${Math.max(3, m.facts.length + 1)}" aria-label="Facts, one per line">${esc(m.facts.join("\n"))}</textarea>
+        <div><button class="btn btn--sm" data-mem-save>Save facts</button></div>`;
+      box.querySelector("[data-mem-edit]").remove();
+    }
+  };
+}
+
+// Memory feeds every score: re-read the list and re-score the open job.
+function memoryChanged() {
+  fillMemory();
+  const j = S.job;
+  if (j && j.description && !S.app) api("/api/fit", { body: { jd: j.description } }).then((f) => { if (S.job === j) { j.fit = f; renderJobCard(); } }).catch(() => {});
+}
+
+async function addMemory() {
+  const text = $("#memText").value.trim();
+  if (text.length < 10) { toast("Write a sentence or two about what you did."); return; }
+  const b = $("#memAdd"); b.disabled = true;
+  try {
+    const { job } = await api("/api/memory", { body: { role: $("#memRole").value, text } });
+    const e = await pollJob(job, (l) => ($("#memStatus").textContent = l.msg));
+    $("#memText").value = "";
+    $("#memStatus").textContent = e.dropped.length ? `Kept ${e.facts.length}; left out ${e.dropped.length} that added things your note didn't say.` : `Kept ${e.facts.length} fact${e.facts.length === 1 ? "" : "s"}.`;
+    memoryChanged();
+  } catch (err) { $("#memStatus").textContent = ""; toast(err.message, 5000); }
+  finally { b.disabled = false; }
+}
+
+// From a "You don't have" chip: open memory with that skill written in, ready to say where you used it.
+function openMemory(term) {
+  openDrawer();
+  const t = $("#memText");
+  t.value = `${term}: `;
+  setTimeout(() => { $("#memoryBox").scrollIntoView({ block: "start" }); t.focus(); t.setSelectionRange(t.value.length, t.value.length); }, 250);
+}
 function closeDrawer() { FX.hide($("#drawer"), "drawer"); FX.hide($("#scrim"), "scrim"); }
 
 function wireDrawer() {
   $("#openSettings").onclick = openDrawer;
   $("#closeSettings").onclick = closeDrawer;
+  $("#memAdd").onclick = addMemory;
   $("#scrim").onclick = closeDrawer;
   const st = S.state;
   $("#dMarket").innerHTML = `<option value="auto">Detect from the job's location</option>` + Object.entries(st.markets).map(([k, m]) => `<option value="${k}">${esc(m.label)}</option>`).join("");
@@ -2461,6 +2523,7 @@ async function fillDrawer() {
     await savePrefs({ exclude_skills: (S.prefs.exclude_skills || []).filter((x) => x !== b.dataset.s) });
     fillDrawer();
   };
+  fillMemory();
   const conf = S.state.profile.confirmed_skills || [];
   $("#confirmed").innerHTML = conf.map((s) => `<button class="chip chip--x" data-s="${esc(s)}" title="Remove from your profile">${esc(s)}</button>`).join("") || `<span class="type-meta">None yet</span>`;
   $("#confirmed").onclick = async (e) => {

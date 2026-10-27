@@ -46,6 +46,7 @@ the command-line tools you sign in to (or an API key you provide).
 | Screen | What you get |
 |---|---|
 | **Setup** | Drop in your CV. It becomes your master profile, checked against the CV's own text, plus a search strategy: your level, the roles to aim for, the employers and searches worth watching. |
+| **Memory** | What your CV leaves out, in your own words against the role where you did it. It's tidied into short facts that every score and CV can use. Click a skill a job says you don't have to add where you used it. |
 | **Tailor** | Paste a job link or description. Get a tailored CV as a PDF in 1 to 3 minutes, with the keyword match before, after and at the ceiling your profile can truthfully reach. |
 | **Discover** | Fresh jobs from employers' job boards and web searches, ranked against your profile. Mark one **Not for me** and it learns what to push down. |
 | **Pipeline** | Every application on one board, from Tailoring to Applied to Offer. Export to Excel. |

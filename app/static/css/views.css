@@ -266,6 +266,12 @@
 .salary-form { display: grid; grid-template-columns: 72px minmax(0, 1fr) 78px auto; gap: 6px; }
 .salary-form > * { min-width: 0; }
 .log-form { display: grid; grid-template-columns: 1fr 150px; gap: var(--s-2); }
+.mem__go { display: flex; align-items: center; gap: var(--s-3); }
+.mem { display: grid; gap: var(--s-2); padding: var(--s-3) 0; }
+.mem__head { display: flex; align-items: center; gap: var(--s-2); }
+.mem__head .type-meta { flex: 1; min-width: 0; }
+.mem__facts { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.mem textarea { width: 100%; }
 .log-form textarea, .log-form .check { grid-column: 1 / -1; }
 .log-form .btn { grid-column: 1 / -1; justify-self: start; }
 

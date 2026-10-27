@@ -18,7 +18,7 @@ from .keywords import SOFT, covered, jd_keywords, jd_spelling, score, taxonomy, 
 from .layouts import LAYOUTS
 from .letters import first_letter_rules, phrase_flags
 from .profile import (all_skills, brief_view, bullet_index, experience_years_label, fmt_month, load_profile,
-                      original_cv_path, profile_text)
+                      memory_notes, original_cv_path, profile_text)
 from .render import build_doc, fit_and_print, print_html, set_metadata
 
 BANNED_WORDS = ["spearheaded", "orchestrated", "leveraged", "leveraging", "pioneered", "synergy",
@@ -226,6 +226,7 @@ def profile_as_text(profile: dict) -> str:
         if r.get("stack"):
             out.append("Tools and methods: " + ", ".join(r["stack"]))
         out += [f"- {x['text']}" for x in r["bullets"]]
+        out += [f"- (from my notes) {x['text']}" for x in memory_notes(profile, r["id"])]
         out.append("")
     if profile.get("projects"):
         out.append("PROJECTS")
@@ -240,6 +241,8 @@ def profile_as_text(profile: dict) -> str:
     out += ["", "SKILLS"] + [f"{k}: {', '.join(v)}" for k, v in profile["skills"].items()]
     if profile.get("confirmed_skills"):
         out.append("Also confirmed: " + ", ".join(profile["confirmed_skills"]))
+    if general := memory_notes(profile, ""):
+        out += ["", "MORE ABOUT MY WORK"] + [f"- {x['text']}" for x in general]
     if profile.get("languages"):
         out += ["", "LANGUAGES", ", ".join(l["name"] + (f" ({l['level']})" if l.get("level") else "") for l in profile["languages"])]
     return "\n".join(out)
@@ -648,7 +651,8 @@ def changes(app_id: str) -> dict:
     profile = load_profile()
     raw = json.loads((folder / "model_reply.json").read_text("utf-8"))
     doc = json.loads((folder / "doc.json").read_text("utf-8"))
-    original = {b["id"]: b["text"] for r in profile["experience"] for b in r["bullets"]}
+    # a bullet drawn from your memory traces back to that note
+    original = {b["id"]: b["text"] for r in profile["experience"] for b in r["bullets"] + memory_notes(profile, r["id"])}
     src_of = {}
     for r in raw.get("experience") or []:
         for b in r.get("bullets") or []:

@@ -68,9 +68,16 @@ def all_skills(profile: dict) -> list[str]:
     return items + list(profile.get("confirmed_skills", []))
 
 
+def memory_notes(profile: dict, role: str) -> list[dict]:
+    """Facts from your memory (see memory.py) for one role ("" = general), shaped like bullets: a tailored bullet
+    may cite one as its source the way it cites a profile bullet."""
+    return [{"id": f"mem-{m['id']}-{i}", "text": f} for m in profile.get("memory", []) if m.get("role", "") == role
+            for i, f in enumerate(m.get("facts", []))]
+
+
 def bullet_index(profile: dict) -> dict[str, tuple[str, str]]:
-    """bullet id -> (role id, text)"""
-    return {b["id"]: (r["id"], b["text"]) for r in profile["experience"] for b in r["bullets"]}
+    """bullet id -> (role id, text); memory facts for a role count as that role's sources too"""
+    return {b["id"]: (r["id"], b["text"]) for r in profile["experience"] for b in r["bullets"] + memory_notes(profile, r["id"])}
 
 
 def profile_text(profile: dict) -> str:
@@ -92,6 +99,8 @@ def profile_text(profile: dict) -> str:
         parts += [c["name"], c.get("issuer", ""), c.get("detail", "")]
     parts += [l["name"] + " " + l.get("level", "") for l in profile.get("languages", [])]
     parts += all_skills(profile) + list(profile.get("skills", {}))   # group labels are the candidate's own words too
+    for m in profile.get("memory", []):   # your own notes about your work, and the facts drawn from them
+        parts += [m.get("text", ""), *m.get("facts", [])]
     return "\n".join(p for p in parts if p)
 
 
@@ -113,8 +122,12 @@ def brief_view(profile: dict, track: str = "") -> dict:
                                 "internship", "optional") if k in r}
             | {"dates": f"{fmt_month(r['start'])} - {fmt_month(r.get('end'))}",
                "bullets": r["bullets"]}
+            | ({"notes (the candidate's own words about this role: true, and a valid src for its bullets)": notes}
+               if (notes := memory_notes(profile, r["id"])) else {})
             for r in profile["experience"]
         ],
+        "notes (the candidate's own words, not tied to one role: true, for the summary and skills)":
+            [n["text"] for n in memory_notes(profile, "")],
         "education": profile["education"],
         "certifications": profile.get("certifications", []),
         "languages": profile.get("languages", []),

@@ -254,6 +254,14 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2"/></svg></button></div>
   <div class="drawer__body">
     <section class="drawer__section" id="stratBox"></section>
+    <section class="drawer__section" id="memoryBox">
+      <h3 class="eyebrow">Your memory</h3>
+      <p class="type-meta">What your CV leaves out. Write it in your own words against the role where you did it. It's tidied into short facts that every score and every CV may use, so keep to what you can talk about in an interview.</p>
+      <label class="field"><span class="type-meta">Where you did it</span><select id="memRole"></select></label>
+      <textarea id="memText" rows="4" placeholder="e.g. Built the SSO login with Okta and role-based access for the client portal, used by 3 business units."></textarea>
+      <div class="mem__go"><button class="btn btn--sm" id="memAdd">Remember this</button><span class="type-meta" id="memStatus"></span></div>
+      <div class="list" id="memList"></div>
+    </section>
     <section class="drawer__section">
       <h3 class="eyebrow">Every new CV</h3>
       <label class="field"><span class="type-meta">Market</span><select id="dMarket"></select></label>
