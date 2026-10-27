@@ -454,7 +454,7 @@ async function fillNeed(fid) {
   const [frame, id] = split(fid);
   const [r] = await inPage("fill", { answers: { [id]: n.kind === "checkgroup" ? [v] : v } }, { frame });
   if (!r || !r.done.length) return;
-  await api("/api/answers", { body: { q: n.label, a: v } }).catch(() => {});
+  await api("/api/answers", { body: { q: n.label, a: v, app: S.ctx.app?.id } }).catch(() => {});
   await remember(S.tab.id, { fill: { ...f, filled: f.filled + 1, needs: f.needs.filter((x) => x.id !== fid) } });
   render();
 }
@@ -475,7 +475,7 @@ async function submitForm() {
     return render();
   }
   S.warnedEmpty = false;
-  for (const n of f.needs) if (!blank(vals[n.id]) && n.kind !== "checkbox") await api("/api/answers", { body: { q: n.label, a: vals[n.id] } }).catch(() => {});
+  for (const n of f.needs) if (!blank(vals[n.id]) && n.kind !== "checkbox") await api("/api/answers", { body: { q: n.label, a: vals[n.id], app: app?.id } }).catch(() => {});
   const before = S.ctx.probe?.fields || 0;
   const [r] = await inPage("submit", null, { frame: f.submitFrame, tabId });
   if (!r?.clicked) return stuck("I couldn't find the button. Press it on the page, then mark it applied here.");

@@ -77,7 +77,7 @@ def test_saved_answers_fill_without_asking(app_id, engine):
 def test_saved_answer_replaces_the_old_one(app_id):
     apply.remember("Notice period", "60 days")
     apply.remember("notice period?", "30 days")
-    assert apply.saved() == [{"q": "notice period?", "a": "30 days"}]
+    assert apply.saved() == [{"q": "notice period?", "a": "30 days", "market": "india"}]
     assert apply.forget("Notice Period") == []
 
 
@@ -101,3 +101,61 @@ def test_clip_reads_the_page_it_was_given(monkeypatch):
                              "jsonld": [ld], "links": [], "frames": [], "html": ""})
     assert (got["role"], got["company"], got["method"]) == ("Lead Engineer", "Acme", "schema.org JobPosting")
     assert got["url"] == "https://careers.acme.example/jobs/12345"
+
+
+def _report(app_id, **kw):
+    f = output_dir() / app_id / "report.json"
+    f.write_text(json.dumps(json.loads(f.read_text("utf-8")) | kw), "utf-8")
+
+
+SPONSOR = {"id": "0:s", "kind": "radio", "label": "Will you now or in the future require Visa Sponsorship?",
+           "options": ["Yes, I will require sponsorship now or in the future", "No, I don't require sponsorship"]}
+
+
+def test_sponsorship_follows_the_jobs_market_not_an_old_answer(app_id, engine):
+    e = engine({})
+    apply.remember(SPONSOR["label"], "Yes, I will require sponsorship now or in the future")   # saved on a Berlin form
+    for market, want in (("india", "No, I don't require sponsorship"), ("remote", "No, I don't require sponsorship"),
+                         ("eu", "Yes, I will require sponsorship now or in the future")):
+        _report(app_id, market=market)
+        assert apply.answer(app_id, [SPONSOR])["answers"] == {"0:s": want}
+    assert not e.briefs
+
+
+def test_pay_answers_stay_in_their_market_and_currency(app_id, engine):
+    e = engine({"answers": {}, "why": {}})
+    apply.remember("Expected salary", "50 LPA", market="india")
+    pay = [{"id": "0:p", "kind": "text", "label": "Expected salary", "required": True}]
+    _report(app_id, market="india")
+    assert apply.answer(app_id, pay)["answers"] == {"0:p": "50 LPA"}
+    _report(app_id, market="remote")
+    got = apply.answer(app_id, pay)
+    assert got["answers"] == {} and [n["id"] for n in got["needs"]] == ["0:p"]
+    assert "50 LPA" not in e.briefs[-1]   # the model never sees another market's figure
+    _report(app_id, market="india")
+    usd = [{"id": "0:u", "kind": "text", "label": "Expected salary (USD)", "required": True}]
+    apply.remember("Expected salary (USD)", "₹50 LPA", market="india")
+    assert apply.answer(app_id, usd)["answers"] == {}
+
+
+def test_saved_pay_answer_is_kept_per_market(app_id):
+    apply.remember("Expected salary", "50 LPA", market="india")
+    apply.remember("Expected salary", "$95,000", market="remote")
+    apply.remember("Pronouns", "they/them", market="remote")
+    assert {(r.get("market"), r["a"]) for r in apply.saved()} == {("india", "50 LPA"), ("remote", "$95,000"),
+                                                                   (None, "they/them")}
+    apply.forget("Expected salary", market="remote")
+    assert [r["a"] for r in apply.saved()] == ["50 LPA", "they/them"]
+
+
+def test_notice_and_title_come_from_the_profile(app_id, engine, sandbox):
+    e = engine({})
+    f = sandbox / "data" / "base_cv.json"
+    f.write_text(json.dumps(json.loads(f.read_text("utf-8")) | {"basics": json.loads(f.read_text("utf-8"))["basics"]
+                                                                | {"availability": "30 days' notice"}}), "utf-8")
+    fields = [{"id": "0:n", "kind": "select", "label": "Notice period", "options": ["Immediate", "15 days", "1 month", "2 months"]},
+              {"id": "0:d", "kind": "text", "label": "Earliest start date"},
+              {"id": "0:t", "kind": "text", "label": "Current job title"}]
+    assert apply.answer(app_id, fields)["answers"] == {"0:n": "1 month", "0:d": "30 days after an offer",
+                                                       "0:t": "Lead Software Engineer"}   # not the tailored headline
+    assert not e.briefs
