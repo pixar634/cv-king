@@ -521,7 +521,7 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 12
+RANK_VERSION = 13
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "regions", "places")
 
@@ -595,7 +595,8 @@ def rank(job: dict, evidence: set[str], prefs: dict, sig: str | None = None) -> 
     if cached and (cached.get("sig") == sig or job.get("_trimmed")):
         return job | {k: v for k, v in cached.items() if k != "sig"}
     out = _rank(job, evidence, prefs)
-    keep = {k: out[k] for k in ("match", "order", "reasons", "excluded", "areas", "skills", "estimate", "unscored") if k in out}
+    keep = {k: out[k] for k in ("match", "order", "reasons", "excluded", "areas", "skills", "estimate", "unscored", "open")
+            if k in out}
     return out | {"_r": keep | {"sig": sig}}
 
 
@@ -619,6 +620,11 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     for skill in prefs.get("exclude_skills") or []:
         if needs_skill(job, skill):
             return job | {"match": 0, "reasons": [f"needs {skill}"], "excluded": True}
+    # Open to you at all: full-time, a normal working day at home, remote that hires where you live, abroad with a visa.
+    from .gate import openness
+    o = openness(desc, title, job.get("location") or "", job.get("remote"))
+    if o["state"] == "closed":
+        return job | {"match": 0, "reasons": [o["why"]], "excluded": True, "open": "closed"}
     from .fit import level_check
     years = prefs.get("candidate_years", 3)
     level = level_check(title, desc, years, evidence, prefs.get("max_years_asked", years + 2),
@@ -677,15 +683,18 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
         reasons.append("remote")
     elif SPONSOR.search(desc) or reg == "abroad":
         reasons.append("sponsors visas" if SPONSOR.search(desc) else "abroad, check visa")
-    if NO_SPONSOR.search(desc):
-        order -= 25
-        reasons.append("says no sponsorship")
+    # Open first; one that doesn't say is labelled and sits lower (opening it reads the full posting again).
+    if o["state"] == "unclear":
+        order -= 8
+        reasons.append(o["why"])
+    elif o["why"] != "at home":
+        order += 4
     if level["verdict"] == "stretch":
         order -= 10
         reasons += [f"stretch: {r}" for r in level["reasons"]]
     from .areas import tag
     return job | {"skills": skills, "match": max(0, min(100, score)), "estimate": estimate, "unscored": unscored, "order": order,
-                  "reasons": reasons, "excluded": False,
+                  "reasons": reasons, "excluded": False, "open": o["state"],
                   "areas": tag(job, prefs.get("offices", ""))}
 
 
@@ -782,7 +791,8 @@ def from_board(board: str, prefs: dict) -> tuple[str, list[dict]]:
     if board == "himalayas":
         for t in terms[:6]:
             for page in (1,):
-                data = _json(f"https://himalayas.app/jobs/api/search?q={quote(t)}&page={page}", timeout=25)
+                data = _json(f"https://himalayas.app/jobs/api/search?q={quote(t)}&page={page}{_himalayas_country()}",
+                             timeout=25)
                 for j in data.get("jobs", []):
                     where = ", ".join(j.get("locationRestrictions") or []) or "Worldwide"
                     out.append(_job(j.get("title"), j.get("companyName"), where, j.get("applicationLink") or j.get("guid"),
@@ -801,6 +811,12 @@ def from_board(board: str, prefs: dict) -> tuple[str, list[dict]]:
                                 remote=remote, method="arbeitnow"))
         return "Arbeitnow API", out
     raise ValueError(f"Unknown job board {board!r}")
+
+
+def _himalayas_country() -> str:
+    """Himalayas' country filter (ISO code) for where you live: it keeps jobs open worldwide too."""
+    code = strategy.COUNTRY_CODES.get((strategy.home()["country"] or "india").lower())
+    return f"&country={code}" if code else ""
 
 
 def set_boards(on: list[str]) -> list[dict]:
