@@ -75,7 +75,7 @@ async def pick_profile(request: Request, call_next):
 def _default_prefs(profile: dict) -> dict:
     from .profile import experience_months
     years = experience_months(profile) // 12
-    return {"tracks": list(strategy.tracks()), "india": True, "remote": True, "abroad": True, "days": 14, "concurrency": 2,
+    return {"tracks": list(strategy.tracks()), "india": True, "remote": True, "abroad": True, "days": 3, "concurrency": 2,
             "include_senior": False, "exclude_skills": [], "max_years_asked": years + 2, "offices": "", "min_match": 40,
             "regions": ["remote", "city", "country"], "places": [], "fit_filter": "possible",
             "pay_floor_home_lpa": 0, "pay_floor_remote_lpa": 0, "pay_floor_abroad_eur": 0, "pay_tiers": "",
