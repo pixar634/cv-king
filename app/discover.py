@@ -521,7 +521,7 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 18
+RANK_VERSION = 19
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "regions", "places", "pay_floor_home_lpa", "pay_floor_remote_lpa", "pay_floor_abroad_eur", "pay_tiers")
 
@@ -656,6 +656,8 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     relevant, ruled_out = strategy.relevant_pattern(), strategy.excluded_pattern()
     if (ruled_out and ruled_out.search(title)) or (relevant and not relevant.search(title)):
         return job | {"match": 0, "reasons": ["not a target role"], "excluded": True}
+    if strategy.parked_only(title):
+        return job | {"match": 0, "reasons": ["a parked track: for a referral, not a cold application"], "excluded": True}
     reg = region(job)
     wanted = set(regions(prefs))
     city = strategy.city_pattern()

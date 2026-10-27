@@ -221,11 +221,16 @@ search for their next job and how to write every CV they send. You work for the 
 TODAY: {today}. TOTAL PAID EXPERIENCE (computed from dates): {years} years. BASED IN: {home}.
 WHAT THE PERSON SAYS THEY WANT NEXT: {wants}
 
+The goal is callbacks, not application volume. A screener checks title history, years and location before anything
+else, so a cold application only converts for a role the person has held, at their level, where they can work.
+
 Research on the web before you answer: how careers in this field progress from this person's level in {country}
 (the titles at each step and how long people stay at each); which kinds of role this profile can realistically move to
 next, including adjacent fields; which employers hire people like this, in {city} and elsewhere in {country} (include
-the person's own industry's biggest employers, product companies, and global capability centres where they exist);
-and which job titles and keywords recruiters use for these roles today.
+the person's own industry's biggest employers, product companies, and global capability centres where they exist),
+and which hire full-time employees remote from {country} (their own entity there, or an employer of record); what
+each route pays at the person's level (in {city}, remote from {country}, and abroad if they want to move); and which
+job titles and keywords recruiters use for these roles today.
 
 THE PROFILE (every fact is true; nothing else is):
 {profile}
@@ -239,7 +244,9 @@ Return one JSON object only:
  "progression": "the realistic ladder from their current title upward in {country}, as 'Title > Title > Title', 4 to 6 steps, starting at their current title",
  "level": {{"rank": 0-7, "label": "", "current_title": "their current title, copied from the profile",
             "headline_word": "the seniority word their headline should always carry (e.g. 'Lead'), or '' when the title doesn't have one worth enforcing",
-            "people_manager": false}},
+            "people_manager": false,
+            "services_title": true when the current employer is an IT-services or consulting firm whose titles product companies read one level lower (a services "Lead" is usually a product company's "Senior")}},
+ "pay_targets": {{"home": "what this level pays in {city}, as a range with its source", "remote": "what full-time remote from {country} pays, with its source", "abroad": "what the target countries pay, if the person wants to move"}},
  "title_levels": [{{"phrase": "a title word that means a different level in THIS field", "rank": 0-7}}],
  "headline_never": ["title words the person has NOT held and a headline must never use, e.g. 'Director', 'VP', 'Head', 'Manager' when they have never managed"],
  "tracks": {{
@@ -249,7 +256,8 @@ Return one JSON object only:
                 "titles": ["1 to 3 exact job titles to search job boards for"],
                 "match": ["plain title phrases (lowercase) that mean a job posting IS this track"],
                 "also_match": ["extra plain title phrases that count as this track in job search only"],
-                "lateral": true for a move into a different kind of role, false for the same kind of role}}
+                "lateral": true for a move into a different kind of role, false for the same kind of role,
+                "status": "primary | secondary | parked"}}
  }},
  "match_order": ["track ids, most specific first, the generic track last"],
  "default_track": "the track id used when a job title matches none",
@@ -257,7 +265,9 @@ Return one JSON object only:
               "exclude_title_words": ["title words that mean it is NOT their kind of job (other professions, sales, interns above their level, etc.)"],
               "lateral_words": ["title phrases for sideways moves into other fields"]}},
  "terms": {{"Category name": {{"Canonical skill or term": ["aliases as job posts write them"]}}}},
- "companies": [{{"name": "employer name as it appears on its careers page", "why": "one line: why it hires people like this", "kind": "product | bank | fintech | consulting | services | gcc | startup"}}],
+ "companies": [{{"name": "employer name as it appears on its careers page", "why": "one line: why it hires people like this", "kind": "product | bank | fintech | consulting | services | gcc | startup",
+                "pay_tier": "top | good | unknown: how it pays at this level against the market, from public pay data",
+                "hires_where": "the evidence it hires in {city}, in {country}, or remote from {country}"}}],
  "searches": [{{"query": "a web-search query that finds fresh openings for this person (title, city, domain words)", "why": "one line"}}],
  "career_wants": "restate in 1 or 2 sentences what the person wants next, adding the strongest routes you found if they didn't say",
  "cv_notes": "optional extra writing guidance specific to this person: which employer's work to frame how (e.g. when a role is a client engagement, lead with the client's domain), what to downplay, how the headline should read. Facts only from the profile."
@@ -266,8 +276,12 @@ Return one JSON object only:
 Rules:
 - rank scale: 0 intern, 1 junior/associate, 2 mid-level, 3 senior, 4 lead, 5 staff/principal/senior manager, 6 head/director, 7 VP/C-level.
   Use the person's years and titles; note that in banks, consultancies and some services firms "Associate" or "Analyst" mean different ranks than in product companies. Use title_levels for those words.
-- 4 to 7 tracks: one for the person's own function at their level, one for the next step up in that function, and others for adjacent
-  functions this profile can honestly reach (with the evidence to back them). Every track's match and titles must be plain phrases job boards use.
+- 3 to 6 tracks, each with a status. At most 3 are active ("primary" or "secondary"): roles the person has held or
+  has direct evidence for, at their level. Anything that needs a title, years or direct reports the profile doesn't
+  show (a first manager or product manager role, staff/principal, head/VP) is "parked": reachable through a referral or
+  an internal move, not a cold application. Every track's match and titles must be plain phrases job boards use.
+- A title word listed in discover.exclude_title_words must not be one an active track searches for.
+- Remote: only employers that hire full-time employees remote from {country}; never contract or freelance platforms.
 - "terms": 20 to 60 skills, tools, methods and domain words that job descriptions in this field use and that matter to the
   profile (include the profile's own). Plain words only, no regexes. Group by category.
 - companies: 20 to 30 real employers, ordered by fit. Include the person's current employer only if people there commonly move internally.
@@ -293,9 +307,13 @@ def _validated(raw: dict, profile: dict) -> dict:
             continue
         tracks[tid] = {"label": _str(t["label"]), "brief": _str(t.get("brief")),
                        "headline_examples": strs(t.get("headline_examples"), 4), "titles": titles or [_str(t["label"])],
-                       "match": match or titles, "also_match": strs(t.get("also_match"), 30), "lateral": bool(t.get("lateral"))}
+                       "match": match or titles, "also_match": strs(t.get("also_match"), 30), "lateral": bool(t.get("lateral")),
+                       "status": t.get("status") if t.get("status") in ("primary", "secondary", "parked") else "primary"}
     if not tracks:
         raise EngineError("The analysis came back without any career tracks. Run it again.")
+    # At most three active tracks: more spreads applications over roles a screener won't call back for.
+    for tid in [t for t in tracks if tracks[t]["status"] != "parked"][3:]:
+        tracks[tid]["status"] = "parked"
     lv = raw.get("level") if isinstance(raw.get("level"), dict) else {}
     rank = lv.get("rank") if isinstance(lv.get("rank"), int) and 0 <= lv["rank"] <= 7 else 2
     d = raw.get("discover") if isinstance(raw.get("discover"), dict) else {}
@@ -308,7 +326,9 @@ def _validated(raw: dict, profile: dict) -> dict:
     for c in _list(raw.get("companies")):
         if isinstance(c, dict) and _str(c.get("name")) and _str(c["name"]).lower() not in seen:
             seen.add(_str(c["name"]).lower())
-            companies.append({"name": _str(c["name"]), "why": _str(c.get("why")), "kind": _str(c.get("kind"))})
+            companies.append({"name": _str(c["name"]), "why": _str(c.get("why")), "kind": _str(c.get("kind")),
+                              "pay_tier": _str(c.get("pay_tier")) if _str(c.get("pay_tier")) in ("top", "good") else "",
+                              "hires_where": _str(c.get("hires_where"))})
     default = raw.get("default_track") if raw.get("default_track") in tracks else next(iter(tracks))
     return {
         "version": 1, "generated_at": dt.datetime.now().isoformat(timespec="seconds"), "source": "read from the CV",
@@ -317,7 +337,10 @@ def _validated(raw: dict, profile: dict) -> dict:
         "progression": _str(raw.get("progression")),
         "level": {"rank": rank, "label": (_str(lv.get("label")) if 0 < len(_str(lv.get("label"))) <= 28 else strategy.LEVELS[rank]),
                   "current_title": _str(lv.get("current_title")) or current["title"],
-                  "headline_word": _str(lv.get("headline_word")), "people_manager": bool(lv.get("people_manager"))},
+                  "headline_word": _str(lv.get("headline_word")), "people_manager": bool(lv.get("people_manager")),
+                  **({"services_title": bool(lv["services_title"])} if isinstance(lv.get("services_title"), bool) else {})},
+        "pay_targets": {k: _str(v) for k, v in (raw.get("pay_targets") or {}).items() if k in ("home", "remote", "abroad")}
+        if isinstance(raw.get("pay_targets"), dict) else {},
         "title_levels": [{"phrase": _str(x["phrase"]), "rank": x["rank"]} for x in _list(raw.get("title_levels"))
                          if isinstance(x, dict) and _str(x.get("phrase")) and isinstance(x.get("rank"), int) and 0 <= x["rank"] <= 7],
         "headline_never": strs(raw.get("headline_never"), 15), "tracks": tracks,
