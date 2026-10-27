@@ -32,16 +32,59 @@ OPEN_TO_HOME = re.compile(r"worldwide|anywhere in the world|work from anywhere|g
                           r"\bapac\b|asia|employer of record|\beor\b|\bdeel\b", re.I)
 
 
+# A remote job on US hours: a normal working day at home overlaps European and Asian teams, not American ones.
+US_HOURS = re.compile(
+    r"(overlap|work|available|online)\w*\s+(with\s+|during\s+|in\s+)?(the\s+)?(us\s+|u\.s\.\s+|north american?\s+)?"
+    r"(us|u\.s\.|pst|pt|est|et|cst|pacific|eastern|central)\s*(time\s*zones?|hours|business hours|working hours|time)|"
+    r"(pst|est|us|pacific|eastern)\s*(business|working|office)\s*hours|\d{1,2}\s*(am)?\s*(-|–|to)\s*\d{1,2}\s*pm\s*(pst|est|pt|et)\b|"
+    r"\bus\s*shift\b|night\s*shift", re.I)
+ASYNC = re.compile(r"\basync(hronous)?\b|any\s*time\s*zone|flexible\s*hours", re.I)
+
+
 def _home_named(text: str) -> bool:
     from .discover import home_country_pattern
     return bool(home_country_pattern().search(text or ""))
+
+
+def openness(text: str, title: str = "", location: str = "", remote=None, market: str = "") -> dict:
+    """Is the job open to someone living at home, on a full-time contract and a normal day there?
+    {"state": "open" | "unclear" | "closed", "why": "..."}. Closed is hidden in Discover and stops tailoring."""
+    from .tailor import home_market
+    text = text or ""
+    if m := CONTRACT.search(f"{title}\n{text}"):
+        return {"state": "closed", "why": f"Contract work, not a full-time job (\"{m.group(0).strip()}\")"}
+    if (m := US_HOURS.search(text)) and not ASYNC.search(text):
+        return {"state": "closed", "why": f"Needs US working hours (\"{m.group(0).strip()}\")"}
+    where = region({"location": location, "remote": remote})
+    if where == "home" or _home_named(location):
+        return {"state": "open", "why": "at home"}
+    home = home_market()
+    both = f"{location}\n{text}"
+    if market == "remote" or where == "remote" or (remote and where not in ("abroad", "us")):
+        closed = RESIDENTS_ONLY.search(both)
+        said = closed.group(0) if closed else location if US_ONLY.search(location or "") else ""
+        if OPEN_TO_HOME.search(both) or _home_named(text):
+            return {"state": "open", "why": "remote, open to where you live"}
+        if said:
+            return {"state": "closed", "why": f"Remote, but not open to where you live (\"{said.strip()}\")"}
+        return {"state": "unclear", "why": "remote, doesn't say if it hires where you live"}
+    if market not in ("", home) or where in ("abroad", "us", "other"):
+        if m := NO_SPONSOR.search(text):
+            return {"state": "closed", "why": f"A job abroad that won't sponsor a visa (\"{m.group(0).strip()}\")"}
+        if SPONSOR.search(text):
+            return {"state": "open", "why": "sponsors visas or helps relocate"}
+        if m := RESIDENTS_ONLY.search(both):
+            return {"state": "closed", "why": f"A job abroad for people who already live there (\"{m.group(0).strip()}\")"}
+        if remote or re.search(r"\bremote\b", location or "", re.I):
+            return {"state": "closed", "why": "Remote within another country: those teams hire people who already live there"}
+        return {"state": "unclear", "why": "abroad, doesn't say if it sponsors a visa"}
+    return {"state": "unclear", "why": "location unclear"}
 
 
 def check(jd_text: str, title: str = "", location: str = "", market: str = "", remote=None,
           profile: dict | None = None, prefs: dict | None = None, track: str = "") -> dict:
     """{"verdict": "ok" | "stretch" | "stop", "reasons": [...]}: the same verdict everywhere a job can be tailored."""
     from .profile import load_profile
-    from .tailor import home_market
     profile = profile or load_profile()
     prefs = prefs or profile.get("preferences") or {}
     text = jd_text or ""
@@ -54,22 +97,9 @@ def check(jd_text: str, title: str = "", location: str = "", market: str = "", r
     elif lvl["verdict"] == "stretch":
         stretches.append("A stretch: " + "; ".join(lvl["reasons"]))
 
-    if m := CONTRACT.search(f"{title}\n{text}"):
-        stops.append(f"Contract work, not a full-time job (\"{m.group(0).strip()}\")")
-
-    home = home_market()
-    where = region({"location": location, "remote": remote})
-    abroad = market not in ("", home, "remote") or where in ("abroad", "us")
-    if market == "remote" or where == "remote" or (remote and where != "home"):
-        closed = RESIDENTS_ONLY.search(f"{location}\n{text}")
-        said = closed.group(0) if closed else location if US_ONLY.search(location or "") else ""
-        if said and not OPEN_TO_HOME.search(f"{location}\n{text}") and not _home_named(location):
-            stops.append(f"Remote, but not open to where you live (\"{said.strip()}\")")
-    elif abroad and not _home_named(location):
-        if m := NO_SPONSOR.search(text):
-            stops.append(f"A job abroad that won't sponsor a visa (\"{m.group(0).strip()}\")")
-        elif (m := RESIDENTS_ONLY.search(text)) and not SPONSOR.search(text):
-            stops.append(f"A job abroad for people who already live there (\"{m.group(0).strip()}\")")
+    o = openness(text, title, location, remote, market)
+    if o["state"] == "closed":
+        stops.append(o["why"])
 
     tid = track or strategy.track_for(title)
     t = strategy.tracks().get(tid) or {}
