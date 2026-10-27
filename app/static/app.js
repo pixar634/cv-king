@@ -1080,6 +1080,44 @@ async function loadPipeline() {
   S.batch = await api("/api/batch");
   await loadContacts();
   renderPipeline();
+  loadInsights().catch(() => {});
+}
+
+// ================= insights: what your own search says so far =================
+async function loadInsights() {
+  const box = $("#insightsBox");
+  if (!box.dataset.wired) {
+    box.dataset.wired = "1";
+    box.open = store.get("cv.insightsOpen", false);
+    box.addEventListener("toggle", () => store.set("cv.insightsOpen", box.open));
+  }
+  const d = await api("/api/insights");
+  const f = d.funnel;
+  $("#insightsSub").textContent = f.applied ? `${f.applied} applied, ${f.replied} replied, ${f.interviews} interview${f.interviews === 1 ? "" : "s"}` : "Nothing applied yet";
+  const pct = (v) => (v === null || v === undefined ? `<span title="Fewer than ${d.min_n} applications: too few to say">–</span>` : `${v}<small>%</small>`);
+  const tile = (label, value, title = "") => `<div class="stat" title="${esc(title)}"><span class="eyebrow">${label}</span><span class="stat__value">${value}</span></div>`;
+  const med = d.days_to_reply.median;
+  const tiles = `<div class="insights__tiles">
+      ${tile("CVs tailored", f.tailored)}${tile("Applied", f.applied)}
+      ${tile("Replied", f.replied, "A recruiter call, an interview, an offer or a rejection")}
+      ${tile("Reply rate", pct(d.reply_rate))}${tile("Interviews", f.interviews)}${tile("Offers", f.offers)}
+      ${tile("Days to a reply", med === null ? "–" : `${Math.round(med)}<small> median</small>`, `${d.days_to_reply.n} replies with dates`)}</div>`;
+  const bands = d.bands.filter((b) => b.applied);
+  const table = bands.length ? `<div><span class="eyebrow">Replies by match score</span>
+      <p class="type-meta">Does a higher match get more replies for you? Rates show from ${d.min_n} applications in a band.</p>
+      <table><thead><tr><th>Match it could reach</th><th class="num">Applied</th><th class="num">Replied</th><th class="num">Interviews</th><th class="num">Reply rate</th></tr></thead>
+      <tbody>${bands.map((b) => `<tr><td>${esc(b.band)}</td><td class="num">${b.applied}</td><td class="num">${b.replied}</td><td class="num">${b.interviews}</td><td class="num">${b.reply_rate === null ? "–" : `${b.reply_rate}%`}</td></tr>`).join("")}</tbody></table></div>` : "";
+  const waiting = d.waiting.length ? `<div><span class="eyebrow">No reply after ${d.wait_days} days</span>
+      <p class="type-meta">${d.waiting_count} application${d.waiting_count === 1 ? "" : "s"}. A short follow-up to the hiring manager often gets the first reply.</p>
+      <div class="list">${d.waiting.map((w) => `<div class="item"><span class="item__body"><span class="item__title">${esc(w.company)}</span><span class="item__meta">${esc(w.role)} · ${w.days} days</span></span>
+        <button class="btn btn--sm btn--ghost" data-follow="${esc(w.id)}">Cold mail</button></div>`).join("")}</div></div>` : "";
+  const missing = d.missing.length ? `<div><span class="eyebrow">Skills jobs keep asking for</span>
+      <p class="type-meta">Required by the jobs you tailored for, not in your profile. Have one after all? Click it to add it to your memory.</p>
+      <div class="chip-row">${d.missing.map((m) => `<button class="chip chip--warn" data-gap="${esc(m.term)}" title="${m.jobs} job${m.jobs === 1 ? "" : "s"}"><span>${esc(m.term)} · ${m.jobs}</span></button>`).join("")}</div></div>` : "";
+  $("#insightsBody").innerHTML = tiles + (table || waiting || missing ? `<div class="insights__grid">${table}${waiting}${missing}</div>` : "")
+    + (d.approximate ? `<p class="type-meta">Dates for applications from before the history began are the day you marked them applied, so times are approximate.</p>` : "");
+  $$("#insightsBody [data-follow]").forEach((b) => (b.onclick = () => openColdMail(b.dataset.follow)));
+  $$("#insightsBody [data-gap]").forEach((b) => (b.onclick = () => openMemory(b.dataset.gap)));
 }
 
 function renderPipeline() {
