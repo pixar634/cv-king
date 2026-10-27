@@ -123,6 +123,7 @@ def add_from_report(report: dict, req: dict) -> None:
                              f"re-tailored, replacing {old['id']}")
         else:
             db.record_status(row["id"], row["company"], row["role"], None, "Generated", "tailor")
+    db.sync_soon()
 
 
 def update(app_id: str, fields: dict, source: str = "app") -> dict:
@@ -148,6 +149,7 @@ def update(app_id: str, fields: dict, source: str = "app") -> dict:
             _save(rows)
             if r["status"] != was:
                 db.record_status(app_id, r["company"], r["role"], was, r["status"], source)
+            db.sync_soon()
             return r
     raise KeyError(app_id)
 

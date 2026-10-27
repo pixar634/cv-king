@@ -40,4 +40,7 @@ def sandbox(tmp_path, monkeypatch):
     monkeypatch.setattr(profiles, "OUTPUT", output)
     monkeypatch.setattr(profiles, "PROFILES", tmp_path / "profiles")
     monkeypatch.setattr(profiles, "INDEX", tmp_path / "profiles" / "index.json")
+    # A background sync would run after the test, outside the sandbox: tests call db.sync() themselves.
+    from app import db
+    monkeypatch.setattr(db, "sync_soon", lambda *a, **k: None)
     return tmp_path

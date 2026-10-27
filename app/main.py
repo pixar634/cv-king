@@ -10,8 +10,8 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import (apply, areas, batch, discover, extract, letterfile, letters, memory, onboarding, profiles, strategy, tailor,
-               tracker)
+from . import (apply, areas, batch, db, discover, extract, letterfile, letters, memory, onboarding, profiles, strategy,
+               tailor, tracker)
 from .config import STATIC, output_dir
 from .engines import ENGINES, EngineError
 from .jd import parse_jd
@@ -23,6 +23,7 @@ app = FastAPI(title="JobMagnet")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 JOBS: dict[str, dict] = {}
+SYNCED: set[str] = set()   # profiles whose local database was synced since the app started
 ONBOARDING: dict[str, str] = {}   # profile id -> the setup job reading its CV
 
 
@@ -124,6 +125,9 @@ def state():
     if row.get("status") == "review":
         return {"setup": _setup_state(pid) | {"mode": "review"}, **_review(profile),
                 "engines": [{"id": e.id, "label": e.label, "available": e.available()} for e in ENGINES.values()]}
+    if pid not in SYNCED:   # the first look at a ready profile copies its files into the local database
+        SYNCED.add(pid)
+        db.sync_soon(0.5)
     m = tailor.markets()
     home = strategy.home()
     zones = next((z for city, z in areas.catalogue().items() if city.lower() in home["city_names"]), [])
@@ -486,8 +490,13 @@ def app_track(app_id: str, body: dict = Body(...)):
 @app.get("/api/apps/{app_id}/history")
 def app_history(app_id: str):
     """Every status change of one application, oldest first, from the local database."""
-    from . import db
     return db.history(app_id)
+
+
+@app.post("/api/db/sync")
+def db_sync():
+    """Copy the JSON files into the local database now; returns how many rows each table got."""
+    return db.sync() | {"path": str(db.path())}
 
 
 @app.get("/api/export.xlsx")
