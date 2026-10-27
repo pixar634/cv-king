@@ -802,6 +802,7 @@ BOARDS = {
     "himalayas": "Himalayas: remote jobs",
     "arbeitnow": "Arbeitnow: Germany and Europe, many with visa sponsorship",
     "workinfinland": "Work in Finland: jobs in Finland open to international talent",
+    "hn": "Hacker News \"Who is hiring\": posts open worldwide, in APAC or where you live",
 }
 
 WIF_API = "https://www.workinfinland.com/api/jobs/?"   # the feed behind workinfinland.com/en/open-jobs; robots.txt allows it
@@ -859,6 +860,47 @@ def _epoch(v) -> str:
     return _iso(int(v)) if str(v or "").isdigit() else _iso(v)
 
 
+HN_SEARCH = "https://hn.algolia.com/api/v1/search_by_date?tags=story,author_whoishiring&hitsPerPage=6"
+HN_ITEM = "https://hn.algolia.com/api/v1/items/{}"
+HN_OPEN = re.compile(r"\b(global(ly)?|worldwide|anywhere|apac|asia|india|bengaluru|bangalore|any\s*time\s*zone)\b", re.I)
+HN_ROLE = re.compile(r"engineer|developer|\bswe\b|\bsde\b|architect|programmer|full[\s-]?stack|back[\s-]?end|"
+                     r"front[\s-]?end|forward[\s-]?deployed|founding|tech(nical)? lead|\bml\b|\bai\b", re.I)
+
+
+def from_hn(home: re.Pattern | None = None) -> list[dict]:
+    """This month's Hacker News "Who is hiring?" thread, through the free Algolia API: posts that are remote and
+    open worldwide, in APAC or where you live, or that are based where you live. A post's first line is usually
+    "Company | Role | Location | ...": the role and location are read from its parts."""
+    hits = _json(HN_SEARCH, timeout=25).get("hits") or []
+    story = next((h for h in hits if (h.get("title") or "").lower().startswith("ask hn: who is hiring")), None)
+    if not story:
+        return []
+    thread = _json(HN_ITEM.format(story["objectID"]), timeout=40)
+    out = []
+    for c in thread.get("children") or []:
+        body = c.get("text") or ""
+        head = strip_html(htmllib.unescape(body.split("<p>")[0]))
+        parts = [p.strip() for p in re.split(r"\s[|•·–—]\s|\s\|\s?|\s?\|\s", head) if p.strip()]
+        if len(parts) < 2:
+            continue
+        open_here = HN_OPEN.search(head) or (home and home.search(head))
+        if not (open_here and (re.search(r"\bremote\b", head, re.I) or (home and home.search(head)))):
+            continue
+        company = re.sub(r"\s*\(.*?\)\s*", " ", parts[0]).strip()
+        role = next((p for p in parts[1:] if HN_ROLE.search(p) and len(p) < 140), "")
+        if not role:
+            continue
+        where = next((p for p in parts[1:] if re.search(r"remote|onsite|on-site|hybrid|global|worldwide|apac|india|"
+                                                        r"bengaluru|bangalore", p, re.I)), "Remote")
+        link = next((htmllib.unescape(u) for u in re.findall(r'href="([^"]+)"', body)
+                     if "ycombinator.com" not in u), "")
+        posted = (c.get("created_at") or "")[:10]
+        out.append(_job(role, company, where, f"https://news.ycombinator.com/item?id={c['id']}", posted, posted,
+                        description=strip_html(htmllib.unescape(body)) + (f"\nApply: {link}" if link else ""),
+                        remote=bool(re.search(r"\bremote\b", head, re.I)), method="hn"))
+    return out
+
+
 def from_board(board: str, prefs: dict) -> tuple[str, list[dict]]:
     terms = board_terms(prefs) or ["engineer"]
     out = []
@@ -893,6 +935,8 @@ def from_board(board: str, prefs: dict) -> tuple[str, list[dict]]:
         return "Himalayas API", out
     if board == "workinfinland":
         return "Work in Finland feed", from_work_in_finland()
+    if board == "hn":
+        return "Hacker News (Algolia API)", from_hn(home_country_pattern())
     if board == "arbeitnow":
         for page in (1, 2):
             data = _json(f"https://www.arbeitnow.com/api/job-board-api?page={page}", timeout=30)
