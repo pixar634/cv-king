@@ -878,15 +878,27 @@ def answers_list():
     return apply.saved()
 
 
+def _answer_market(body: dict) -> str | None:
+    """The market a form answer is for: given, or the application's, so a visa or pay answer stays with it."""
+    if body.get("market"):
+        return body["market"]
+    if body.get("app"):
+        try:
+            return tailor.load_report(_app_dir(body["app"]).name).get("market")
+        except (HTTPException, FileNotFoundError):
+            return None
+    return None
+
+
 @app.post("/api/answers")
 def answers_add(body: dict = Body(...)):
-    """Your answer to a form question, kept for every later form."""
-    return apply.remember(body.get("q", ""), body.get("a"))
+    """Your answer to a form question, kept for every later form (a legal or pay answer, for that market)."""
+    return apply.remember(body.get("q", ""), body.get("a"), _answer_market(body))
 
 
 @app.post("/api/answers/forget")
 def answers_forget(body: dict = Body(...)):
-    return apply.forget(body.get("q", ""))
+    return apply.forget(body.get("q", ""), _answer_market(body))
 
 
 @app.get("/api/apps/{app_id}/letter.pdf")

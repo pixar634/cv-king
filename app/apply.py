@@ -4,7 +4,9 @@ The extension scans the form and sends its fields; this decides what goes in eac
 straight from the profile and saved answers by code. The model answers the rest from the profile, the
 tailored CV and the JD, and must leave a field empty rather than guess: anything legal or personal (visa,
 salary, notice, relocation) with no saved answer is handed back to you, and your answer is saved so the next
-form asks once fewer. Nothing is submitted here; the extension submits only when you press Submit.
+form asks once fewer. Legal, pay and notice answers are kept per market (India, remote, UK, EU...), because the
+true answer depends on where the job is: sponsorship is worked out from the job's market, never copied across.
+Nothing is submitted here; the extension submits only when you press Submit.
 """
 import json
 import re
@@ -12,10 +14,19 @@ import re
 from .config import data_dir, output_dir
 from .engines import ENGINES, light_engine, parse_json_reply
 from .profile import brief_view, experience_years_label, load_profile
-from .tailor import load_report
+from .tailor import home_market, load_report
 from .untrusted import fence
 
 CHOICE = ("select", "radio", "combobox")
+# Questions whose true answer depends on where the job is: saved per market and never used for another one.
+SCOPED = re.compile(r"sponsor|visa|work\s*permit|authori[sz]|right\s*to\s*work|eligib|salary|\bctc\b|compensation|"
+                    r"\bpay\b|remuneration|notice|start\s*date|joining|relocat", re.I)
+# "Will you now or in the future require sponsorship?", not "Can you work without sponsorship?".
+NEEDS_SPONSOR = re.compile(r"\b(require|need)\w*\b.*\bsponsor", re.I)
+NOTICE = re.compile(r"notice\s*period|how\s*soon\s*can|when\s*can\s*you\s*(start|join)|earliest\s*(start|joining)|"
+                    r"\bstart\s*date|date\s*of\s*joining", re.I)
+CURRENCIES = {"INR": r"₹|\binr\b|\blpa\b|lakh|crore|rupee", "USD": r"\$|\busd\b|dollar", "EUR": r"€|\beur\b|euro",
+              "GBP": r"£|\bgbp\b|pound|sterling"}
 
 
 def _answers_file():
@@ -31,20 +42,71 @@ def _norm(q: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (q or "").lower()).strip()
 
 
-def remember(question: str, answer) -> list[dict]:
-    """Keep your answer to a question so every later form gets it without asking."""
+def _market_of(row: dict, home: str) -> str | None:
+    """The market a saved answer holds for; None when it holds everywhere. Answers saved before markets were
+    kept came from forms at home."""
+    if not SCOPED.search(row["q"]):
+        return None
+    return row.get("market") or home
+
+
+def _same(row: dict, question: str, market: str | None, home: str) -> bool:
+    return _norm(row["q"]) == _norm(question) and _market_of(row, home) in (None, market or home)
+
+
+def remember(question: str, answer, market: str | None = None) -> list[dict]:
+    """Keep your answer to a question so every later form gets it without asking; a legal, pay or notice answer
+    only for forms in the same market."""
     q = (question or "").strip()
     if not q or answer in (None, "", []):
         return saved()
-    rows = [r for r in saved() if _norm(r["q"]) != _norm(q)] + [{"q": q[:300], "a": answer}]
+    home = home_market()
+    row = {"q": q[:300], "a": answer} | ({"market": market or home} if SCOPED.search(q) else {})
+    rows = [r for r in saved() if not _same(r, q, row.get("market"), home)] + [row]
     _answers_file().write_text(json.dumps(rows, indent=1, ensure_ascii=False), "utf-8")
     return rows
 
 
-def forget(question: str) -> list[dict]:
-    rows = [r for r in saved() if _norm(r["q"]) != _norm(question)]
+def forget(question: str, market: str | None = None) -> list[dict]:
+    """Drop a saved answer; with a market, only that market's answer to it."""
+    home = home_market()
+    rows = [r for r in saved() if _norm(r["q"]) != _norm(question) or
+            (market and _market_of(r, home) not in (None, market))]
     _answers_file().write_text(json.dumps(rows, indent=1, ensure_ascii=False), "utf-8")
     return rows
+
+
+def notice_days(profile: dict) -> int | None:
+    """Your notice period in days: the profile's own field, else read from the availability line."""
+    b = profile["basics"]
+    if b.get("notice_days") not in (None, ""):
+        return int(b["notice_days"])
+    m = re.search(r"(\d+)\s*(day|week|month)s?\W{0,2}\s*notice", b.get("availability") or "", re.I)
+    if not m:
+        return None
+    return int(m.group(1)) * {"day": 1, "week": 7, "month": 30}[m.group(2).lower()]
+
+
+def _currency(text) -> str | None:
+    hits = [c for c, pat in CURRENCIES.items() if re.search(pat, str(text or ""), re.I)]
+    return hits[0] if len(hits) == 1 else None
+
+
+def _by_code(label: str, market: str, home: str, profile: dict) -> list:
+    """Answers code works out from where the job is and the profile, best first; [] when it can't."""
+    if NEEDS_SPONSOR.search(label) and not re.search(r"without|not\s+require", label, re.I):
+        # Working at home, or remote from home, needs no visa; a job abroad does.
+        return ["No"] if market in (home, "remote") else ["Yes"]
+    days = notice_days(profile)
+    if days is None or not NOTICE.search(label):
+        return []
+    if re.search(r"start\s*date|date\s*of\s*joining|earliest", label, re.I):
+        return [f"{days} days after an offer" if days else "Immediately"]
+    if not days:
+        return ["Immediate", "Immediately", "0 days"]
+    words = {1: "one month", 2: "two months", 3: "three months"}
+    months = days // 30 if days % 30 == 0 else 0
+    return [f"{days} days"] + ([f"{months} month{'s' if months > 1 else ''}", words.get(months, "")] if months else [])
 
 
 def _contact(profile: dict, report: dict) -> list[tuple[str, str]]:
@@ -68,7 +130,9 @@ def _contact(profile: dict, report: dict) -> list[tuple[str, str]]:
         (r"linkedin", b.get("linkedin", "")),
         (r"github", links["github"]),
         (r"current\s*(company|employer)|most\s*recent\s*(company|employer)", current["company"] if current else ""),
-        (r"current\s*(job\s*)?title|current\s*(role|position)|headline", report.get("headline") or b.get("headline", "")),
+        # Your real title, as a background check would find it, never the CV's tailored headline.
+        (r"current\s*(job\s*)?title|current\s*(role|position)|present\s*(job\s*)?title",
+         current["title"] if current else b.get("headline", "")),
         (r"years\s*of\s*(professional\s*)?experience|total\s*experience", experience_years_label(profile)),
         (r"^(current\s*)?(location|city)\b|where\s*are\s*you\s*(based|located)", b.get("location", "")),
     ]
@@ -82,6 +146,10 @@ def _pick(value, options: list[str]):
     for o in options:
         if _norm(o) == v:
             return o
+    # "No" is the option "No, I don't need sponsorship", not "Yes, now or in the future".
+    lead = [o for o in options if v and _norm(o).startswith(v + " ")]
+    if len(lead) == 1:
+        return lead[0]
     hits = [o for o in options if v and (v in _norm(o) or _norm(o) in v)]
     return hits[0] if len(hits) == 1 else None
 
@@ -114,6 +182,8 @@ Rules:
 - Legal and personal questions (work authorisation, visa sponsorship, salary, notice period, start date,
   relocation, willingness to travel, background checks, criminal record, age, references) are answered
   ONLY from SAVED ANSWERS or a fact CANDIDATE states. Otherwise null with why "needs you".
+- A salary answer must be in the currency the field asks for. Never convert a figure between currencies:
+  if the only figure is in another currency, null with why "needs you".
 - Demographic and equal-opportunity questions (gender, race, ethnicity, veteran, disability, sexual
   orientation, pronouns): pick the option that declines to answer ("Decline to self-identify", "Prefer not to
   say", "I don't wish to answer"). If there is no such option, null.
@@ -130,7 +200,11 @@ Rules:
 def answer(app_id: str, fields: list[dict], url: str = "", progress=lambda m: None) -> dict:
     """fields: [{id, kind, label, options?, required?, max?}] -> {answers, needs, files, from_model}."""
     profile, report = load_profile(), load_report(app_id)
-    contact, mine = _contact(profile, report), saved()
+    home = home_market()
+    market = report.get("market") or home
+    # Another market's legal or pay answer is never used here, by code or by the model.
+    mine = [r for r in saved() if _market_of(r, home) in (None, market)]
+    contact = _contact(profile, report)
     answers, needs, files, ask = {}, [], {}, []
     progress("Matching the fields to your profile")
     first_file = True
@@ -145,10 +219,14 @@ def answer(app_id: str, fields: list[dict], url: str = "", progress=lambda m: No
                 needs.append({"id": fid, "label": label, "why": "a file only you have"})
             first_file = False
             continue
+        value = next((v for v in (_fits(f, c) for c in _by_code(label, market, home, profile)) if v is not None), None)
         known = next((r["a"] for r in mine if _norm(r["q"]) == _norm(label)), None)
+        if known is not None and _currency(label) and _currency(known) not in (None, _currency(label)):
+            known = None   # a rupee figure is not an answer to a dollar question
         if known is None and kind not in CHOICE + ("checkgroup", "checkbox"):
             known = next((v for pat, v in contact if v and re.search(pat, label, re.I)), None)
-        value = _fits(f, known)
+        if value is None:
+            value = _fits(f, known)
         if value is not None:
             answers[fid] = value
         elif label:
@@ -160,6 +238,8 @@ def answer(app_id: str, fields: list[dict], url: str = "", progress=lambda m: No
                                                 "location": profile["basics"].get("location", ""),
                                                 "nationality": profile["basics"].get("nationality", ""),
                                                 "availability": profile["basics"].get("availability", ""),
+                                                "notice period in days": notice_days(profile),
+                                                "the job's market": market,
                                                 "years of experience": experience_years_label(profile)},
             "SAVED ANSWERS": mine,
             "TAILORED CV": {"headline": report.get("headline", ""), "recruiter note": report.get("recruiter_note", ""),
