@@ -577,6 +577,12 @@ def run(req: dict, progress=lambda m: None) -> dict:
         from .extract import market_for
         market_id = market_for(req.get("location") or jd.get("location") or jd["text"][:800])
         req = req | {"market": market_id}
+    if not req.get("force"):
+        from .gate import NotEligible, check
+        g = check(jd["text"], role, req.get("location") or jd.get("location") or "", market_id, req.get("remote"), profile,
+                  track=req.get("track") if req.get("track") in tracks() else "")
+        if g["verdict"] != "ok":
+            raise NotEligible(g)
     years = experience_years_label(profile)
     engine = get_engine(req.get("engine") or "claude:opus")
     options = resolve_options(req, market_id, profile, jd["text"])
