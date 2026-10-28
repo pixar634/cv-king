@@ -406,6 +406,13 @@ def outreach_step(app_id: str, body: dict = Body(...)):
     return r | {"outreach_state": tracker.outreach_state(r)}
 
 
+@app.get("/api/network")
+def network_graph(sample: bool = False):
+    """You, the companies your connections work at, and the people there; a labelled sample until you add them."""
+    from . import network
+    return network.graph(_prefs(load_profile()), sample)
+
+
 @app.get("/api/connections")
 def connections():
     from . import warm

@@ -22,6 +22,7 @@
     <button data-view="interview">Interview</button>
     <button data-view="outreach">Cold mail</button>
     <button data-view="career">Career</button>
+    <button data-view="network">Network</button>
   </nav>
   <div class="topbar__right">
     <div class="menu-wrap"><button class="btn btn--sm btn--menu" id="profileChip" title="Switch or add a profile"></button><div class="menu" id="profileMenu" hidden></div></div>
@@ -253,6 +254,28 @@
     </div>
   </div>
 </section>
+
+<section class="view" id="v-network">
+  <div class="career net">
+    <header class="page__head career__head">
+      <div class="page__intro">
+        <span class="eyebrow">Network</span>
+        <h1 class="type-h1">Who you know, where it counts</h1>
+        <p class="page__lede" id="netStats"></p>
+      </div>
+      <div class="page__controls">
+        <div class="seg" id="netFilter"><button data-f="all" class="on">All</button><button data-f="hiring">Hiring for you</button><button data-f="applied">Applied</button><button data-f="favourite">Favourites</button></div>
+        <div class="chip-row" id="netKinds"><button class="chip on" data-k="leader">Leaders</button><button class="chip on" data-k="recruiter">Recruiters</button><button class="chip on" data-k="peer">Your function</button><button class="chip on" data-k="other">Others</button></div>
+        <button class="btn btn--sm btn--ghost" id="netReset">Re-centre</button>
+      </div>
+    </header>
+    <div class="notice net__sample" id="netSample" hidden><b>Sample network.</b> These people are invented, placed at companies from your own Discover, favourites and applications so you can see how it reads. Add your LinkedIn <code>Connections.csv</code> in Settings, under People you know, and your real network replaces it.</div>
+    <div class="career__body">
+      <div class="career__canvas" id="netCanvas" data-fx-skip></div>
+      <aside class="career__side" id="netPanel"></aside>
+    </div>
+  </div>
+</section>
 </main>
 
 <!-- ================= SETTINGS ================= -->
@@ -366,6 +389,7 @@
 <script src="/static/vendor/codemirror-5.65.16/closebrackets.min.js"></script>
 <script src="/static/fx.js?v=5"></script>
 <script src="/static/career.js?v=4"></script>
+<script src="/static/network.js?v=1"></script>
 <script src="/static/setup.js?v=1"></script>
 <script src="/static/app.js?v=47"></script>
 </body>
