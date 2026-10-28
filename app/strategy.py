@@ -35,7 +35,7 @@ BANKS = re.compile(
     r"\b(j\.?\s?p\.?\s?morgan|jpmc|chase|morgan stanley|goldman sachs|citi|citibank|citigroup|citicorp|barclays|"
     r"deutsche bank|hsbc|natwest|rbs|standard chartered|soci[eé]t[eé] g[eé]n[eé]rale|bnp paribas|ubs|credit suisse|"
     r"wells fargo|bank of america|bofa|bny|state street|northern trust|nomura|mizuho|american express|amex|lloyds|"
-    r"santander|macquarie|blackrock|abn amro|ing bank|bank of new york|morgan)\b", re.I)
+    r"santander|macquarie|blackrock|abn amro|ing bank|bank of new york)\b", re.I)
 BANK_LADDER = [
     (7, r"\bmanaging director\b"),
     (6, r"\bexecutive director\b"),
