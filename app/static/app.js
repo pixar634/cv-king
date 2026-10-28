@@ -1179,7 +1179,8 @@ function renderPipeline() {
     if (b) { store.set("cv.stage", b.dataset.stage); renderPipeline(); FX.rise($("#board").children); }
   };
   const headHtml = `<h2 class="type-h2">${cur[1]}</h2><span class="type-meta num">${cur[2].length} ${cur[2].length === 1 ? "application" : "applications"}</span>`;
-  const statusSel = (r) => `<select class="control--sm" data-status="${esc(r.id)}" aria-label="Status">${S.state.statuses.map((s) => `<option ${s === r.status ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>`;
+  const statusSel = (r) => `<select class="control--sm" data-status="${esc(r.id)}" aria-label="Status">${S.state.statuses.map((s) => `<option ${s === r.status ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>`
+    + (r.status !== "Generated" ? `<select class="control--sm" data-channel="${esc(r.id)}" aria-label="How you applied" title="How you applied${r.posting_age != null ? `; the posting was ${r.posting_age} days old` : ""}"><option value="">How you applied?</option>${(S.state.channels || []).map((c) => `<option ${c === r.channel ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>` : "");
   const appCard = (r) => `<div class="card card--interactive app-card" data-open="${esc(r.id)}">
       <div class="item">${logoTile(r.id, r.logo, r.company)}
         <span class="item__body"><span class="item__title">${esc(r.company)}</span><span class="item__meta" title="${esc(r.role)}">${esc(r.role)}</span></span>
@@ -1225,6 +1226,10 @@ function renderPipeline() {
   $$("[data-applied]").forEach((b) => (b.onclick = async () => {
     const r = await api(`/api/apps/${b.dataset.applied}/track`, { body: { status: "Applied" } });
     toast(`Applied: ${r.company}`);
+    loadPipeline();
+  }));
+  $$("[data-channel]").forEach((sel) => (sel.onchange = async () => {
+    await api(`/api/apps/${sel.dataset.channel}/track`, { body: { channel: sel.value } });
     loadPipeline();
   }));
   $$("[data-status]").forEach((sel) => (sel.onchange = async () => {

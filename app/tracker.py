@@ -12,6 +12,9 @@ from . import db
 from .config import output_dir
 
 STATUSES = ["Generated", "Applied", "Recruiter call", "Interviewing", "Offer", "Rejected", "No response", "Withdrawn"]
+# How an application was made: the biggest predictor of a callback after fit.
+CHANNELS = ["referral", "hiring manager outreach", "recruiter came to you", "company site", "Easy Apply", "job board",
+            "agency"]
 _lock = threading.Lock()
 
 # Hosts that carry other companies' jobs: their logo is not the employer's.
@@ -183,9 +186,11 @@ def add_from_report(report: dict, req: dict) -> None:
 
 def update(app_id: str, fields: dict, source: str = "app") -> dict:
     """source: who changed it (app or extension), kept with the status history."""
-    allowed = {"status", "applied_on", "job_url", "notes", "domain", "company", "role"}
+    allowed = {"status", "applied_on", "job_url", "notes", "domain", "company", "role", "channel"}
     if "status" in fields and fields["status"] not in STATUSES:
         raise ValueError(f"Unknown status {fields['status']!r}: use one of {', '.join(STATUSES)}")
+    if fields.get("channel") not in (None, "", *CHANNELS):
+        raise ValueError(f"Unknown channel {fields['channel']!r}: use one of {', '.join(CHANNELS)}")
     with _lock:
         db.ensure_seeded()
         rows = load()
@@ -198,6 +203,10 @@ def update(app_id: str, fields: dict, source: str = "app") -> dict:
                     r[k] = v
             if fields.get("status") not in (None, "Generated") and not r.get("applied_on"):   # any later stage means it went out
                 r["applied_on"] = dt.date.today().isoformat()
+            if r.get("applied_on"):
+                r["posting_age"] = posting_age(r)
+                if not r.get("channel"):
+                    r["channel"] = guess_channel(r)
             if "domain" in fields:
                 r["domain"] = _clean_domain(fields["domain"])
                 r["logo"] = fetch_logo(app_id, r["domain"])
@@ -207,6 +216,26 @@ def update(app_id: str, fields: dict, source: str = "app") -> dict:
             db.sync_soon()
             return r
     raise KeyError(app_id)
+
+
+def posting_age(row: dict) -> int | None:
+    """Days between the posting date and the day you applied: past a few days, the shortlist is often full."""
+    try:
+        return (dt.date.fromisoformat(row["applied_on"][:10]) - dt.date.fromisoformat(str(row.get("posted"))[:10])).days
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def guess_channel(row: dict) -> str:
+    """A first guess you can change: a referral asked for, or the company's own site or job board from the link."""
+    if (output_dir() / row["id"] / "referrals.json").exists():
+        return "referral"
+    host = (urlparse(row.get("job_url") or "").hostname or "").lower()
+    if not host:
+        return ""
+    if any(h in host for h in ("linkedin.com", "naukri.com", "indeed.", "glassdoor.", "instahyre.", "foundit.", "wellfound.")):
+        return "job board"
+    return "company site"
 
 
 FOLLOW_UP_DAYS = (5, 7)   # a follow-up is due 5 days after outreach, overdue after 7

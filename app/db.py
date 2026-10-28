@@ -18,7 +18,7 @@ from contextlib import closing
 
 from .config import data_dir, output_dir
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS status_events (
@@ -42,7 +42,9 @@ CREATE TABLE IF NOT EXISTS applications (
   score_before INTEGER, score_after INTEGER, score_ceiling INTEGER,
   discover_match INTEGER,                -- the Discover card's number, when the job came from Discover
   job_url TEXT, job_id TEXT, location TEXT, posted TEXT, domain TEXT, notes TEXT,
-  seniority TEXT, job_domain TEXT        -- what the writer read from the posting
+  seniority TEXT, job_domain TEXT,       -- what the writer read from the posting
+  channel TEXT, posting_age INTEGER,     -- how you applied; the posting's age in days when you did
+  outreach_on TEXT, replied_on TEXT      -- outreach sent, and a reply to it
 );
 CREATE TABLE IF NOT EXISTS job_descriptions (app_id TEXT PRIMARY KEY, text TEXT, chars INTEGER, sha1 TEXT);
 CREATE TABLE IF NOT EXISTS keywords (
@@ -104,6 +106,10 @@ def connect() -> sqlite3.Connection:
     con = sqlite3.connect(path(), timeout=10)
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
+    # The copied tables are rebuilt by sync(): one made by an older version is dropped and made again.
+    if "channel" not in {r[1] for r in con.execute("PRAGMA table_info(applications)")}:
+        con.execute("DROP TABLE applications")
+        con.executescript(SCHEMA)
     con.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
     return con
 
@@ -180,7 +186,8 @@ def sync() -> dict:
                      r.get("market"), r.get("engine"), r.get("layout"), str(r.get("pages", "")),
                      r.get("score_before"), r.get("score_after"), r.get("score_ceiling"), job.get("discover_match"),
                      r.get("job_url"), r.get("job_id"), r.get("location"), r.get("posted"), r.get("domain"), r.get("notes"),
-                     meta.get("seniority"), meta.get("domain")))
+                     meta.get("seniority"), meta.get("domain"), r.get("channel") or None, r.get("posting_age"),
+                     (r.get("outreach") or {}).get("sent_on"), (r.get("outreach") or {}).get("replied_on")))
         jd = folder / "jd.txt"
         if jd.exists():
             text = jd.read_text("utf-8")
