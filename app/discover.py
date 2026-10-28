@@ -231,8 +231,52 @@ def from_amazon(terms: list[str]) -> tuple[str, list[dict]]:
     return "amazon.jobs search", out
 
 
+ORACLE_DETAILS = 12   # postings read in full per scan: enough to score the newest, light on the employer's site
+
+
+def from_oracle(url: str, terms: list[str]) -> tuple[str, list[dict]]:
+    """An Oracle Recruiting Cloud careers site (<tenant>.fa.oraclecloud.com/hcmUI/CandidateExperience/.../sites/<site>)
+    through the public REST search its own page uses; the newest postings are read in full, the rest when opened."""
+    p = urlparse(url)
+    host = p.hostname or ""
+    m = re.search(r"/sites/([^/?#]+)", p.path)
+    site = m.group(1) if m else "CX_1"
+    loc = re.search(r"[?&]locationId=(\d+)", url)
+    api = f"https://{host}/hcmRestApi/resources/latest"
+    seen, rows = set(), []
+    for t in terms or ["software engineer"]:
+        finder = (f"findReqs;siteNumber={site},limit=25,keyword=%22{quote(t)}%22,"
+                  + (f"locationId={loc.group(1)}," if loc else "") + "sortBy=POSTING_DATES_DESC")
+        data = _json(f"{api}/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder={finder}",
+                     timeout=30)
+        for item in data.get("items") or []:
+            for r in item.get("requisitionList") or []:
+                if r.get("Id") and r["Id"] not in seen:
+                    seen.add(r["Id"])
+                    rows.append(r)
+    rows.sort(key=lambda r: r.get("PostedDate") or "", reverse=True)
+    out = []
+    for i, r in enumerate(rows):
+        desc = r.get("ShortDescriptionStr") or ""
+        if i < ORACLE_DETAILS:
+            try:
+                full = (_json(f"{api}/recruitingCEJobRequisitionDetails?expand=all&onlyData=true"
+                              f"&finder=ById;Id=%22{r['Id']}%22,siteNumber={site}", timeout=30).get("items") or [{}])[0]
+                desc = "\n\n".join(htmllib.unescape(full.get(k) or "") for k in (
+                    "ExternalDescriptionStr", "ExternalResponsibilitiesStr", "ExternalQualificationsStr")) or desc
+            except Exception:  # one posting's details failing must not lose the rest
+                pass
+        out.append(_job(r.get("Title"), "", r.get("PrimaryLocation") or "",
+                        f"https://{host}/hcmUI/CandidateExperience/en/sites/{site}/job/{r['Id']}",
+                        _iso(r.get("PostedDate")), r.get("PostedDate") or "", description=desc,
+                        remote=(r.get("WorkplaceTypeCode") or "").upper() == "ORA_REMOTE", method="oracle"))
+    return "Oracle Recruiting search", out
+
+
 def from_ats(url: str, terms: list[str] | None = None) -> tuple[str, list[dict]] | None:
     h = _host(url)
+    if h.endswith(".oraclecloud.com") and "/CandidateExperience/" in url:
+        return from_oracle(url, terms or [])
     if h.endswith(".myworkdayjobs.com"):
         return from_workday(url, terms or [])
     if h in ("amazon.jobs", "www.amazon.jobs"):
@@ -1285,6 +1329,8 @@ def scan_one(src: dict, days: int, prefs: dict | None = None) -> dict:
             method, jobs = got
         for j in jobs:
             j["source"] = src["label"]
+            if not j.get("company"):
+                j["company"] = src.get("company") or src["label"]
             if src.get("favourite"):
                 j["favourite"] = True
         return {"source": src["id"], "method": method, "jobs": jobs, "seconds": round(time.time() - t, 1)}
