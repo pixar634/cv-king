@@ -8,7 +8,7 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const S = { tab: null, ctx: null, rows: [], reports: {}, items: {}, busy: {}, granted: false, warnedEmpty: false, session: null, view: null, li: {} };
+const S = { tab: null, ctx: null, rows: [], reports: {}, items: {}, busy: {}, granted: false, warnedEmpty: false, session: null, view: null, li: {}, watch: {} };
 chrome.permissions.contains(ALL_SITES).then((g) => (S.granted = g));
 
 async function api(path, opts = {}) {
@@ -153,7 +153,8 @@ function liCard(jid, li, q) {
     ${it?.status === "error" ? `<div class="notice">${esc(it.stage)}</div>` : ""}
     ${fitHtml(fit)}
     ${job.applied ? "" : `<button class="btn ${risky ? "" : "btn--primary"} btn--block" id="liQueue" data-force="${risky ? 1 : ""}">${risky ? "Queue anyway" : "Queue: tailor a CV for it"}</button>`}
-    <p class="meta" style="margin:0">${risky ? "Long shots rarely call back without a referral. " : ""}Queued CVs are written in the background; keep clicking through the list.</p></div>`;
+    <p class="meta" style="margin:0">${risky ? "Long shots rarely call back without a referral. " : ""}Queued CVs are written in the background; keep clicking through the list.</p>
+    ${watchHtml(job.company, fit?.watched)}</div>`;
 }
 
 async function queueJob(jid, force) {
@@ -336,6 +337,7 @@ function finish(parts) {
   if (mt) mt.oninput = () => { if (S.mem) S.mem.text = mt.value; };
   if (mr) mr.onchange = () => { if (S.mem) S.mem.role = mr.value; };
   document.querySelectorAll("[data-gap]").forEach((b) => (b.onclick = () => openMemory(b.dataset.gap)));
+  document.querySelectorAll("[data-watch]").forEach((b) => (b.onclick = () => watchCompany(b.dataset.watch)));
   on("tailorAgain", () => tailorHere(false, S.ctx.app?.id));
   on("fill", fillForm);
   on("fillHere", () => remember(S.tab.id, { formUrl: S.tab.url }).then(fillForm));
@@ -377,6 +379,27 @@ function fitHtml(f) {
     ${f.gaps.length ? `<div class="fit__list"><span class="meta">You don't have (not in your profile). Have one after all? Click it.</span>
       <div class="row">${f.gaps.map((t) => `<button class="chip warn chip--btn" data-gap="${esc(t)}" title="I have this: say where">${esc(t)}</button>`).join("")}</div></div>` : ""}
     ${memoryForm()}`;
+}
+
+// Watch this job's company in Discover: the job board or careers site you're on, scanned with your favourites.
+function watchHtml(company, known) {
+  if (!company) return "";
+  const got = S.watch[company.toLowerCase()] ?? known;
+  if (got?.error) return `<div class="notice">${esc(got.error)}</div>`;
+  if (got) return `<div class="row watch"><span class="chip ok">Watched</span><span class="meta">${got.added ? "Added to" : "Already in"} Discover's favourites, through ${esc(got.found_via || got.label)}. Scanned first, pinned at the top.</span></div>`;
+  return `<button class="btn btn--ghost btn--block" data-watch="${esc(company)}" title="Add this company to Discover's favourites, through the job board or careers site you're on">Watch ${esc(company)}'s jobs in Discover</button>`;
+}
+
+async function watchCompany(company) {
+  const tabId = S.tab.id;
+  S.busy[tabId] = `Finding where ${company} lists its jobs`;
+  render();
+  try {
+    const [page] = await inPage("grab", null, { tabId });
+    S.watch[company.toLowerCase()] = await api("/api/discover/watch", { body: { url: S.tab.url, company, links: page.links, frames: page.frames, html: page.html } });
+  } catch (e) { S.watch[company.toLowerCase()] = { error: e.message }; }
+  delete S.busy[tabId];
+  if (S.tab.id === tabId) render();
 }
 
 // Add to your memory from a skill this job says you don't have: where you used it, in your own words.
@@ -427,7 +450,8 @@ function postingCard(mem, here) {
       ${fitHtml(mem.fit)}
       ${mem.fit?.below || (mem.fit?.gate && mem.fit.gate.verdict !== "ok") ? `<button class="btn btn--primary btn--block" id="tailorForce">Tailor anyway</button>`
         : `<button class="btn btn--primary btn--block" id="tailor">Tailor my CV</button>`}
-      <a class="btn btn--ghost btn--block" href="${SERVER}/?job=${esc(mem.jobJid)}" target="_blank">Review it in JobMagnet first</a></div>`;
+      <a class="btn btn--ghost btn--block" href="${SERVER}/?job=${esc(mem.jobJid)}" target="_blank">Review it in JobMagnet first</a>
+      ${watchHtml(j.company, mem.fit?.watched)}</div>`;
   }
   return `<div class="card"><span class="eyebrow">This page</span>
     <p class="sub" style="margin:0">On a job posting? I'll read it and write a CV for it. Select the description first if the page shows more than one job.</p>
@@ -476,7 +500,8 @@ function appCard(row, rep) {
     ${flags.length ? `<details><summary>What to check</summary><ul class="list">${flags.map((f) => `<li>${esc(f.text)}</li>`).join("")}</ul></details>` : ""}
     <div class="row"><a class="btn btn--sm" href="${SERVER}/?app=${encodeURIComponent(row.id)}" target="_blank">Open in JobMagnet</a>
       <a class="btn btn--sm" href="${SERVER}/apps/${encodeURIComponent(row.id)}/pdf?download=1" target="_blank">Download CV</a>
-      <button class="btn btn--sm btn--ghost" id="tailorAgain">Tailor again</button></div></div>`;
+      <button class="btn btn--sm btn--ghost" id="tailorAgain">Tailor again</button></div>
+    ${watchHtml(row.company)}</div>`;
 }
 
 // Right after sending: the people you know there, while it's fresh. A referral turns a cold application warm.

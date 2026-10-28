@@ -1038,7 +1038,8 @@ def fit_preview(body: dict = Body(...)):
     from . import warm
     fit = discover.label_for(job, profile, prefs)
     out |= {"warm": warm.who_to_ask(job["company"], job["title"], 5),
-            "label": fit["label"], "label_why": fit["why"], "market": market}
+            "label": fit["label"], "label_why": fit["why"], "market": market,
+            "watched": discover.watched(job["company"], body.get("url") or "")}
     return out | {"gate": gate.check(text, body.get("role") or "", body.get("location") or "", market, body.get("remote"),
                                      profile, prefs, company=body.get("company") or ""),
                   "already": same and {"id": same["id"], "status": same.get("status"), "story": tracker.story(same),
@@ -1168,6 +1169,16 @@ def source_update(sid: str, body: dict = Body(...)):
 def source_delete(sid: str):
     discover.remove_source(sid)
     return {"ok": True}
+
+
+@app.post("/api/discover/watch")
+def discover_watch(body: dict = Body(...)):
+    """The job open in the extension: watch its company in Discover, through the job board or careers site it's on."""
+    try:
+        return discover.watch(body.get("url") or "", body.get("company") or "",
+                              {k: body.get(k) for k in ("links", "frames", "html")})
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.post("/api/favourites")

@@ -20,7 +20,7 @@ import urllib.request
 import urllib.robotparser
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from urllib.parse import quote, urljoin, urlparse
+from urllib.parse import parse_qs, quote, urljoin, urlparse
 
 from . import strategy, taste
 from .config import data_dir, output_dir
@@ -1287,16 +1287,119 @@ def add_favourite(value: str) -> dict:
             kind, url, found_via = "url", board[1], f"its {board[0]} board"
         else:
             kind, url, found_via = "websearch", f"open roles at {value} (any team), from its own careers page or job board", "a web search"
+    return _keep_favourite(kind, url, company, found_via)[0]
+
+
+def _keep_favourite(kind: str, url: str, company: str, found_via: str) -> tuple[dict, bool]:
+    """Save a favourite, or mark the one already there; (row, whether it's new). A company watched by a web search
+    moves to its job board or careers site once one is found."""
     rows = load_sources()
     for r in rows:
         if r["value"] == url or (r.get("favourite") and r.get("company", "").lower() == company.lower()):
+            if r["kind"] == "websearch" and kind == "url":
+                r.update(kind=kind, value=url, found_via=found_via)
             r.update(favourite=True, company=r.get("company") or company, found_via=r.get("found_via") or found_via)
             save_sources(rows)
-            return r
+            return r, False
     row = {"id": hashlib.sha1(url.encode()).hexdigest()[:10], "kind": kind, "value": url, "label": company,
            "favourite": True, "company": company, "found_via": found_via, "last_scan": "", "last_count": 0}
     save_sources(rows + [row])
-    return row
+    return row, True
+
+
+# ---------- watching the company of the job you're reading (the extension's Watch button) ----------
+
+BOARD_NAMES = {"greenhouse.io": "Greenhouse", "lever.co": "Lever", "ashbyhq.com": "Ashby", "smartrecruiters.com": "SmartRecruiters",
+               "workable.com": "Workable", "recruitee.com": "Recruitee", "personio": "Personio", "myworkdayjobs.com": "Workday",
+               "oraclecloud.com": "Oracle", "amazon.jobs": "amazon.jobs"}
+
+
+def board_root(url: str) -> str:
+    """A posting (or embed) on a job board Discover reads -> the company's whole board, the page it scans. "" otherwise."""
+    p, h = urlparse(url), _host(url)
+    slug = _slug_after(url, "")
+    if h in ("boards.greenhouse.io", "job-boards.greenhouse.io", "boards-api.greenhouse.io"):
+        m = re.search(r"[?&]for=([\w-]+)", url)
+        slug = m.group(1) if m else ("" if slug in ("embed", "v1") else slug)
+        return f"https://boards.greenhouse.io/{slug}" if slug else ""
+    for host, root in (("jobs.lever.co", "https://jobs.lever.co/{}"), ("jobs.ashbyhq.com", "https://jobs.ashbyhq.com/{}"),
+                       ("careers.smartrecruiters.com", "https://careers.smartrecruiters.com/{}"),
+                       ("jobs.smartrecruiters.com", "https://careers.smartrecruiters.com/{}"),
+                       ("apply.workable.com", "https://apply.workable.com/{}")):
+        if h == host:
+            return root.format(slug) if slug and slug not in ("api", "embed") else ""
+    if h.endswith(".recruitee.com") and h.count(".") == 2 or ".jobs.personio." in h:
+        return f"https://{h}/"
+    if h.endswith(".myworkdayjobs.com"):
+        path = [x for x in p.path.split("/") if x and not re.fullmatch(r"[a-z]{2}(-[A-Z]{2})?", x)]
+        return f"https://{h}/{path[0]}" if path and path[0] != "wday" else ""
+    if h.endswith(".oraclecloud.com") and "/CandidateExperience/" in p.path:
+        m = re.search(r"/sites/([^/?#]+)", p.path)
+        return f"https://{h}/hcmUI/CandidateExperience/en/sites/{m.group(1)}/requisitions" if m else ""
+    if h in ("amazon.jobs", "www.amazon.jobs"):
+        return "https://www.amazon.jobs/"
+    return ""
+
+
+LIST_TEXT = re.compile(r"\b(all|open|current|search|view|browse|see|find)\b.{0,25}\b(jobs|roles|positions|openings|opportunities|vacancies)\b|"
+                       r"^(jobs|job search|open positions|open roles)$", re.I)
+
+
+def listing_url(url: str, links=()) -> str:
+    """A company's own careers site: the page listing its jobs. The posting's address cut back to before the job's
+    id (keeping the search you came from, as some sites carry it along), else a link on the page that says so."""
+    p = urlparse(url)
+    segs = [s for s in p.path.split("/") if s]
+    keep = []
+    for s in segs:
+        if re.search(r"\d{4,}", s) or re.fullmatch(r"[0-9a-f-]{20,}", s, re.I):
+            break
+        keep.append(s)
+    cut = keep != segs and keep
+    if cut and keep[-1].lower() in ("job", "position", "posting", "requisition", "details", "view"):
+        keep.pop()
+    if not cut:
+        for link in links:
+            href = (link.get("h") or "").split("#")[0]
+            if _host(href) == _host(url) and href.rstrip("/") != url.split("#")[0].rstrip("/") and LIST_TEXT.search((link.get("t") or "").strip()):
+                return href
+        keep = keep[:-1]   # no id in the address: its last part names the job
+    search = parse_qs(p.query).get("search", [""])[0]
+    return f"{p.scheme}://{p.netloc}/" + "/".join(keep) + (f"?{search}" if "=" in search else "")
+
+
+def watched(company: str, url: str = "") -> dict | None:
+    """The favourite that already watches this company (by name, or the careers site you're on), if any."""
+    name, host = (company or "").strip().lower(), _host(url) if url and not refused_reason(url) else ""
+    for r in load_sources():
+        if r.get("favourite") and ((name and r.get("company", "").lower() == name)
+                                   or (host and r["kind"] == "url" and _host(r["value"]) == host)):
+            return {"id": r["id"], "label": r["label"], "found_via": r.get("found_via") or "", "value": r["value"]}
+    return None
+
+
+def watch(url: str, company: str = "", page: dict | None = None) -> dict:
+    """The job open in the extension -> its company watched in Discover as a favourite (scanned first, pinned at the
+    top): the job board the page is on or embeds, else the site's own job listing. On LinkedIn and other sites that
+    forbid reading, or a site whose robots.txt says no, the company is found by name instead."""
+    page, company = page or {}, (company or "").strip()
+    links = page.get("links") or []
+    if not refused_reason(url) and public_url(url, resolve=False):
+        cands = [url, *(page.get("frames") or []), *(link.get("h", "") for link in links),
+                 *re.findall(r"https?://[^\s\"'<>\\]+", (page.get("html") or "")[:600000])]
+        root = next((r for r in map(board_root, cands) if r), "")
+        if root:
+            name = next((v for k, v in BOARD_NAMES.items() if k in _host(root)), "job")
+            row, added = _keep_favourite("url", root, company or _company_from_url(root), f"its {name} board")
+            return row | {"added": added}
+        listing = listing_url(url, links)
+        if company and robots_allows(listing):
+            row, added = _keep_favourite("url", listing, company, "its careers site")
+            return row | {"added": added}
+    if not company:
+        raise ValueError("I couldn't tell which company this job is at. Add it in Settings, Favourite companies.")
+    added = watched(company) is None
+    return add_favourite(company) | {"added": added}
 
 
 # Past this many days a posting has usually had its shortlist; favourites stay whatever their age.
