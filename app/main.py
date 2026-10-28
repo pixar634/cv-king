@@ -1046,6 +1046,15 @@ def fit_preview(body: dict = Body(...)):
                   "at_company": tracker.at_company(body.get("company") or "", same["id"] if same else "")}
 
 
+@app.post("/api/session/search")
+def session_search(body: dict = Body(...)):
+    """The extension's Easy Apply session: a LinkedIn search with your filters, Easy Apply jobs only, newest first."""
+    from . import linkedin
+    if not (body.get("title") or "").strip():
+        raise HTTPException(400, "Say which title to search for")
+    return {"url": linkedin.search_url(body["title"], body.get("modes") or [], body.get("place") or "", int(body.get("days") or 7))}
+
+
 @app.post("/api/clip")
 def clip_start(body: dict = Body(...)):
     """The page open in the browser extension, read into a job without fetching it again."""

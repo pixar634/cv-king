@@ -393,6 +393,7 @@ growth log the next map reads.
 - 📝 **Fills the application form**: text, dropdowns, radio buttons, checkboxes and comboboxes, from your profile, the tailored CV and the JD. It **attaches the CV and cover letter PDFs**. Equal-opportunity questions get "decline to answer".
 - 🙋 **Never guesses the personal ones.** Visa, salary, notice period and the like are left for you, outlined in orange. Answer once and every later form fills them.
 - ✅ **You press Submit.** The panel shows exactly which button it will press. Once the page confirms, the application moves to Applied in Pipeline.
+- 🔁 **Easy Apply session.** Press **Easy Apply** in the panel, give a title, remote / hybrid / on-site, a place and how recent: LinkedIn opens with Easy Apply jobs only, newest first. You click through the jobs yourself; nothing browses, clicks or submits on its own, which LinkedIn forbids.
 
 ### 9. Settings and profiles
 
