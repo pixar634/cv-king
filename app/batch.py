@@ -71,7 +71,7 @@ def _work(item_id: str, req: dict, source: dict):
                 j = discover.job_detail(source["found_id"])
                 req |= {"jd": j.get("description", ""), "company": req.get("company") or j.get("company", ""),
                         "role": req.get("role") or j.get("title", ""), "job_url": j.get("url", ""),
-                        "job_id": extract._job_id_from_url(j.get("url", "")),
+                        "job_id": j.get("job_id") or extract._job_id_from_url(j.get("url", "")),
                         "location": j.get("location", ""), "posted": j.get("posted", ""),
                         "discover_match": j.get("match"), "remote": j.get("remote")}
                 if req.get("market") in (None, "", "auto"):
