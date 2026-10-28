@@ -459,3 +459,5 @@ body.is-setup #nav, body.is-setup #engineSeg, body.is-setup #openSettings { disp
 .app-card__chance { display: flex; align-items: baseline; gap: var(--s-2); min-width: 0; font-size: 12px; }
 .app-card__chance .num { color: var(--text-2); white-space: nowrap; }
 .app-card__why { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-card__remove { margin-left: auto; color: var(--text-3); }
+.app-card__remove:hover { color: var(--bad); }

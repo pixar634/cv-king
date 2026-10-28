@@ -184,6 +184,27 @@ def add_from_report(report: dict, req: dict) -> None:
     db.sync_soon()
 
 
+TRASH = "_trash"
+
+
+def remove(app_id: str) -> Path:
+    """Take an application off the Pipeline. Its folder (CV, letter, notes) moves to output/_trash, not deleted, so
+    it can be put back by moving the folder back; its status history stays in the database."""
+    import shutil
+    with _lock:
+        rows = load()
+        if not any(r["id"] == app_id for r in rows):
+            raise KeyError(app_id)
+        _save([r for r in rows if r["id"] != app_id])
+        folder = output_dir() / app_id
+        dest = output_dir() / TRASH / f"{app_id}--removed-{dt.datetime.now():%Y%m%d-%H%M%S}"
+        if folder.exists():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(folder), str(dest))
+    db.sync_soon()
+    return dest
+
+
 def update(app_id: str, fields: dict, source: str = "app") -> dict:
     """source: who changed it (app or extension), kept with the status history."""
     allowed = {"status", "applied_on", "job_url", "notes", "domain", "company", "role", "channel"}
