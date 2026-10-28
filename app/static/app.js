@@ -1227,7 +1227,11 @@ function renderPipeline() {
   $("#stageNav").innerHTML = navHtml; $("#stageHead").innerHTML = headHtml; $("#board").innerHTML = boardHtml;
   $$("[data-open]").forEach((el) => (el.onclick = (e) => { if (!e.target.closest("select, [data-stop], details")) openApp(el.dataset.open); }));
   $$("[data-findc]").forEach((b) => (b.onclick = () => findContacts(b.dataset.findc)));
-  $$("[data-refer]").forEach((b) => (b.onclick = () => askReferral(b.dataset.refer, b.dataset.url)));
+  $$("[data-refer]").forEach((b) => (b.onclick = () => askReferral(b.dataset.refer, b.dataset.url, b.dataset.kind)));
+  $$("[data-person]").forEach((b) => (b.onclick = async () => {
+    try { await api(`/api/apps/${b.dataset.person}/people`, { body: { url: b.dataset.url, action: b.dataset.action } }); loadPipeline(); }
+    catch (e) { toast(e.message, 5000); }
+  }));
   $$("[data-outreach]").forEach((b) => (b.onclick = async () => { await api(`/api/apps/${b.dataset.outreach}/outreach`, { body: { action: b.dataset.action } }); loadPipeline(); }));
   $$("[data-coldto]").forEach((b) => (b.onclick = () => contactToColdMail(b.dataset.coldto, b)));
   $$("[data-contacts-of]").forEach((d) => d.addEventListener("toggle", () => (d.open ? PC.open.add(d.dataset.contactsOf) : PC.open.delete(d.dataset.contactsOf))));
@@ -2256,19 +2260,37 @@ function warmHtml(r) {
   const person = (p, i) => `<div class="contact"><div class="contact__who"><b>${esc(p.name)}</b>${i === 0 ? `<span class="tag tag--ok">Ask first</span>` : ""}${p.level ? `<span class="tag">${esc(p.level)}</span>` : ""}</div><div class="type-meta">${esc(p.position)}</div>
       <div class="type-meta contact__why">${esc(p.why)}</div>
       <div class="contact__acts"><a class="btn btn--link" href="${esc(p.url)}" target="_blank" rel="noopener" data-stop>Profile</a><span class="sp"></span>
-      <button class="btn btn--sm btn--primary" data-refer="${esc(r.id)}" data-url="${esc(p.url)}" data-stop>Ask for a referral</button></div></div>`;
-  return `<details class="disclosure app-card__contacts"><summary>People you know<span class="disclosure__aside num">${r.warm.length}</span></summary>
-      <div class="app-card__contacts-body">${r.warm.map(person).join("")}<p class="type-meta">The ask is copied for you to paste into LinkedIn; nothing is sent.</p></div></details>`;
+      ${personSteps(r.id, p)}</div></div>`;
+  const due = r.warm.filter((p) => ["followup_due", "overdue"].includes(p.msg?.state)).length;
+  return `<details class="disclosure app-card__contacts" ${due ? "open" : ""}><summary>People you know<span class="disclosure__aside num">${r.warm.length}${due ? ` · ${due} follow-up${due === 1 ? "" : "s"} due` : ""}</span></summary>
+      <div class="app-card__contacts-body">${r.warm.map(person).join("")}<p class="type-meta">Messages are copied for you to paste into LinkedIn; nothing is sent. Mark them sent and a follow-up comes due after 5 days.</p></div></details>`;
 }
 
-async function askReferral(appId, url) {
+const ASK_LABEL = { referral: "Ask for a referral", hiring_manager: "Write to them", recruiter: "Recruiter note", intro: "Ask for an intro", follow_up: "Write the follow-up" };
+
+// One person's thread: write the message that fits them, mark it sent, then follow up or mark the reply.
+function personSteps(appId, p) {
+  const m = p.msg, btn = (attrs, label, primary) => `<button class="btn btn--sm ${primary ? "btn--primary" : "btn--ghost"}" ${attrs} data-stop>${label}</button>`;
+  const write = (kind, primary) => btn(`data-refer="${esc(appId)}" data-url="${esc(p.url)}" data-kind="${kind}"`, ASK_LABEL[kind], primary);
+  const step = (action, label, primary) => btn(`data-person="${esc(appId)}" data-url="${esc(p.url)}" data-action="${action}"`, label, primary);
+  if (!m) return write(p.ask || "referral", true);
+  const when = (d) => (d ? dayLabel(d) : "");
+  if (m.state === "none") return `<span class="type-meta">${esc(m.label)} written</span>${write(p.ask || "referral")}${step("sent", "Sent", true)}`;
+  if (m.state === "sent") return `<span class="type-meta">Sent ${esc(when(m.on))} · follow up ${esc(when(m.due))}</span>${step("replied", "Replied")}${step("undo", "Undo")}`;
+  if (m.state === "followup_due" || m.state === "overdue") return `<span class="tag ${m.state === "overdue" ? "tag--bad" : "tag--warn"}">Follow-up ${m.state === "overdue" ? "overdue" : "due"}</span>${write("follow_up", true)}${step("followed_up", "Followed up")}${step("replied", "Replied")}`;
+  if (m.state === "followed_up") return `<span class="type-meta">Followed up ${esc(when(m.on))}</span>${step("replied", "Replied")}${step("undo", "Undo")}`;
+  return `<span class="tag tag--ok">Replied ${esc(when(m.on))}</span>${step("undo", "Undo")}`;
+}
+
+async function askReferral(appId, url, kind = "") {
   try {
-    toast("Writing the referral ask", 4000);
-    const { job } = await api(`/api/apps/${appId}/referral`, { body: { url } });
+    toast(`Writing: ${ASK_LABEL[kind] || "a message"}`, 4000);
+    const { job } = await api(`/api/apps/${appId}/referral`, { body: { url, kind } });
     const ask = await pollJob(job, () => {});
     await navigator.clipboard.writeText(ask.message).catch(() => {});
     const errs = (ask.flags || []).filter((f) => f.level === "error").map((f) => f.text);
-    toast(errs.length ? `Copied, but check it first: ${errs.join(" ")}` : `Copied: paste it into a LinkedIn message to ${ask.to.name}.`, 7000);
+    toast(errs.length ? `Copied, but check it first: ${errs.join(" ")}` : `Copied: paste it into a LinkedIn message to ${ask.to.name}, then press Sent.`, 7000);
+    loadPipeline();
   } catch (e) { toast(e.message, 5000); }
 }
 
