@@ -198,6 +198,46 @@ def add_from_report(report: dict, req: dict) -> None:
 TRASH = "_trash"
 
 
+def add_outside(company: str, role: str, applied_on: str, job_url: str = "", channel: str = "", source: str = "") -> dict | None:
+    """An application made outside JobMagnet (LinkedIn Easy Apply, Naukri, a careers site): on the Pipeline and in the
+    callback rate, with no CV here. None when the tracker already has it."""
+    import uuid
+    if find_same(company, role, job_url):
+        return None
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", f"{company}-{role}").strip("-")[:60]
+    row = {"id": f"{applied_on}_{slug}_{uuid.uuid4().hex[:4]}", "created": f"{applied_on}T00:00:00", "company": company.strip(),
+           "role": role.strip(), "market": "", "status": "Applied", "applied_on": applied_on, "job_url": job_url,
+           "domain": domain_from_url(job_url), "logo": False, "notes": "", "pdf": "", "job_id": "", "location": "",
+           "posted": "", "outside": source or "elsewhere", "channel": channel if channel in CHANNELS else ""}
+    with _lock:
+        db.ensure_seeded()
+        _save(load() + [row])
+        db.record_status(row["id"], row["company"], row["role"], None, "Applied", "app", at=f"{applied_on}T00:00:00")
+    db.sync_soon()
+    return row
+
+
+def import_linkedin_applications(text: str, since: str = "") -> dict:
+    """LinkedIn's Job Applications.csv (from your data export): every application since a date, as outside ones."""
+    import csv
+    import io
+    added, skipped = [], 0
+    for r in csv.DictReader(io.StringIO((text or "").lstrip("\ufeff"))):
+        try:
+            day = dt.datetime.strptime((r.get("Application Date") or "").strip(), "%m/%d/%y, %I:%M %p").date().isoformat()
+        except ValueError:
+            skipped += 1
+            continue
+        if since and day < since or not (r.get("Company Name") and r.get("Job Title")):
+            continue
+        row = add_outside(r["Company Name"], r["Job Title"], day, (r.get("Job Url") or "").strip(), "Easy Apply", "LinkedIn")
+        if row:
+            added.append(row["id"])
+        else:
+            skipped += 1
+    return {"added": len(added), "skipped": skipped}
+
+
 def remove(app_id: str) -> Path:
     """Take an application off the Pipeline. Its folder (CV, letter, notes) moves to output/_trash, not deleted, so
     it can be put back by moving the folder back; its status history stays in the database."""

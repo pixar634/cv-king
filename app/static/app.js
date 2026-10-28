@@ -1261,7 +1261,7 @@ function renderPipeline() {
   const appCard = (r) => {
     const side = `${mailTag(r)}${outreachHtml(r)}${warmHtml(r)}${contactsHtml(r)}`;
     const wide = side.trim().length > 0;
-    return `<div class="card card--interactive app-card ${wide ? "app-card--wide" : ""}" data-open="${esc(r.id)}">
+    return `<div class="card ${r.outside ? "" : "card--interactive"} app-card ${wide ? "app-card--wide" : ""}" ${r.outside ? "" : `data-open="${esc(r.id)}"`}>
       <div class="app-card__main">
       <div class="item">${logoTile(r.id, r.logo, r.company)}
         <span class="item__body"><span class="item__title">${esc(r.company)}</span><span class="item__meta" title="${esc(r.role)}">${esc(r.role)}</span></span>
@@ -1272,11 +1272,12 @@ function renderPipeline() {
       <div class="app-card__state">${statusSel(r)}</div>
       <div class="app-card__acts">
         ${r.job_url ? `<a class="btn btn--sm" href="${esc(r.job_url)}" target="_blank" rel="noopener" data-stop title="${esc(r.job_url)}">Open posting</a>` : `<span class="type-meta">No link saved</span>`}
+        ${r.outside ? `<span class="type-meta" title="Applied outside JobMagnet: there's no CV here">Applied on ${esc(r.outside)}</span>` : `
         <a class="btn btn--sm btn--ghost" href="/apps/${esc(r.id)}/pdf?download=1" data-stop title="${esc(r.pdf)}">PDF</a>
         ${r.status === "Generated" ? `<button class="btn btn--sm btn--ghost" data-applied="${esc(r.id)}" data-stop>Mark applied</button>` : ""}
         <button class="btn btn--sm btn--ghost" data-prep="${esc(r.id)}" data-stop title="Interview questions for this job">Interview</button>
         <button class="btn btn--sm btn--ghost" data-cold="${esc(r.id)}" data-stop title="Write a cold email for this job">Cold mail</button>
-        <button class="btn btn--sm btn--ghost" data-findc="${esc(r.id)}" data-stop title="Search the web for the people who hire for this role" ${PC.running[r.id] ? "disabled" : ""}>${PC.data[r.id] ? "Find contacts again" : "Find contacts"}</button>
+        <button class="btn btn--sm btn--ghost" data-findc="${esc(r.id)}" data-stop title="Search the web for the people who hire for this role" ${PC.running[r.id] ? "disabled" : ""}>${PC.data[r.id] ? "Find contacts again" : "Find contacts"}</button>`}
         <button class="btn btn--sm btn--ghost app-card__remove" data-delapp="${esc(r.id)}" data-stop title="Take this application off the Pipeline (its folder moves to output/_trash)">Remove</button>
       </div></div>${wide ? `<div class="app-card__side">${side}</div>` : ""}</div>`;
   };
@@ -2772,6 +2773,14 @@ function wireDrawer() {
   $("#addUrl").onclick = () => addSource("url", $("#srcUrl"));
   $("#addQuery").onclick = () => addSource("websearch", $("#srcQuery"));
   $("#savePeople").onclick = savePeople;
+  $("#liAppsFile").onchange = async () => {
+    const f = $("#liAppsFile").files[0]; if (!f) return;
+    try {
+      const r = await api("/api/apps/import-linkedin", { body: { csv: await f.text(), since: $("#liAppsSince").value } });
+      $("#liAppsStatus").textContent = `${r.added} added to your Pipeline, ${r.skipped} already there or unreadable`;
+      toast("LinkedIn applications imported");
+    } catch (e) { toast(e.message, 5000); }
+  };
   $("#connFile").onchange = async () => {
     const f = $("#connFile").files[0]; if (!f) return;
     try {
