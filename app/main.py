@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import (apply, areas, batch, db, discover, extract, insights, letterfile, letters, memory, onboarding, profiles,
-               strategy, tailor, tracker)
+               strategy, study, tailor, tracker)
 from .config import STATIC, output_dir
 from .engines import ENGINES, EngineError
 from .jd import parse_jd
@@ -1018,6 +1018,40 @@ def memory_edit(entry_id: str, body: dict = Body(...)):
 @app.delete("/api/memory/{entry_id}")
 def memory_remove(entry_id: str):
     memory.remove(entry_id)
+    return {"ok": True}
+
+
+# ---------- study list: gaps to learn later ----------
+
+@app.get("/api/study")
+def study_list():
+    return {"items": study.items(), "kinds": study.KINDS, "statuses": study.STATUSES}
+
+
+@app.post("/api/study")
+def study_add(body: dict = Body(...)):
+    """Terms to learn later: a tailored CV's ticked gaps (with its app_id), or one you add yourself."""
+    try:
+        return {"items": study.add(body.get("terms") or [], body.get("app_id") or "", body.get("kind") or "skill")}
+    except KeyError:
+        raise HTTPException(404, "No such application")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/study/{item_id}")
+def study_edit(item_id: int, body: dict = Body(...)):
+    try:
+        return study.update(item_id, body)
+    except KeyError:
+        raise HTTPException(404, "Not on your study list")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/study/{item_id}")
+def study_remove(item_id: int):
+    study.remove(item_id)
     return {"ok": True}
 
 

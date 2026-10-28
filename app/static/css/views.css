@@ -461,3 +461,16 @@ body.is-setup #nav, body.is-setup #engineSeg, body.is-setup #openSettings { disp
 .app-card__why { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-card__remove { margin-left: auto; color: var(--text-3); }
 .app-card__remove:hover { color: var(--bad); }
+
+/* Study: gaps to learn later */
+.gap__study { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; padding-top: var(--s-3); border-top: 1px solid var(--line); }
+.study-add { display: grid; grid-template-columns: minmax(0, 1fr) 160px auto; gap: var(--s-2); margin-bottom: var(--s-6); }
+.study { align-items: flex-start; padding: var(--s-4) 0; }
+.study__jobs { margin-top: var(--s-2); }
+.study__plan { display: grid; grid-template-columns: 150px 150px minmax(0, 1fr); gap: var(--s-2); align-items: start; margin-top: var(--s-3); }
+.study__plan > * { min-width: 0; }
+.study__plan textarea { resize: vertical; }
+@media (max-width: 760px) {
+  .study { flex-wrap: wrap; }
+  .study-add, .study__plan { grid-template-columns: minmax(0, 1fr); }
+}
