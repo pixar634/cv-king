@@ -84,6 +84,17 @@ def find_same(company: str, role: str, job_url: str = "", job_id: str = "", rows
     return hits[0] if hits else None
 
 
+def at_company(company: str, skip_id: str = "", rows: list[dict] | None = None) -> list[dict]:
+    """Applications that went out to this employer (any role), newest first: {id, role, status, story}."""
+    key = _company(company)
+    if not key:
+        return []
+    hits = [r for r in (load() if rows is None else rows)
+            if r["id"] != skip_id and went_out(r) and _company(r.get("company")) == key]
+    hits.sort(key=lambda r: r.get("applied_on") or r.get("created", ""), reverse=True)
+    return [{"id": r["id"], "role": r.get("role", ""), "status": r.get("status", ""), "story": story(r)} for r in hits]
+
+
 def went_out(row: dict) -> bool:
     return row.get("status") not in (None, "", "Generated") or bool(row.get("applied_on"))
 

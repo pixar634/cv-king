@@ -198,6 +198,8 @@ const fitBody = (j) => ({ jd: j.description, role: j.role || "", company: j.comp
 const stackChips = (missing) => (missing || []).length ? `<div class="row">${[...missing].sort((x, y) => y.must - x.must)
   .map((s) => `<span class="chip ${s.must ? "bad" : "warn"}">No ${esc(s.name)}${s.must ? " · must-have" : ""}</span>`).join("")}</div>` : "";
 
+const companyHtml = (list) => (list || []).length ? `<div class="notice"><b>Applied here before:</b> ${list.slice(0, 3).map((x) => `${esc(x.role)} (${esc(x.story)})`).join("; ")}.</div>` : "";
+
 function gateHtml(g, a) {
   if (a) return `<div class="notice ${a.sent ? "bad" : ""}"><b>You already have this one</b> (${esc(a.story)}).${a.sent ? " Use Replace on it in JobMagnet to write it again." : ""}</div>`;
   if (!g || g.verdict === "ok") return stackChips(g?.missing);
@@ -208,10 +210,10 @@ function fitHtml(f) {
   if (!f) return "";
   const warn = (f.warnings || []).length ? `<div class="notice">This posting has text aimed at AI tools. JobMagnet reads it as text and never follows it:
     ${f.warnings.map((w) => `<div class="meta">“${esc(w)}”</div>`).join("")}</div>` : "";
-  if (!f.measured) return gateHtml(f.gate, f.already) + warn + `<p class="meta" style="margin:0">This posting names too few standard skills to score. Read it yourself before tailoring.</p>`;
+  if (!f.measured) return gateHtml(f.gate, f.already) + companyHtml(f.at_company) + warn + `<p class="meta" style="margin:0">This posting names too few standard skills to score. Read it yourself before tailoring.</p>`;
   const list = (label, terms, cls) => terms.length ? `<div class="fit__list"><span class="meta">${label}</span><div class="row">${terms.map((t) => `<span class="chip ${cls}">${esc(t)}</span>`).join("")}</div></div>` : "";
   const label = f.label ? `<div class="row"><span class="chip ${f.label === "Strong" ? "ok" : f.label === "Long shot" ? "warn" : ""}">${esc(f.label)}</span><span class="meta">${esc((f.label_why || []).join(", "))}</span></div>` : "";
-  return `${gateHtml(f.gate, f.already)}${label}${warn}<div class="score"><div><span class="meta">Your CV</span><b>${f.now}%</b></div><div class="now"><span class="meta">Can reach</span><b>${f.reach}%</b></div><div><span class="meta">Your filter</span><b>${f.minimum ? `${f.minimum}%` : "Any"}</b></div></div>
+  return `${gateHtml(f.gate, f.already)}${companyHtml(f.at_company)}${label}${warn}<div class="score"><div><span class="meta">Your CV</span><b>${f.now}%</b></div><div class="now"><span class="meta">Can reach</span><b>${f.reach}%</b></div><div><span class="meta">Your filter</span><b>${f.minimum ? `${f.minimum}%` : "Any"}</b></div></div>
     <div class="meter" title="Keyword match: ${f.now}% with your CV as it is, ${f.reach}% is the most your profile can truthfully reach"><span style="width:${f.now}%"></span><i style="left:${f.reach}%"></i></div>
     ${f.below ? `<div class="notice">Your profile can reach ${f.reach}% of this job's keywords, below your ${f.minimum}% filter. Worth a look before you spend a tailor on it.</div>` : ""}
     ${list("Tailoring adds (in your profile, not yet in your CV)", f.adds, "ok")}

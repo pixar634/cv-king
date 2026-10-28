@@ -220,6 +220,9 @@ function setJob(job) {
 // ================= job card =================
 const fitBody = (j) => ({ jd: j.description, role: j.role || j.title || "", company: j.company || "", url: j.url || "", location: j.location || "", market: j.market || "", remote: !!j.remote });
 // The screens a CV can't fix (level, location, contract, parked track), from the same check tailoring stops on.
+// Other roles you've applied for at this employer: one company, one recruiter team, who'll see both.
+const atCompanyNotice = (list) => (list || []).length ? `<div class="notice"><b>You've applied to this company before:</b> ${list.slice(0, 3).map((x) => `${esc(x.role)} (${esc(x.story)})`).join("; ")}${list.length > 3 ? ` and ${list.length - 3} more` : ""}. The same recruiters may see both; say why this role fits better, or ask your contact there which to go for.</div>` : "";
+
 function gateNotice(g, a) {
   if (a) return `<div class="notice ${a.sent ? "notice--bad" : ""}"><b>You already have this one</b> (${esc(a.story)}). ${a.sent ? "Tailoring stops here; use Replace on it in Pipeline to write it again." : "Tailor anyway writes a second CV."}</div>`;
   if (!g || g.verdict === "ok") return "";
@@ -230,11 +233,11 @@ function fitBlock(f) {
   if (!f) return "";
   const warn = (f.warnings || []).length ? `<div class="notice">This posting has text aimed at AI tools. JobMagnet reads it as text and never follows it:
       ${f.warnings.map((w) => `<div class="type-meta">“${esc(w)}”</div>`).join("")}</div>` : "";
-  if (!f.measured) return gateNotice(f.gate, f.already) + warn + `<p class="type-meta">This posting names too few standard skills to score. Read it before tailoring.</p>`;
+  if (!f.measured) return gateNotice(f.gate, f.already) + atCompanyNotice(f.at_company) + warn + `<p class="type-meta">This posting names too few standard skills to score. Read it before tailoring.</p>`;
   const list = (label, terms, cls) => terms.length ? `<div><span class="eyebrow">${label}</span><div class="chip-row">${terms.map((t) => `<span class="chip ${cls}"><span>${esc(t)}</span></span>`).join("")}</div></div>` : "";
   const warmLine = (f.warm || []).length ? `<div class="notice">You know ${f.warm.length === 1 ? "someone" : `${f.warm.length} people`} there. Ask <a href="${esc(f.warm[0].url)}" target="_blank" rel="noopener">${esc(f.warm[0].name)}</a> first (${esc(f.warm[0].position)}): ${esc(f.warm[0].why.toLowerCase())}.${f.warm.length > 1 ? ` Also: ${f.warm.slice(1).map((p) => esc(p.name)).join(", ")}.` : ""} A referral is worth more than any CV change; after tailoring, Pipeline writes the ask.</div>` : "";
   const label = f.label ? `<div class="job__foot"><span class="tag ${f.label === "Strong" ? "tag--ok" : f.label === "Long shot" ? "tag--warn" : ""}">${esc(f.label)}</span><span class="type-meta">${esc((f.label_why || []).join(", "))}</span></div>` : "";
-  return `<div class="job__fit">${gateNotice(f.gate, f.already)}${label}${warmLine}${warn}
+  return `<div class="job__fit">${gateNotice(f.gate, f.already)}${atCompanyNotice(f.at_company)}${label}${warmLine}${warn}
       <div class="job__foot"><span class="type-meta">Your CV <b class="num">${f.now}%</b> · can reach <b class="num">${f.reach}%</b>${f.minimum ? ` · your filter ${f.minimum}%` : ""}</span></div>
       <div style="position:relative" title="${f.now}% with your CV as it is; ${f.reach}% is the most your profile can truthfully reach">
         <div class="meter meter--segmented"><span class="meter__ceil" style="width:${f.reach}%"></span><span class="meter__fill" style="width:${f.now}%"></span></div></div>
@@ -1026,6 +1029,7 @@ async function loadFound() {
         ${j.open === "unclear" ? `<span class="tag tag--warn" title="Doesn't say if it hires where you live, or if it sponsors a visa">Check eligibility</span>` : ""}
         ${j.warm ? `<span class="tag tag--accent" title="Someone in your LinkedIn connections works there: ask for a referral">You know someone</span>` : ""}
         ${j.method === "recruiter mail" ? `<span class="tag tag--accent tag--solid" title="${esc(j.recruiter || "A recruiter")} wrote to you about this (${esc(j.via || "email")}). Reply the same day.">Recruiter wrote to you</span>` : ""}
+        ${j.applied_here ? `<span class="tag tag--warn" title="You applied here before: ${esc(j.applied_here)}">Applied here before</span>` : ""}
         ${isFav(j) ? `<span class="tag tag--accent" title="One of your favourite companies" aria-label="Favourite">${ICON.star.replace("<svg", "<svg style=\"width:9px;height:9px\"")}</span>` : ""}
         <a class="icon-btn icon-btn--sm" href="${esc(j.url)}" target="_blank" rel="noopener" title="Open the posting" aria-label="Open the posting">${ICON.out}</a>
         <button class="icon-btn icon-btn--sm job-card__pass" title="Not for me: hide it, and Discover learns to push down jobs like it" aria-label="Not for me">${ICON.x}</button>
