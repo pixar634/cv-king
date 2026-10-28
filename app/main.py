@@ -1036,7 +1036,8 @@ def fit_preview(body: dict = Body(...)):
     return out | {"gate": gate.check(text, body.get("role") or "", body.get("location") or "", market, body.get("remote"),
                                      profile, prefs, company=body.get("company") or ""),
                   "already": same and {"id": same["id"], "status": same.get("status"), "story": tracker.story(same),
-                                       "sent": tracker.went_out(same)}}
+                                       "sent": tracker.went_out(same)},
+                  "at_company": tracker.at_company(body.get("company") or "", same["id"] if same else "")}
 
 
 @app.post("/api/clip")

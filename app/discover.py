@@ -638,7 +638,7 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 23
+RANK_VERSION = 24
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "regions", "places", "pay_floor_home_lpa", "pay_floor_remote_lpa", "pay_floor_abroad_eur", "pay_tiers")
 
@@ -706,7 +706,17 @@ def with_profile(prefs: dict) -> dict:
     profile = load_profile()
     from .warm import companies
     return prefs | {"_ptext": profile_text(profile), "_held": [r.get("title", "") for r in profile["experience"]],
-                    "_floor": strategy.calibrated_rank(profile), "_warm": companies()}
+                    "_floor": strategy.calibrated_rank(profile), "_warm": companies(), "_applied": _applied_at()}
+
+
+def _applied_at() -> dict[str, str]:
+    """Employers you've applied to, with the latest role there: Discover marks their other jobs."""
+    from .tracker import _company, load, went_out
+    out = {}
+    for r in sorted(load(), key=lambda r: r.get("applied_on") or r.get("created", "")):
+        if went_out(r) and _company(r.get("company")):
+            out[_company(r["company"])] = f"{r.get('role', '')} ({r.get('status', '')})"
+    return out
 
 
 def rank_signature(prefs: dict, evidence: set[str]) -> str:
@@ -715,7 +725,8 @@ def rank_signature(prefs: dict, evidence: set[str]) -> str:
     sp = strategy.path()
     from .sponsors import _lists
     # The day counts too: a posting's age is part of its fit label.
-    blob = json.dumps([RANK_VERSION, dt.date.today().isoformat(), _lists().get("fetched"), sorted(prefs.get("_warm", ())), {k: prefs.get(k) for k in RANK_KEYS}, sorted(evidence),
+    blob = json.dumps([RANK_VERSION, dt.date.today().isoformat(), _lists().get("fetched"), sorted(prefs.get("_warm", ())),
+                       prefs.get("_applied", {}), {k: prefs.get(k) for k in RANK_KEYS}, sorted(evidence),
                        hashlib.sha1(prefs.get("_ptext", "").encode()).hexdigest(),
                        sp.stat().st_mtime if sp.exists() else 0], sort_keys=True, default=str)
     return hashlib.sha1(blob.encode()).hexdigest()[:12]
@@ -762,7 +773,7 @@ def rank(job: dict, evidence: set[str], prefs: dict, sig: str | None = None) -> 
         return job | {k: v for k, v in cached.items() if k != "sig"}
     out = _rank(job, evidence, prefs)
     keep = {k: out[k] for k in ("match", "order", "reasons", "excluded", "areas", "skills", "estimate", "unscored", "open",
-                                     "pay", "fit", "fit_why", "terms", "warm")
+                                     "pay", "fit", "fit_why", "terms", "warm", "applied_here")
             if k in out}
     return out | {"_r": keep | {"sig": sig}}
 
@@ -918,6 +929,7 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     return job | {"skills": skills, "match": max(0, min(100, score)), "estimate": estimate, "unscored": unscored, "order": order,
                   "reasons": reasons, "excluded": False, "open": o["state"], "pay": pv["label"],
                   "fit": fit["label"], "fit_why": fit["why"], "terms": terms, "warm": warm,
+                  "applied_here": prefs.get("_applied", {}).get(_company(job.get("company"))),
                   "areas": tag(job, prefs.get("offices", ""))}
 
 
