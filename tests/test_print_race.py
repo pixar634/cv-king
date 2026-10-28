@@ -3,6 +3,8 @@ file and swaps it in whole; a failed print leaves the last good PDF and no stray
 import io
 import threading
 from pathlib import Path
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 import pytest
 from pypdf import PdfWriter
@@ -24,7 +26,7 @@ class FakePage:
         self.pages, self.fail, self.loaded = pages, fail, []
 
     def goto(self, uri, wait_until=None):
-        assert Path(uri.replace("file:///", "")).exists()   # its own page, never deleted by another print
+        assert Path(url2pathname(urlparse(uri).path)).exists()   # its own page, never deleted by another print
         self.loaded.append(uri)
 
     def evaluate(self, js):
