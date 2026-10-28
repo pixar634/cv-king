@@ -992,6 +992,7 @@ async function loadFound() {
         ${j.pay === "meets" ? `<span class="tag tag--ok" title="States pay at or above your floor">Pay meets</span>` : j.pay === "likely" ? `<span class="tag" title="Pay range or company tier reaches your floor">Pay likely</span>` : ""}
         ${j.open === "unclear" ? `<span class="tag tag--warn" title="Doesn't say if it hires where you live, or if it sponsors a visa">Check eligibility</span>` : ""}
         ${j.warm ? `<span class="tag tag--accent" title="Someone in your LinkedIn connections works there: ask for a referral">You know someone</span>` : ""}
+        ${j.method === "recruiter mail" ? `<span class="tag tag--accent tag--solid" title="${esc(j.recruiter || "A recruiter")} wrote to you about this (${esc(j.via || "email")}). Reply the same day.">Recruiter wrote to you</span>` : ""}
         ${isFav(j) ? `<span class="tag tag--accent" title="One of your favourite companies" aria-label="Favourite">${ICON.star.replace("<svg", "<svg style=\"width:9px;height:9px\"")}</span>` : ""}
         <a class="icon-btn icon-btn--sm" href="${esc(j.url)}" target="_blank" rel="noopener" title="Open the posting" aria-label="Open the posting">${ICON.out}</a>
         <button class="icon-btn icon-btn--sm job-card__pass" title="Not for me: hide it, and Discover learns to push down jobs like it" aria-label="Not for me">${ICON.x}</button>
@@ -1127,7 +1128,7 @@ function renderMailNews(m) {
   $("#mailStamp").textContent = m.checked ? `Gmail checked ${dayLabel(m.checked.slice(0, 10))}` : "";
   const row = (x) => `<div class="item"><span class="item__body"><span class="item__title">${esc(x.company || x.from)}${x.role ? ` · ${esc(x.role)}` : ""}</span><span class="item__meta">${esc(x.subject)} · ${esc(dayLabel(x.date))}</span></span>${x.url ? `<a class="btn btn--sm btn--ghost" href="${esc(x.url)}" target="_blank" rel="noopener">Open mail</a>` : ""}</div>`;
   const part = (title, note, list) => list?.length ? `<details class="disclosure"><summary>${title}<span class="disclosure__aside num">${list.length}</span></summary><p class="type-meta">${note}</p><div class="list">${list.map(row).join("")}</div></details>` : "";
-  $("#mailNews").innerHTML = part("Recruiters who wrote to you first", "Someone reaching out is the warmest start there is: reply the same day.", m.inbound)
+  $("#mailNews").innerHTML = part("Recruiters who wrote to you first", "Someone reaching out is the warmest start there is: reply the same day. Each job they described is in Discover, marked \"Recruiter wrote to you\", with its fit label; tailor it from there.", m.inbound)
     + part("Applications in your mail that JobMagnet doesn't track", "Made on LinkedIn, Naukri or a careers site directly. Tailor them here, or note them, so the callback rate counts them.", m.untracked);
 }
 
@@ -1137,7 +1138,8 @@ async function checkMail() {
   try {
     const { job } = await api("/api/mail/check", { body: {} });
     const r = await pollJob(job, () => {});
-    toast(`Gmail read: ${r.matched} application${r.matched === 1 ? "" : "s"} with mail${r.inbound.length ? `, ${r.inbound.length} recruiter${r.inbound.length === 1 ? "" : "s"} wrote first` : ""}.`, 6000);
+    const rj = r.recruiter_jobs || {};
+    toast(`Gmail read: ${r.matched} application${r.matched === 1 ? "" : "s"} with mail. ${rj.read ? `${rj.read} recruiter email${rj.read === 1 ? "" : "s"} about jobs, ${rj.shown} in Discover now (marked "Recruiter wrote to you").` : rj.error ? `Recruiter emails couldn't be read: ${rj.error}` : ""}`, 8000);
     loadPipeline();
   } catch (e) { toast(e.message, 6000); }
   b.disabled = false; b.textContent = "Check Gmail";
