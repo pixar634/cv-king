@@ -2,15 +2,16 @@
 posting asks for LangGraph, the profile doesn't show it); you can add your own too.
 
 It lives only in the local database (`study_items`, and `study_asks` for the applications that asked), like the
-status history: no JSON file, and `db.sync()` never touches it. Nothing here reaches a CV: once you can talk about
-one in an interview, add it to your memory or the growth log."""
+status history: no JSON file, and `db.sync()` never touches it. Nothing here reaches a CV by itself: a finished item
+goes into the Career growth log (and, if you say so, your confirmed skills), or into your memory."""
 import datetime as dt
 from contextlib import closing
 
-from . import db, tracker
+from . import career, db, insights, tracker
 
 KINDS = {"skill": "Skill", "certification": "Certification", "project": "Project"}
 STATUSES = {"learning": "Learning", "todo": "To study", "done": "Done"}   # in the list's order
+LOG_KINDS = {"skill": "skill", "certification": "cert", "project": "did"}   # study kind -> growth-log kind
 
 
 def _clean(term) -> str:
@@ -30,15 +31,17 @@ def items() -> list[dict]:
     for a in asks:
         by_item.setdefault(a["item_id"], []).append({"app_id": a["app_id"], "company": a["company"], "role": a["role"],
                                                      "must_have": bool(a["must_have"]), "note": a["note"], "at": a["at"]})
-    order = list(STATUSES)
+    order, logged = list(STATUSES), {e["id"] for e in career.log()}
     for r in rows:
         r["asks"] = by_item.get(r["id"], [])
+        r["log_id"] = r["log_id"] if r["log_id"] in logged else None   # removed from the growth log since
     return sorted(rows, key=lambda r: (order.index(r["status"]) if r["status"] in order else len(order), -len(r["asks"])))
 
 
-def add(terms: list, app_id: str = "", kind: str = "skill") -> list[dict]:
+def add(terms: list, app_id: str = "", kind: str = "skill", asked: bool = False) -> list[dict]:
     """Put terms on the list: gap dicts ({term, must_have, note}) or plain names. A term already there keeps its
-    status and gets this application as one more that asked for it."""
+    status and gets this application as one more that asked for it. `asked` (a suggestion taken up) links every
+    tailored job that required the term while the profile lacked it."""
     app = next((r for r in tracker.load() if r["id"] == app_id), None) if app_id else None
     if app_id and not app:
         raise KeyError(app_id)
@@ -57,7 +60,49 @@ def add(terms: list, app_id: str = "", kind: str = "skill") -> list[dict]:
                 con.execute("INSERT OR REPLACE INTO study_asks VALUES (?, ?, ?, ?, ?, ?, ?)",
                             (item_id, app["id"], app.get("company") or "", app.get("role") or "",
                              int(bool(g.get("must_have"))), str(g.get("note") or "")[:300], now))
+            elif asked:
+                con.executemany("INSERT OR IGNORE INTO study_asks VALUES (?, ?, ?, ?, 1, '', ?)", [
+                    (item_id, r["app_id"], r["company"] or "", r["role"] or "", now) for r in con.execute(
+                        "SELECT DISTINCT k.app_id, a.company, a.role FROM keywords k JOIN applications a ON a.id = k.app_id "
+                        "WHERE k.term = ? AND k.in_profile = 0 AND k.tier = 'required'", (term,))])
     return items()
+
+
+def suggestions(limit: int = 12) -> list[dict]:
+    """Skills the tailored jobs keep requiring that the profile lacks and the list doesn't hold yet: [{term, jobs}]."""
+    with closing(db.connect()) as con:
+        have = {r[0] for r in con.execute("SELECT key FROM study_items")}
+        return [g for g in insights.most_missed(con) if _key(g["term"]) not in have][:limit]
+
+
+def log(item_id: int, use_on_cv: bool = False) -> dict:
+    """A finished item into the Career growth log, which the career map reads. A skill or certification marked for
+    CVs also joins the profile's confirmed skills (career.add_log), so tailoring may claim it."""
+    item = next((i for i in items() if i["id"] == item_id), None)
+    if not item:
+        raise KeyError(item_id)
+    if item["status"] != "done":
+        raise ValueError("Mark it done first.")
+    if item["log_id"]:
+        raise ValueError("It's in your growth log already.")
+    text = item["term"] if item["kind"] != "project" else f"Built a project: {item['term']}"
+    entry = career.add_log(LOG_KINDS[item["kind"]], text, item["done_on"] or "", use_on_cv)
+    with closing(db.connect()) as con, con:
+        con.execute("UPDATE study_items SET log_id = ?, updated = ? WHERE id = ?", (entry["id"], db._now(), item_id))
+    return next(i for i in items() if i["id"] == item_id)
+
+
+def for_brief() -> str:
+    """The list as lines for the career map's brief."""
+    lines = []
+    for i in items():
+        bits = [KINDS[i["kind"]].lower(), STATUSES[i["status"]].lower()]
+        if i["asks"]:
+            bits.append(f"required by {sum(a['must_have'] for a in i['asks'])} of {len(i['asks'])} tailored jobs that named it")
+        if i["target_on"]:
+            bits.append(f"aiming for {i['target_on']}")
+        lines.append(f"- {i['term']} [{'; '.join(bits)}]" + (f" plan: {i['notes'][:200]}" if i["notes"] else ""))
+    return "\n".join(lines[:40])
 
 
 def update(item_id: int, fields: dict) -> dict:

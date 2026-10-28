@@ -2484,6 +2484,11 @@ async function loadCareer() {
 function onCareerClick(d) {
   const p = $("#stepPanel");
   const list = (items, cls) => (items || []).length ? `<ul class="bullets ${cls}">${items.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : `<p class="type-meta">Nothing listed.</p>`;
+  // What to build, certifications and projects can go on the study list from here.
+  const onList = new Set((STUDY?.items || []).map((i) => i.key));
+  const studyBtn = (t, kind) => onList.has(studyKey(t)) ? `<span class="tag tag--info">On your study list</span>`
+    : `<button class="btn btn--link" data-study-add="${esc(t)}" data-kind="${kind}" title="Keep it in Study">Study</button>`;
+  const plan = (items, cls, kind) => (items || []).length ? `<ul class="bullets ${cls}">${items.map((t) => `<li>${esc(t)} ${studyBtn(t, kind)}</li>`).join("")}</ul>` : `<p class="type-meta">Nothing listed.</p>`;
   p.style.removeProperty("--c");
   if (d.type === "history") {
     const x = d.item;
@@ -2512,9 +2517,9 @@ function onCareerClick(d) {
     <p class="step__why">${esc(path.why)}</p>
     <h4 class="eyebrow">What employers screen for</h4>${list(s.what_it_takes, "")}
     <h4 class="eyebrow">What you already have</h4>${list(s.you_have, "bullets--ok")}
-    <h4 class="eyebrow">What to build</h4>${list(s.to_build, "bullets--warn")}
-    ${(s.certifications || []).length ? `<h4 class="eyebrow">Certifications</h4><ul class="bullets">${s.certifications.map((c) => `<li>${esc(c.name)} <span class="tag ${c.need === "screened" ? "tag--warn" : ""}">${c.need === "screened" ? "Screened for" : "Helps"}</span>${c.why ? `<div class="type-meta">${esc(c.why)}</div>` : ""}</li>`).join("")}</ul>` : ""}
-    ${(s.projects || []).length ? `<h4 class="eyebrow">Projects to take on</h4>${list(s.projects, "bullets--warn")}` : ""}
+    <h4 class="eyebrow">What to build</h4>${plan(s.to_build, "bullets--warn", "skill")}
+    ${(s.certifications || []).length ? `<h4 class="eyebrow">Certifications</h4><ul class="bullets">${s.certifications.map((c) => `<li>${esc(c.name)} <span class="tag ${c.need === "screened" ? "tag--warn" : ""}">${c.need === "screened" ? "Screened for" : "Helps"}</span> ${studyBtn(c.name, "certification")}${c.why ? `<div class="type-meta">${esc(c.why)}</div>` : ""}</li>`).join("")}</ul>` : ""}
+    ${(s.projects || []).length ? `<h4 class="eyebrow">Projects to take on</h4>${plan(s.projects, "bullets--warn", "project")}` : ""}
     <h4 class="eyebrow">Pay at this step</h4>
     ${s.salary_band ? `<div class="step__band num">${s.salary_band.low}–${s.salary_band.high} ${esc(s.salary_band.unit)}<a class="btn btn--link" href="${esc(s.salary_band.source)}" target="_blank" rel="noopener">Source</a></div>` : `<p class="type-meta">No sourced range found, so none is shown.</p>`}
     ${s.ladder_note ? `<h4 class="eyebrow">How companies name this level</h4><p class="step__why">${esc(s.ladder_note)}</p>` : ""}
@@ -2524,6 +2529,12 @@ function onCareerClick(d) {
       <button class="btn btn--sm btn--ghost" id="stepSource" title="Add a web search for these titles to Discover">Track in Discover</button></div>
     <p class="type-meta">Searches: ${esc((s.search_titles || []).join(", "))}</p>
     <div class="list" id="stepResults"></div>`;
+  $$("[data-study-add]", p).forEach((b) => (b.onclick = async () => {
+    try { await api("/api/study", { body: { terms: [b.dataset.studyAdd], kind: b.dataset.kind } }); } catch (e) { toast(e.message, 4000); return; }
+    b.outerHTML = `<span class="tag tag--info">On your study list</span>`;
+    fetchStudy().catch(() => {});
+    toast("Added to your study list");
+  }));
   const titles = s.search_titles && s.search_titles.length ? s.search_titles : [s.title];
   const showJobs = (jobs, fromWeb) => {
     $("#stepResults").innerHTML = jobs.length ? jobs.map((j) => `<div class="item"><span class="item__body"><span class="item__title item__title--wrap">${esc(j.title)}</span>
@@ -2731,6 +2742,11 @@ async function loadStudy() {
     $("#studyTerm").onkeydown = (e) => { if (e.key === "Enter") addStudy(); };
     $("#studyFilter").onclick = (e) => { const b = e.target.closest("[data-f]"); if (b) { store.set("cv.studyFilter", b.dataset.f); renderStudy(); } };
     $("#studyList").onclick = onStudyClick;
+    $("#studySuggest").onclick = async (e) => {
+      const b = e.target.closest("[data-suggest]"); if (!b) return;
+      try { await api("/api/study", { body: { terms: [b.dataset.suggest], asked: true } }); } catch (err) { toast(err.message, 4000); return; }
+      await fetchStudy(); renderStudy();
+    };
     $("#studyList").onchange = onStudyChange;
   }
   renderStudy();
@@ -2749,6 +2765,10 @@ function renderStudy() {
   const f = store.get("cv.studyFilter", "open");
   $$("#studyFilter [data-f]").forEach((b) => b.classList.toggle("on", b.dataset.f === f));
   const rows = STUDY.items.filter((i) => f === "all" || (f === "done") === (i.status === "done"));
+  const sug = STUDY.suggestions || [];
+  $("#studySuggest").innerHTML = sug.length ? `<span class="eyebrow">Your jobs keep requiring</span>
+    <p class="type-meta">Required by the jobs you tailored for and not in your profile. Click one to study it, with those jobs attached.</p>
+    <div class="chip-row">${sug.map((g) => `<button class="chip chip--warn" data-suggest="${esc(g.term)}" title="Required by ${g.jobs} job${g.jobs === 1 ? "" : "s"}"><span>${esc(g.term)} · ${g.jobs}</span></button>`).join("")}</div>` : "";
   const empty = STUDY.items.length ? `<p class="type-meta">${f === "done" ? "Nothing done yet." : "Nothing left to study."}</p>`
     : `<p class="type-meta">Nothing yet. After a tailor, open Keywords, tick a gap you don't have and press <b>Study later</b>. Or add one above.</p>`;
   $("#studyList").innerHTML = rows.map(studyRow).join("") || empty;
@@ -2771,6 +2791,8 @@ function studyRow(i) {
     </span>
     <span class="item__aside">
       <div class="seg">${Object.entries(STUDY.statuses).map(([k, v]) => `<button data-status="${k}" class="${k === i.status ? "on" : ""}">${esc(v)}</button>`).join("")}</div>
+      ${i.log_id ? `<span class="tag tag--ok" title="In your Career growth log, which the career map reads">Logged</span>`
+        : i.status === "done" ? `<button class="btn btn--sm" data-act="log" title="Add it to your Career growth log, which the career map reads">Log it</button>` : ""}
       <button class="btn btn--sm btn--ghost" data-act="have" title="Had it all along, or can talk about it now? Write where you used it">I have it</button>
       <button class="icon-btn icon-btn--sm" data-act="remove" aria-label="Remove" title="Remove">${ICON.x}</button>
     </span></div>`;
@@ -2788,11 +2810,23 @@ async function onStudyClick(e) {
   const st = e.target.closest("[data-status]"), job = e.target.closest("[data-app]"), act = e.target.closest("[data-act]")?.dataset.act;
   if (st && st.dataset.status !== item.status) {
     await saveStudy(id, { status: st.dataset.status });
-    if (st.dataset.status === "done") toast("Done. Add it to your memory when you can talk about it in an interview.", 4000);
+    if (st.dataset.status === "done") toast("Done. Log it so the career map knows, or add it to your memory.", 4000);
   }
   if (job) openApp(job.dataset.app).catch(() => toast("That application isn't in Pipeline any more.", 4000));
   if (act === "have") openMemory(item.term);
+  if (act === "log") logStudy(item);
   if (act === "remove") { await api(`/api/study/${id}`, { method: "DELETE" }); toast("Removed"); await fetchStudy(); renderStudy(); }
+}
+
+// Into the Career growth log. A skill or certification may also become a confirmed skill, which every CV may use.
+async function logStudy(item) {
+  const cv = item.kind !== "project" && confirm(`Use "${item.term}" on your CVs too?
+
+OK adds it to your confirmed skills, so every CV may claim it: only if you can talk about it in an interview. Cancel only logs it.`);
+  try { await api(`/api/study/${item.id}/log`, { body: { use_on_cv: cv } }); } catch (e) { toast(e.message, 4000); return; }
+  if (cv) { S.state = await api("/api/state"); S.prefs = S.state.profile.preferences; }
+  toast(cv ? "Logged, and on your CVs from now on. Map your routes again to use it." : "Logged. Map your routes again to use it.", 4000);
+  await fetchStudy(); renderStudy();
 }
 
 function onStudyChange(e) {

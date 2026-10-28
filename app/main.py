@@ -1025,14 +1025,15 @@ def memory_remove(entry_id: str):
 
 @app.get("/api/study")
 def study_list():
-    return {"items": study.items(), "kinds": study.KINDS, "statuses": study.STATUSES}
+    return {"items": study.items(), "suggestions": study.suggestions(), "kinds": study.KINDS, "statuses": study.STATUSES}
 
 
 @app.post("/api/study")
 def study_add(body: dict = Body(...)):
-    """Terms to learn later: a tailored CV's ticked gaps (with its app_id), or one you add yourself."""
+    """Terms to learn later: a tailored CV's ticked gaps (with its app_id), a suggestion (asked), or your own."""
     try:
-        return {"items": study.add(body.get("terms") or [], body.get("app_id") or "", body.get("kind") or "skill")}
+        return {"items": study.add(body.get("terms") or [], body.get("app_id") or "", body.get("kind") or "skill",
+                                   bool(body.get("asked")))}
     except KeyError:
         raise HTTPException(404, "No such application")
     except ValueError as e:
@@ -1043,6 +1044,17 @@ def study_add(body: dict = Body(...)):
 def study_edit(item_id: int, body: dict = Body(...)):
     try:
         return study.update(item_id, body)
+    except KeyError:
+        raise HTTPException(404, "Not on your study list")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/study/{item_id}/log")
+def study_log(item_id: int, body: dict = Body(default={})):
+    """A finished item into the Career growth log; use_on_cv also makes a skill or certification a confirmed skill."""
+    try:
+        return study.log(item_id, bool(body.get("use_on_cv")))
     except KeyError:
         raise HTTPException(404, "Not on your study list")
     except ValueError as e:
