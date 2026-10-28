@@ -673,6 +673,7 @@ function renderInsights() {
       ${cb.why.length ? `<p class="type-meta">${cb.why.map(esc).join(" · ")}</p>` : ""}
       ${cb.own ? `<p class="type-meta">Your own record with ${esc(cb.label)} jobs: ${cb.own.callbacks} callbacks from ${cb.own.applied} applications${cb.own.rate === null ? "" : ` (${cb.own.rate}%)`}.</p>` : ""}
       ${cb.warm.length ? `<p class="type-meta">You know ${cb.warm.map(esc).join(", ")} there: a referral moves this more than any CV change. Pipeline writes the ask.</p>` : ""}
+      ${(cb.missing || []).length ? `<div class="chip-row" title="Languages and frameworks the posting names that aren't on your CV">${cb.missing.map((s) => `<span class="chip ${s.must ? "chip--bad" : "chip--warn"}"><span>${esc(s.name)}${s.must ? " · must-have" : ""}</span></span>`).join("")}</div>` : ""}
       <p class="type-meta chance__note" title="${esc(cb.source)}">A rough guide from published averages (about 3% of cold applications and 40% of referrals reach an interview), placed by the fit label. The keyword score below only says whether your skills will be found; screeners decide on title, level, years, location and must-haves.</p>
     </section>` : "";
   $("#insights").innerHTML = `${chance}
@@ -1148,6 +1149,9 @@ async function tailorSelected() {
 // ================= pipeline =================
 async function loadPipeline() {
   S.apps = await api("/api/apps");
+  // The chance of a callback is being worked out in the background for some cards: ask again shortly.
+  clearTimeout(S.chanceTimer);
+  if (S.apps.some((r) => r.callback_pending)) S.chanceTimer = setTimeout(() => { if ($("#v-pipeline").classList.contains("on")) loadPipeline(); }, 4000);
   renderMailNews(await api("/api/mail").catch(() => ({})));
   S.batch = await api("/api/batch");
   await loadContacts();
@@ -1259,6 +1263,8 @@ function renderPipeline() {
         <span class="item__body"><span class="item__title">${esc(r.company)}</span><span class="item__meta" title="${esc(r.role)}">${esc(r.role)}</span></span>
         <span class="item__aside">${scoreNum(r.score_after)}</span></div>
       <div class="app-card__meta">${r.applied_on ? `<span class="chip chip--ok chip--pill num" title="The day you marked this applied">Applied on: ${esc(dayLabel(r.applied_on))}</span>` : `<span class="num" title="Date this CV was made">Tailored ${esc(dayLabel(r.created.slice(0, 10)))}</span>`}<span class="app-card__host" title="${esc(r.job_url || "")}${r.job_id ? `, ID ${esc(r.job_id)}` : ""}">${esc(host(r.job_url || ""))}</span></div>
+      ${r.callback ? `<div class="app-card__chance" title="${esc((r.callback.why || []).join(" · "))}"><span class="tag ${r.callback.label === "Strong" ? "tag--ok" : r.callback.label === "Long shot" ? "tag--warn" : ""}">${esc(r.callback.label)}</span><span class="num">${esc(r.callback.band)}</span><span class="type-meta app-card__why">${esc((r.callback.why || [])[0] || "")}</span></div>` : r.callback_pending ? `<div class="app-card__chance"><span class="type-meta">Working out the chance of a callback…</span></div>` : ""}
+      ${(r.callback?.missing || []).filter((s) => s.must).length ? `<div class="chip-row">${r.callback.missing.filter((s) => s.must).map((s) => `<span class="chip chip--bad"><span>No ${esc(s.name)}</span></span>`).join("")}</div>` : ""}
       <div class="app-card__state">${statusSel(r)}</div>
       <div class="app-card__acts">
         ${r.job_url ? `<a class="btn btn--sm" href="${esc(r.job_url)}" target="_blank" rel="noopener" data-stop title="${esc(r.job_url)}">Open posting</a>` : `<span class="type-meta">No link saved</span>`}

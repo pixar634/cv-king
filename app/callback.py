@@ -8,7 +8,9 @@ applications reach an interview, against about 40% of referred ones. The fit lab
 averages; the bands below are a judgement on top of them, not a measurement, and your own numbers replace them once
 Insights has ten applications with that label.
 """
+import contextvars
 import json
+import threading
 
 from .config import output_dir
 
@@ -26,8 +28,77 @@ def band(label: str, warm: bool = False) -> str:
     return f"under {hi}%" if lo == 0 else f"about {lo} to {hi}%"
 
 
-def for_app(app_id: str, profile: dict, prefs: dict) -> dict:
-    """{"label", "band", "why", "warm", "own", "source"} for one tailored CV."""
+def _sig(app_id: str, prefs: dict) -> str:
+    """What the guide depends on: the day (a posting ages), the profile, strategy, connections, settings, the report."""
+    import datetime as dt
+    import hashlib
+
+    from .config import data_dir
+    stamp = lambda p: p.stat().st_mtime if p.exists() else 0
+    parts = [dt.date.today().isoformat(), SIG_VERSION, stamp(data_dir() / "base_cv.json"), stamp(data_dir() / "strategy.json"),
+             stamp(data_dir() / "connections.json"), stamp(output_dir() / app_id / "report.json"),
+             json.dumps({k: v for k, v in prefs.items() if not k.startswith("_")}, sort_keys=True, default=str)]
+    return hashlib.sha1(json.dumps(parts, default=str).encode()).hexdigest()[:16]
+
+
+SIG_VERSION = 2
+
+
+def for_app(app_id: str, profile: dict, prefs: dict, own: dict | None = None) -> dict:
+    """{"label", "band", "why", "warm", "own", "missing", "source"} for one tailored CV, kept until something it
+    depends on changes, so the Pipeline can show it on every card. `own`: your own rates by label, worked out once
+    by the caller for a whole list."""
+    cache = output_dir() / app_id / "callback.json"
+    sig = _sig(app_id, prefs)
+    try:
+        kept = json.loads(cache.read_text("utf-8"))
+        if kept.get("sig") == sig:
+            return kept["value"] | {"own": (own if own is not None else own_rates()).get(kept["value"]["label"])}
+    except (OSError, ValueError, KeyError):
+        pass
+    value = _work_out(app_id, profile, prefs)
+    try:
+        cache.write_text(json.dumps({"sig": sig, "value": value}, ensure_ascii=False), "utf-8")
+    except OSError:
+        pass
+    return value | {"own": (own if own is not None else own_rates()).get(value["label"])}
+
+
+_busy = threading.Lock()
+
+
+def cached(app_id: str, prefs: dict, own: dict) -> dict | None:
+    """The guide for one CV if it's already worked out and still current, else None (never slow)."""
+    try:
+        kept = json.loads((output_dir() / app_id / "callback.json").read_text("utf-8"))
+    except (OSError, ValueError):
+        return None
+    if kept.get("sig") != _sig(app_id, prefs):
+        return None
+    return kept["value"] | {"own": own.get(kept["value"]["label"])}
+
+
+def work_out_soon(app_ids: list[str], profile: dict, prefs: dict) -> bool:
+    """Work out the guide for these CVs in the background, one batch at a time; True while one is running."""
+    if not app_ids:
+        return False
+    if not _busy.acquire(blocking=False):
+        return True
+
+    def run():
+        try:
+            for app_id in app_ids:
+                try:
+                    for_app(app_id, profile, prefs, {})
+                except Exception:  # an old folder without what the guide needs: skip it
+                    continue
+        finally:
+            _busy.release()
+    threading.Thread(target=contextvars.copy_context().run, args=(run,), daemon=True).start()   # keeps the profile
+    return True
+
+
+def _work_out(app_id: str, profile: dict, prefs: dict) -> dict:
     from . import gate, warm
     from .discover import label_for
     folder = output_dir() / app_id
@@ -40,23 +111,26 @@ def for_app(app_id: str, profile: dict, prefs: dict) -> dict:
                      "method": ""}, profile, prefs)
     g = gate.check(jd, report.get("role", ""), job.get("location") or "", report.get("market", ""), None, profile, prefs,
                    company=report.get("company", ""))
-    label = "Long shot" if g["verdict"] == "stop" else fit["label"] or "Possible"
+    label = fit["label"] or "Possible"
+    if g["verdict"] == "stop":
+        label = "Long shot"
+    elif g["verdict"] == "stretch" and label == "Strong":   # a screen it may fail caps it
+        label = "Possible"
     why = g["reasons"][:2] if g["verdict"] != "ok" else fit["why"][:4]
     people = warm.who_to_ask(report.get("company", ""), report.get("role", ""), 3)
     return {"label": label, "band": band(label), "warm_band": band(label, True), "why": why,
-            "warm": [p["name"] for p in people], "own": own_rate(label), "source": SOURCE}
+            "warm": [p["name"] for p in people], "missing": g.get("missing", []), "source": SOURCE}
 
 
-def own_rate(label: str) -> dict | None:
-    """Your own callback rate for jobs with this label, once there are enough of them."""
+def own_rates() -> dict:
+    """Your own callback rate by fit label, for labels with enough applications: {label: {applied, callbacks, rate}}."""
     from . import tracker
     from .insights import compute
     if sum(1 for r in tracker.load() if tracker.went_out(r)) < OWN_FROM:   # too few for any label: skip the database
-        return None
+        return {}
     try:
-        row = next((x for x in compute()["callbacks"]["by_fit"] if x["group"] == label), None)
+        rows = compute()["callbacks"]["by_fit"]
     except Exception:  # Insights needs the local database; the guide stands without it
-        return None
-    if not row or row["applied"] < OWN_FROM:
-        return None
-    return {"applied": row["applied"], "callbacks": row["callbacks"], "rate": row["rate"]}
+        return {}
+    return {x["group"]: {"applied": x["applied"], "callbacks": x["callbacks"], "rate": x["rate"]}
+            for x in rows if x["applied"] >= OWN_FROM}

@@ -638,7 +638,7 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 22
+RANK_VERSION = 23
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "regions", "places", "pay_floor_home_lpa", "pay_floor_remote_lpa", "pay_floor_abroad_eur", "pay_tiers")
 
@@ -794,6 +794,11 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     o = openness(desc, title, job.get("location") or "", job.get("remote"))
     if o["state"] == "closed":
         return job | {"match": 0, "reasons": [o["why"]], "excluded": True, "open": "closed"}
+    # Built on languages you don't have, or need one you've said you skip: a different job, whatever its keywords.
+    from .gate import stack
+    st = stack(desc, title, evidence, prefs)
+    if st["stop"]:
+        return job | {"match": 0, "reasons": st["stop"], "excluded": True}
     from .fit import level_check
     years = prefs.get("candidate_years", 3)
     level = level_check(title, desc, years, evidence, prefs.get("max_years_asked", years + 2),
@@ -902,6 +907,10 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
                     match=score if not unscored else 0, pay=pv, open_state=o["state"],
                     warm=(warm := _company(job.get("company")) in prefs.get("_warm", ())),
                     inbound=job.get("method") == "recruiter mail")
+    if st["stretch"]:
+        fit = fit | {"points": fit["points"] - 2, "why": fit["why"] + [st["stretch"][0][:60]]}
+        from .fitlabel import POSSIBLE, STRONG
+        fit["label"] = "Strong" if fit["points"] >= STRONG else "Possible" if fit["points"] >= POSSIBLE else "Long shot"
     order += fit["points"] * 6
     if job.get("method") == "recruiter mail":
         reasons.insert(0, "a recruiter wrote to you")

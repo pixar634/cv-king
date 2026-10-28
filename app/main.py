@@ -395,10 +395,25 @@ def apps():
         return [p | {"msg": sent.get(p["url"])} for p in warm.who_to_ask(r.get("company") or "", r.get("role") or "", 5)]
 
     from . import mailcheck
-    return [r | {"warm": people(r), "mail": mailcheck.verdict(r["id"], r.get("status")),
+    from . import callback
+    profile = load_profile()
+    prefs, own = _prefs(profile), callback.own_rates()
+
+    # The chance of a callback per card, from what's already worked out; the rest is worked out in the background
+    # and the page asks again, so the Pipeline never waits on it.
+    rows = tracker.load()
+    chances = {r["id"]: callback.cached(r["id"], prefs, own) for r in rows}
+    pending = callback.work_out_soon([i for i, c in chances.items() if c is None], profile, prefs)
+
+    def chance(r):
+        c = chances.get(r["id"])
+        return {k: c[k] for k in ("label", "band", "why", "missing")} if c else None
+
+    return [r | {"warm": people(r), "mail": mailcheck.verdict(r["id"], r.get("status")), "callback": chance(r),
+                 "callback_pending": pending and chances.get(r["id"]) is None,
                  "outreach_state": tracker.outreach_state(r), "has_contacts": bool(found.get(r["id"])),
                  "has_mail": bool(coldmail.load(r["id"])["mails"])}
-            for r in tracker.load()]
+            for r in rows]
 
 
 @app.get("/api/mail")
