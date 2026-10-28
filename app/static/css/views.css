@@ -234,6 +234,7 @@
 .cm-mail__foot { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
 .cm-mail__busy:empty { display: none; }
 .app-card__contacts { border-top: 1px solid var(--line); margin: 0 calc(-1 * var(--s-4)) calc(-1 * var(--s-4)); padding: 0 var(--s-4); }
+.app-card__outreach { align-items: center; gap: var(--s-2); padding-top: var(--s-2); border-top: 1px solid var(--line); margin-top: var(--s-2); }
 .app-card__contacts > summary { padding: 11px 0; font-size: 12.5px; }
 .app-card__contacts-body { display: flex; flex-direction: column; padding-bottom: var(--s-3); }
 .app-card__contacts-run { border-top: 1px solid var(--line); padding-top: var(--s-3); }

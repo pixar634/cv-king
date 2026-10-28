@@ -209,6 +209,56 @@ def update(app_id: str, fields: dict, source: str = "app") -> dict:
     raise KeyError(app_id)
 
 
+FOLLOW_UP_DAYS = (5, 7)   # a follow-up is due 5 days after outreach, overdue after 7
+
+
+def outreach(app_id: str, action: str) -> dict:
+    """Record a step of the outreach on an application: sent, followed_up, replied, or undo (the last step)."""
+    steps = ("sent", "followed_up", "replied")
+    with _lock:
+        rows = load()
+        r = next((x for x in rows if x["id"] == app_id), None)
+        if r is None:
+            raise KeyError(app_id)
+        o = r.setdefault("outreach", {})
+        if action in steps:
+            o[f"{action}_on"] = dt.date.today().isoformat()
+        elif action == "undo":
+            last = next((s for s in reversed(steps) if o.get(f"{s}_on")), None)
+            if last:
+                o.pop(f"{last}_on")
+        else:
+            raise ValueError(f"Unknown outreach step {action!r}")
+        _save(rows)
+        db.sync_soon()
+        return r
+
+
+def outreach_state(row: dict, today: dt.date | None = None) -> dict:
+    """Where an application's outreach stands: none, sent, followup_due (from day 5), overdue (past day 7),
+    followed_up or replied, with the day a follow-up is due. A cold email marked sent counts as outreach."""
+    from .coldmail import load as mails
+    today = today or dt.date.today()
+    o = dict(row.get("outreach") or {})
+    if not o.get("sent_on"):
+        try:
+            sent = sorted(m["sent_at"] for m in mails(row["id"])["mails"] if m.get("sent_at"))
+        except (OSError, ValueError, KeyError):
+            sent = []
+        if sent:
+            o["sent_on"] = sent[0]
+    if o.get("replied_on"):
+        return {"state": "replied", "on": o["replied_on"]}
+    if o.get("followed_up_on"):
+        return {"state": "followed_up", "on": o["followed_up_on"]}
+    if not o.get("sent_on"):
+        return {"state": "none"}
+    sent = dt.date.fromisoformat(o["sent_on"][:10])
+    due = sent + dt.timedelta(days=FOLLOW_UP_DAYS[0])
+    state = "overdue" if today > sent + dt.timedelta(days=FOLLOW_UP_DAYS[1]) else "followup_due" if today >= due else "sent"
+    return {"state": state, "on": o["sent_on"], "due": due.isoformat()}
+
+
 def sync_scores(report: dict) -> None:
     """A re-render or a hand edit changes the score and the file; keep the tracker in step."""
     with _lock:
