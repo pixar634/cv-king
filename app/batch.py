@@ -133,6 +133,8 @@ def add(entries: list[dict], defaults: dict, min_match: int = 0) -> list[str]:
         req = {k: v for k, v in defaults.items() if v not in (None, "")} | {k: v for k, v in e.items() if k in (
             "jd", "company", "role", "job_url", "company_site", "market", "track", "variant", "max_pages", "engine",
             "job_id", "location", "posted", "replace_id", "notes", "force")} | {"min_match": min_match}
+        if req.get("posted"):   # a page's own words ("Reposted 2 weeks ago") become a date, so its age can be counted
+            req["posted"] = discover._iso(req["posted"])
         source = {k: e[k] for k in ("found_id", "url") if e.get(k)}
         if source.get("found_id"):
             discover.keep(source["found_id"])   # Discover learns from what you act on, too

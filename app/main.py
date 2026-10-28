@@ -1080,7 +1080,7 @@ def fit_preview(body: dict = Body(...)):
     same = tracker.find_same(body.get("company") or "", body.get("role") or "", body.get("url") or "")
     # The same fit label Discover shows, for a job pasted, opened in the extension or about to be tailored.
     job = {"title": body.get("role") or "", "company": body.get("company") or "", "location": body.get("location") or "",
-           "remote": body.get("remote"), "description": text, "posted": body.get("posted") or "", "method": body.get("method") or ""}
+           "remote": body.get("remote"), "description": text, "posted": discover._iso(body.get("posted") or ""), "method": body.get("method") or ""}
     from . import warm
     fit = discover.label_for(job, profile, prefs)
     out |= {"warm": warm.who_to_ask(job["company"], job["title"], 5),

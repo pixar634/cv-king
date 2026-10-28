@@ -31,3 +31,11 @@ def test_fit_says_which_market_the_job_is_in():
     c = TestClient(app, base_url="http://127.0.0.1:8765")
     jd = "We need a Python engineer to build FastAPI services on AWS with PostgreSQL, Docker and Kubernetes. " * 4
     assert c.post("/api/fit", json={"jd": jd, "role": "Engineer", "location": "Bengaluru, Karnataka, India (Hybrid)"}).json()["market"] == "india"
+
+
+def test_fit_counts_the_age_linkedin_shows():
+    c = TestClient(app, base_url="http://127.0.0.1:8765")
+    jd = "We need a Python engineer to build FastAPI services on AWS with PostgreSQL, Docker and Kubernetes. " * 4
+    job = {"jd": jd, "role": "Lead Software Engineer", "location": "Bengaluru, Karnataka, India"}
+    assert "21 days old" in c.post("/api/fit", json=job | {"posted": "Reposted 3 weeks ago"}).json()["label_why"]
+    assert "21 days old" not in c.post("/api/fit", json=job).json()["label_why"]

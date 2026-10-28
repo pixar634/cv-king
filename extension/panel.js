@@ -129,7 +129,7 @@ async function readLinkedIn(tabId, jid) {
     if (j && j.description.length > 300 && (!j.paneId || j.paneId === jid)) {
       const job = { ...j, location: [j.place, j.workplace && `(${j.workplace})`].filter(Boolean).join(" ") };
       const fit = await api("/api/fit", { body: fitBody({ description: job.description, role: job.role, company: job.company,
-        url: liUrl(jid), location: job.location, remote: j.workplace === "Remote" }) }).catch(() => null);
+        url: liUrl(jid), location: job.location, remote: j.workplace === "Remote", posted: job.posted }) }).catch(() => null);
       S.li[jid] = { job, fit };
       return;
     }
@@ -148,7 +148,7 @@ function liCard(jid, li, q) {
   const risky = fit?.below || (fit?.gate && fit.gate.verdict !== "ok") || fit?.label === "Long shot";
   return `<div class="card"><span class="eyebrow">LinkedIn job</span><h2>${esc(job.role || "Untitled role")}</h2>
     <div class="sub">${esc(job.company)}${job.location ? ` · ${esc(job.location)}` : ""}</div>
-    <div class="row">${job.easy ? `<span class="chip ok">Easy Apply</span>` : `<span class="chip">Applies on the company's site</span>`}
+    <div class="row">${postedChip(job.posted, job.reposted)}${job.easy ? `<span class="chip ok">Easy Apply</span>` : `<span class="chip">Applies on the company's site</span>`}
       ${job.applied ? `<span class="chip warn">You applied on LinkedIn</span>` : ""}</div>
     ${it?.status === "error" ? `<div class="notice">${esc(it.stage)}</div>` : ""}
     ${fitHtml(fit)}
@@ -161,7 +161,7 @@ async function queueJob(jid, force) {
   const { job, fit } = S.li[jid];
   try {
     const { ids } = await api("/api/batch", { body: { items: [{ jd: job.description, company: job.company, role: job.role,
-      job_url: liUrl(jid), job_id: jid, location: job.location, market: fit?.market || "auto", ...(force ? { force: true } : {}) }] } });
+      job_url: liUrl(jid), job_id: jid, location: job.location, posted: job.posted, market: fit?.market || "auto", ...(force ? { force: true } : {}) }] } });
     S.items[ids[0]] = { id: ids[0], status: "queued", stage: "Waiting for a free slot", company: job.company, role: job.role };
     await saveSession({ queue: [...(S.session.queue || []).filter((q) => q.jid !== jid),
       { jid, itemId: ids[0], company: job.company, role: job.role, label: fit?.label || "" }] });
@@ -351,7 +351,18 @@ function finish(parts) {
 }
 
 // The job against your profile before any writing: measured in code, the same numbers tailoring will report.
-const fitBody = (j) => ({ jd: j.description, role: j.role || "", company: j.company || "", url: j.url || "", location: j.location || "", market: j.market || "", remote: !!j.remote });
+const fitBody = (j) => ({ jd: j.description, role: j.role || "", company: j.company || "", url: j.url || "", location: j.location || "", market: j.market || "", remote: !!j.remote, posted: j.posted || "" });
+
+// When the job was posted: a date read from the page, or the page's own words ("2 weeks ago"). Over a month old
+// is marked: such postings are often filled or forgotten.
+function postedChip(posted, reposted) {
+  if (!posted) return `<span class="chip">Post date not shown</span>`;
+  const day = /^\d{4}-\d{2}-\d{2}/.test(posted) ? new Date(`${posted.slice(0, 10)}T00:00:00`) : null;
+  const days = day && Math.floor((Date.now() - day) / 864e5);
+  const when = day ? `${days <= 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`}, ${day.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : posted;
+  const old = day ? days > 30 : /\b(months?|years?)\b|\b([5-9]|\d\d)\s+weeks?\b/i.test(posted);
+  return `<span class="chip ${old ? "warn" : ""}" title="${old ? "Over a month old: it may be filled already" : "When the posting went up"}">${reposted ? "Reposted" : "Posted"} ${esc(when)}</span>`;
+}
 
 // Languages and frameworks the posting names that aren't on your CV; must-haves first.
 const stackChips = (missing) => (missing || []).length ? `<div class="row">${[...missing].sort((x, y) => y.must - x.must)
@@ -446,7 +457,7 @@ function postingCard(mem, here) {
   if (j) {
     return `<div class="card"><span class="eyebrow">This job</span><h2>${esc(j.role || "Untitled role")}</h2>
       <div class="sub">${esc(j.company)}${j.location ? ` · ${esc(j.location)}` : ""}</div>
-      <div class="meta">${j.description.split(/\s+/).length} words read${j.posted ? `, posted ${esc(j.posted)}` : ""}</div>
+      <div class="row">${postedChip(j.posted)}<span class="meta">${j.description.split(/\s+/).length} words read</span></div>
       ${fitHtml(mem.fit)}
       ${mem.fit?.below || (mem.fit?.gate && mem.fit.gate.verdict !== "ok") ? `<button class="btn btn--primary btn--block" id="tailorForce">Tailor anyway</button>`
         : `<button class="btn btn--primary btn--block" id="tailor">Tailor my CV</button>`}
