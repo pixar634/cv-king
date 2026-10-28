@@ -1,7 +1,8 @@
 """A local SQLite record of the search, one file per profile (`<data dir>/jobmagnet.db`, never committed).
 
 Two kinds of table:
-- `status_events` is the record nothing else keeps: every status change, the moment it happens. Never rebuilt.
+- Records nothing else keeps, never rebuilt: `status_events`, every status change the moment it happens, and the
+  study list (`study_items`, `study_asks`, see `study.py`).
 - The rest are copies of the JSON files (the source of truth), rebuilt whole by `sync()`, so they can be queried
   together: applications, their job descriptions and keyword results, every job Discover has seen, the profile with
   its memory and settings, sources, the career map, goal, salary and growth logs, form answers, cold mails, contacts
@@ -18,7 +19,7 @@ from contextlib import closing
 
 from .config import data_dir, output_dir
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS status_events (
@@ -34,6 +35,30 @@ CREATE TABLE IF NOT EXISTS status_events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_app ON status_events(app_id);
 CREATE INDEX IF NOT EXISTS idx_events_to ON status_events(to_status);
+
+-- Skills, certifications and projects to take up later, mostly gaps a tailored CV couldn't cover.
+CREATE TABLE IF NOT EXISTS study_items (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  term      TEXT NOT NULL,                 -- as the posting (or you) wrote it
+  key       TEXT NOT NULL UNIQUE,          -- lower case, single spaces: one row per skill however it is written
+  kind      TEXT NOT NULL DEFAULT 'skill', -- skill | certification | project
+  status    TEXT NOT NULL DEFAULT 'todo',  -- todo | learning | done
+  notes     TEXT NOT NULL DEFAULT '',      -- your plan: a course, a project idea, a link
+  target_on TEXT,                          -- when you mean to have it, YYYY-MM-DD
+  added     TEXT NOT NULL,
+  updated   TEXT NOT NULL,
+  done_on   TEXT
+);
+CREATE TABLE IF NOT EXISTS study_asks (    -- the applications whose posting asked for it
+  item_id   INTEGER NOT NULL,
+  app_id    TEXT NOT NULL,
+  company   TEXT NOT NULL DEFAULT '',      -- copied, so the list still reads after the application is removed
+  role      TEXT NOT NULL DEFAULT '',
+  must_have INTEGER NOT NULL DEFAULT 0,
+  note      TEXT NOT NULL DEFAULT '',      -- what the writer said about the gap
+  at        TEXT NOT NULL,
+  PRIMARY KEY (item_id, app_id)
+);
 
 -- Copies of the JSON files, rebuilt whole by sync().
 CREATE TABLE IF NOT EXISTS applications (
@@ -127,9 +152,10 @@ def record_status(app_id: str, company: str, role: str, from_status: str | None,
 
 
 def moved(old_id: str, new_id: str) -> None:
-    """A re-tailor replaces an application with a new one: its history comes along."""
+    """A re-tailor replaces an application with a new one: its history and study asks come along."""
     with closing(connect()) as con, con:
         con.execute("UPDATE status_events SET app_id = ? WHERE app_id = ?", (new_id, old_id))
+        con.execute("UPDATE OR REPLACE study_asks SET app_id = ? WHERE app_id = ?", (new_id, old_id))
 
 
 def ensure_seeded() -> None:

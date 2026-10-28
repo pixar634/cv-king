@@ -94,6 +94,7 @@ async function boot() {
   renderEmpty();
   previewBase();
   pollBatch();
+  fetchStudy().catch(() => {});
   openFromLink();
   document.addEventListener("keydown", (e) => {
     const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
@@ -120,7 +121,7 @@ function wireNav() {
   $("#nav").onclick = (e) => { const b = e.target.closest("button"); if (b) showView(b.dataset.view); };
 }
 
-const VIEWS = ["tailor", "discover", "pipeline", "interview", "outreach", "career", "network"];
+const VIEWS = ["tailor", "discover", "pipeline", "interview", "outreach", "career", "study", "network"];
 function showView(v) {
   const from = $(".view.on")?.id.slice(2);
   $$("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.view === v));
@@ -130,6 +131,7 @@ function showView(v) {
     if (v === "discover") loadFound();
     if (v === "pipeline") loadPipeline();
     if (v === "career") loadCareer();
+    if (v === "study") loadStudy();
     if (v === "network") loadNetwork().catch((e) => toast(e.message, 5000));
     if (v === "interview") loadInterview();
     if (v === "outreach") loadColdMail();
@@ -706,8 +708,9 @@ function renderInsights() {
         ${other.length ? `<div><div class="eyebrow" style="margin-bottom:10px">Also scored</div><div class="chip-row">${other.slice(0, 40).map(chip).join("")}</div></div>` : ""}
         ${(a.jd_terms || []).length ? `<div><div class="eyebrow" style="margin-bottom:10px">Also asked for, read by the writer but not scored</div><div class="chip-row">${a.jd_terms.map(chip).join("")}</div></div>` : ""}
         <div id="gaps">
-          ${gaps.length ? `<div class="eyebrow">Gaps: tick only the ones that are true</div>
-          <div style="margin-top:6px">${gaps.map((g) => `<label class="gap"><input type="checkbox" data-term="${esc(g.term)}"><span class="gap__term">${esc(g.term)}${g.must_have ? '<span class="tag tag--bad">Required</span>' : ""}</span><span class="type-meta">${esc(g.note)}</span></label>`).join("")}</div>` : ""}
+          ${gaps.length ? `<div class="eyebrow">Gaps: tick the ones you have, or the ones to learn</div>
+          <div style="margin-top:6px">${gaps.map((g, i) => `<label class="gap"><input type="checkbox" data-term="${esc(g.term)}" data-gap-i="${i}"><span class="gap__term">${esc(g.term)}${g.must_have ? '<span class="tag tag--bad">Required</span>' : ""}<span class="tag tag--info" data-studying hidden>On your study list</span></span><span class="type-meta">${esc(g.note)}</span></label>`).join("")}</div>
+          <div class="gap__study" id="gapStudy" hidden><button class="btn btn--sm" id="studyGaps">Study later</button><span class="type-meta">Don't have them yet? Keep the ticked ones in Study, to learn or build a project for.</span></div>` : ""}
           <label class="field" style="margin-top:${gaps.length ? 14 : 0}px"><span class="eyebrow">Your thoughts for this job (optional)</span>
             <textarea id="gapNotes" rows="3" placeholder="e.g. Lead with the platform work. I also ran the Kafka pipeline at my last job. Keep the client story short.">${esc(a.notes || "")}</textarea></label>
           <p class="type-meta">If you write anything here, the CV and letter are re-written with it. Only what your profile already shows goes in as fact; anything new comes back as a gap to tick.</p>
@@ -729,6 +732,7 @@ function renderInsights() {
   setTab(S.tab, false);
   const cn = $("#copyNote"); if (cn) cn.onclick = () => copy(a.recruiter_note);
   const cg = $("#confirmGaps"); if (cg) cg.onclick = confirmGaps;
+  wireGapStudy();
   renderLetters();
   loadChanges(a.id);
 }
@@ -2681,6 +2685,119 @@ async function fillBoards() {
     toast(on.length ? "Saved. They're searched on the next scan." : "Saved.");
     fillDrawer();
   };
+}
+
+// ================= study: gaps to learn later =================
+// Kept in the local database. The Tailor screen tags gaps already on the list; the Study tab plans them.
+let STUDY = null;
+const studyKey = (t) => t.trim().split(/\s+/).join(" ").slice(0, 120).toLowerCase();
+
+async function fetchStudy() {
+  STUDY = await api("/api/study");
+  $("#studyCount").textContent = STUDY.items.filter((i) => i.status !== "done").length || "";
+  return STUDY;
+}
+
+// Under a tailored CV's gaps: ticking one offers Study later beside Add-and-re-tailor.
+function wireGapStudy() {
+  const row = $("#gapStudy");
+  if (!row) return;
+  $("#gaps").addEventListener("change", (e) => { if (e.target.matches("[data-gap-i]")) row.hidden = !$$("#gaps [data-gap-i]:checked").length; });
+  $("#studyGaps").onclick = studyGaps;
+  fetchStudy().then(markStudying).catch(() => {});
+}
+
+function markStudying() {
+  const keys = new Set((STUDY?.items || []).map((i) => i.key));
+  $$("#gaps [data-gap-i]").forEach((i) => (i.closest(".gap").querySelector("[data-studying]").hidden = !keys.has(studyKey(i.dataset.term))));
+}
+
+async function studyGaps() {
+  const a = S.app, ticked = $$("#gaps [data-gap-i]:checked");
+  if (!a || !ticked.length) return;
+  try { await api("/api/study", { body: { app_id: a.id, terms: ticked.map((i) => a.gaps[+i.dataset.gapI]) } }); }
+  catch (e) { toast(e.message, 4000); return; }
+  ticked.forEach((i) => (i.checked = false));
+  $("#gapStudy").hidden = true;
+  await fetchStudy(); markStudying();
+  toast(`${ticked.length === 1 ? "Added" : `${ticked.length} added`} to your study list. Plan them under Study.`);
+}
+
+async function loadStudy() {
+  try { await fetchStudy(); } catch (e) { toast(e.message, 5000); return; }
+  if (!$("#studyKind").options.length) {
+    $("#studyKind").innerHTML = Object.entries(STUDY.kinds).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+    $("#studyAdd").onclick = addStudy;
+    $("#studyTerm").onkeydown = (e) => { if (e.key === "Enter") addStudy(); };
+    $("#studyFilter").onclick = (e) => { const b = e.target.closest("[data-f]"); if (b) { store.set("cv.studyFilter", b.dataset.f); renderStudy(); } };
+    $("#studyList").onclick = onStudyClick;
+    $("#studyList").onchange = onStudyChange;
+  }
+  renderStudy();
+}
+
+async function addStudy() {
+  const t = $("#studyTerm");
+  if (!t.value.trim()) { t.classList.add("invalid"); t.focus(); return; }
+  t.classList.remove("invalid");
+  try { await api("/api/study", { body: { terms: [t.value], kind: $("#studyKind").value } }); } catch (e) { toast(e.message, 4000); return; }
+  t.value = "";
+  await fetchStudy(); renderStudy();
+}
+
+function renderStudy() {
+  const f = store.get("cv.studyFilter", "open");
+  $$("#studyFilter [data-f]").forEach((b) => b.classList.toggle("on", b.dataset.f === f));
+  const rows = STUDY.items.filter((i) => f === "all" || (f === "done") === (i.status === "done"));
+  const empty = STUDY.items.length ? `<p class="type-meta">${f === "done" ? "Nothing done yet." : "Nothing left to study."}</p>`
+    : `<p class="type-meta">Nothing yet. After a tailor, open Keywords, tick a gap you don't have and press <b>Study later</b>. Or add one above.</p>`;
+  $("#studyList").innerHTML = rows.map(studyRow).join("") || empty;
+}
+
+function studyRow(i) {
+  const must = i.asks.filter((a) => a.must_have).length;
+  const meta = [i.asks.length ? `Asked for by ${i.asks.length} job${i.asks.length === 1 ? "" : "s"}${must ? `, required by ${must}` : ""}` : "Added by you",
+    `added ${ago(i.added.slice(0, 10))}`, i.done_on ? `done ${dayLabel(i.done_on)}` : ""].filter(Boolean).join(" · ");
+  return `<div class="item study" data-id="${i.id}">
+    <span class="item__body">
+      <span class="item__title item__title--wrap">${esc(i.term)}</span>
+      <span class="item__meta item__meta--wrap">${esc(meta)}</span>
+      ${i.asks.length ? `<div class="chip-row study__jobs">${i.asks.map((a) => `<button class="chip" data-app="${esc(a.app_id)}" title="${esc(a.note || "Open this CV")}"><span>${esc(a.company)} · ${esc(a.role)}${a.must_have ? " · required" : ""}</span></button>`).join("")}</div>` : ""}
+      <div class="study__plan">
+        <select data-field="kind" aria-label="Kind">${Object.entries(STUDY.kinds).map(([k, v]) => `<option value="${k}" ${k === i.kind ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
+        <input type="date" data-field="target_on" value="${esc(i.target_on || "")}" aria-label="Have it by" title="When you mean to have it">
+        <textarea data-field="notes" rows="2" placeholder="Your plan: a course, a project to build, a link" aria-label="Plan">${esc(i.notes)}</textarea>
+      </div>
+    </span>
+    <span class="item__aside">
+      <div class="seg">${Object.entries(STUDY.statuses).map(([k, v]) => `<button data-status="${k}" class="${k === i.status ? "on" : ""}">${esc(v)}</button>`).join("")}</div>
+      <button class="btn btn--sm btn--ghost" data-act="have" title="Had it all along, or can talk about it now? Write where you used it">I have it</button>
+      <button class="icon-btn icon-btn--sm" data-act="remove" aria-label="Remove" title="Remove">${ICON.x}</button>
+    </span></div>`;
+}
+
+async function saveStudy(id, patch) {
+  try { await api(`/api/study/${id}`, { body: patch }); } catch (e) { toast(e.message, 4000); }
+  await fetchStudy(); renderStudy();
+}
+
+async function onStudyClick(e) {
+  const row = e.target.closest("[data-id]"), id = row?.dataset.id;
+  if (!row) return;
+  const item = STUDY.items.find((i) => String(i.id) === id);
+  const st = e.target.closest("[data-status]"), job = e.target.closest("[data-app]"), act = e.target.closest("[data-act]")?.dataset.act;
+  if (st && st.dataset.status !== item.status) {
+    await saveStudy(id, { status: st.dataset.status });
+    if (st.dataset.status === "done") toast("Done. Add it to your memory when you can talk about it in an interview.", 4000);
+  }
+  if (job) openApp(job.dataset.app).catch(() => toast("That application isn't in Pipeline any more.", 4000));
+  if (act === "have") openMemory(item.term);
+  if (act === "remove") { await api(`/api/study/${id}`, { method: "DELETE" }); toast("Removed"); await fetchStudy(); renderStudy(); }
+}
+
+function onStudyChange(e) {
+  const f = e.target.dataset.field, id = e.target.closest("[data-id]")?.dataset.id;
+  if (f && id) saveStudy(id, { [f]: e.target.value });
 }
 
 // ================= memory: what your CV leaves out =================

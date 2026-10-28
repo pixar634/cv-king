@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="/static/css/tokens.css?v=1">
 <link rel="stylesheet" href="/static/css/base.css?v=4">
 <link rel="stylesheet" href="/static/css/components.css?v=13">
-<link rel="stylesheet" href="/static/css/views.css?v=15">
+<link rel="stylesheet" href="/static/css/views.css?v=16">
 </head>
 <body>
 <header class="topbar">
@@ -22,6 +22,7 @@
     <button data-view="interview">Interview</button>
     <button data-view="outreach">Cold mail</button>
     <button data-view="career">Career</button>
+    <button data-view="study">Study <span class="tabs__count num" id="studyCount"></span></button>
     <button data-view="network">Network</button>
   </nav>
   <div class="topbar__right">
@@ -254,6 +255,26 @@
         </section>
       </aside>
     </div>
+  </div>
+</section>
+
+<!-- ================= STUDY ================= -->
+<section class="view" id="v-study">
+  <div class="page">
+    <header class="page__head">
+      <div class="page__intro">
+        <span class="eyebrow">Study</span>
+        <h1 class="type-h1">What to learn next</h1>
+        <p class="page__lede">What the jobs asked for that your profile doesn't show. Tick a gap under a tailored CV's Keywords and press <b>Study later</b>, or add your own. Nothing here goes on a CV: once you can talk about one in an interview, add it to your memory.</p>
+      </div>
+      <div class="page__controls"><div class="seg" id="studyFilter"><button data-f="open" class="on">To do</button><button data-f="done">Done</button><button data-f="all">All</button></div></div>
+    </header>
+    <div class="study-add">
+      <input type="text" id="studyTerm" placeholder="e.g. LangGraph, AWS Solutions Architect, a RAG side project" aria-label="Skill, certification or project">
+      <select id="studyKind" aria-label="Kind"></select>
+      <button class="btn" id="studyAdd">Add</button>
+    </div>
+    <div class="list" id="studyList"></div>
   </div>
 </section>
 
