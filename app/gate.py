@@ -91,7 +91,7 @@ def check(jd_text: str, title: str = "", location: str = "", market: str = "", r
     stops, stretches = [], []
 
     years = experience_months(profile) // 12
-    lvl = level_check(title, text, years, strong_skills(profile), prefs.get("max_years_asked", years + 2), profile)
+    lvl = level_check(title, text, years, strong_skills(profile), prefs.get("max_years_asked", years + 2), profile, company)
     if lvl["verdict"] == "above":
         stops.append("Above your level: " + "; ".join(lvl["reasons"]))
     elif lvl["verdict"] == "stretch":

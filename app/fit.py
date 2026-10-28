@@ -65,7 +65,7 @@ def strong_skills(profile: dict) -> set[str]:
 
 
 def level_check(title: str, text: str, candidate_years: int, strong: set[str] | None = None,
-                max_years: int | None = None, profile: dict | None = None) -> dict:
+                max_years: int | None = None, profile: dict | None = None, company: str = "") -> dict:
     """verdict: 'ok', 'stretch' (rank lower, say why) or 'above' (hide from Discover, warn when tailoring)."""
     from . import strategy
     from .keywords import taxonomy
@@ -106,7 +106,7 @@ def level_check(title: str, text: str, candidate_years: int, strong: set[str] | 
         verdict = raise_to("above" if req["pm_years"] >= 8 else "stretch")
         reasons.append(f"asks for {req['pm_years']}+ years as a product manager (your CV shows no PM title)")
     # The seniority the title names, against the candidate's own level: two steps up is a stretch, three is above.
-    named = strategy.title_level(title or "")
+    named = strategy.title_level(title or "", company=company)
     if named is not None and named - lv["rank"] >= 3:
         verdict = "above"
         reasons.append(f"title is three or more levels above yours ({lv['label']})")

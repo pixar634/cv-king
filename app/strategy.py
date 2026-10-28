@@ -29,6 +29,24 @@ LEVEL_WORDS = [
 ]
 # Words that never name a level on their own: "Associate Director" is a director, not an associate.
 _HIGHER_FIRST = re.compile(r"\bassociate (director|partner)\b", re.I)
+# Banks and other financial firms give engineers corporate titles: their "Vice President" is a lead or senior engineer,
+# not an executive; "Assistant Vice President" is a senior engineer; "Associate" is mid-level.
+BANKS = re.compile(
+    r"\b(j\.?\s?p\.?\s?morgan|jpmc|chase|morgan stanley|goldman sachs|citi|citibank|citigroup|citicorp|barclays|"
+    r"deutsche bank|hsbc|natwest|rbs|standard chartered|soci[eé]t[eé] g[eé]n[eé]rale|bnp paribas|ubs|credit suisse|"
+    r"wells fargo|bank of america|bofa|bny|state street|northern trust|nomura|mizuho|american express|amex|lloyds|"
+    r"santander|macquarie|blackrock|abn amro|ing bank|bank of new york|morgan)\b", re.I)
+BANK_LADDER = [
+    (7, r"\bmanaging director\b"),
+    (6, r"\bexecutive director\b"),
+    (5, r"\b(senior vice president|svp|associate director|director)\b"),
+    (3, r"\b(assistant vice president|avp)\b"),
+    (4, r"\b(vice president|vp)\b"),
+    (2, r"\bassociate\b"),
+]
+# A title that is both an engineer's and a VP's ("Software Engineer III - VP") uses the bank ladder whoever posts it.
+_BANK_STYLE = re.compile(r"\b(engineer|developer|architect|programmer)\b.*\b(a?vp|(assistant )?vice president)\b|"
+                         r"\b(a?vp|(assistant )?vice president)\b.*\b(engineer|developer|architect|programmer)\b", re.I)
 
 CITY_ALIASES = [("bengaluru", "bangalore", "blr"), ("gurugram", "gurgaon"), ("mumbai", "bombay"), ("chennai", "madras"),
                 ("kolkata", "calcutta"), ("thiruvananthapuram", "trivandrum"), ("kochi", "cochin"), ("pune",),
@@ -208,9 +226,14 @@ def calibrated_rank(profile: dict | None = None) -> int:
     return lv["rank"] - 1 if services and lv["rank"] >= 3 else lv["rank"]
 
 
-def title_level(title: str, strategy: dict | None = None) -> int | None:
-    """The seniority a title's words name, or None when it names none ("Business Analyst", "Product Manager")."""
+def title_level(title: str, strategy: dict | None = None, company: str = "") -> int | None:
+    """The seniority a title's words name, or None when it names none ("Business Analyst", "Product Manager").
+    At a bank (or for a title that is both an engineer's and a VP's) the corporate-title ladder applies instead."""
     title = title or ""
+    if BANKS.search(company or "") or _BANK_STYLE.search(title):
+        for rank, pat in BANK_LADDER:
+            if re.search(pat, title, re.I):
+                return rank
     s = load() if strategy is None else strategy
     for row in s.get("title_levels") or []:
         try:

@@ -115,7 +115,7 @@ def graph(prefs: dict, want_sample: bool = False) -> dict:
     for key in keys[:MAX_COMPANIES]:
         s = signals.get(key, {})
         ps = sorted(by_company[key], key=lambda p: ({"leader": 0, "recruiter": 1, "peer": 2}.get(kind(p["position"]), 3),
-                                                    -(strategy.title_level(p["position"]) or 0)))
+                                                    -(strategy.title_level(p["position"], company=p["company"]) or 0)))
         status = ("strong" if s.get("best") == "Strong" else "possible" if s.get("best") == "Possible"
                   else "applied" if s.get("applied") else "favourite" if s.get("favourite") else "other")
         cid = f"c:{key}"
@@ -126,7 +126,8 @@ def graph(prefs: dict, want_sample: bool = False) -> dict:
         for i, p in enumerate(ps[:MAX_PEOPLE]):
             pid = f"p:{key}:{i}"
             nodes.append({"id": pid, "type": "person", "label": p["name"], "company": names[key], "position": p["position"],
-                          "url": p.get("url", ""), "kind": kind(p["position"]), "level": strategy.title_level(p["position"])})
+                          "url": p.get("url", ""), "kind": kind(p["position"]),
+                          "level": strategy.title_level(p["position"], company=p["company"])})
             links.append({"source": cid, "target": pid})
     kinds = [kind(p["position"]) for p in people]
     return {"nodes": nodes, "links": links, "sample": is_sample,
