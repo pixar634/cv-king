@@ -87,6 +87,7 @@ async function boot() {
   wireDiscover();
   wireDrawer();
   wireNetworkControls();
+  $("#mailCheck").onclick = checkMail;
   wireEngineSwitch();
   $("#careerGen").onclick = generateCareer;
   renderChips();
@@ -1114,10 +1115,32 @@ async function tailorSelected() {
 // ================= pipeline =================
 async function loadPipeline() {
   S.apps = await api("/api/apps");
+  renderMailNews(await api("/api/mail").catch(() => ({})));
   S.batch = await api("/api/batch");
   await loadContacts();
   renderPipeline();
   loadInsights().catch(() => {});
+}
+
+// What the inbox said: applications JobMagnet doesn't know about, and recruiters who wrote first.
+function renderMailNews(m) {
+  $("#mailStamp").textContent = m.checked ? `Gmail checked ${dayLabel(m.checked.slice(0, 10))}` : "";
+  const row = (x) => `<div class="item"><span class="item__body"><span class="item__title">${esc(x.company || x.from)}${x.role ? ` · ${esc(x.role)}` : ""}</span><span class="item__meta">${esc(x.subject)} · ${esc(dayLabel(x.date))}</span></span>${x.url ? `<a class="btn btn--sm btn--ghost" href="${esc(x.url)}" target="_blank" rel="noopener">Open mail</a>` : ""}</div>`;
+  const part = (title, note, list) => list?.length ? `<details class="disclosure"><summary>${title}<span class="disclosure__aside num">${list.length}</span></summary><p class="type-meta">${note}</p><div class="list">${list.map(row).join("")}</div></details>` : "";
+  $("#mailNews").innerHTML = part("Recruiters who wrote to you first", "Someone reaching out is the warmest start there is: reply the same day.", m.inbound)
+    + part("Applications in your mail that JobMagnet doesn't track", "Made on LinkedIn, Naukri or a careers site directly. Tailor them here, or note them, so the callback rate counts them.", m.untracked);
+}
+
+async function checkMail() {
+  const b = $("#mailCheck");
+  b.disabled = true; b.textContent = "Reading Gmail";
+  try {
+    const { job } = await api("/api/mail/check", { body: {} });
+    const r = await pollJob(job, () => {});
+    toast(`Gmail read: ${r.matched} application${r.matched === 1 ? "" : "s"} with mail${r.inbound.length ? `, ${r.inbound.length} recruiter${r.inbound.length === 1 ? "" : "s"} wrote first` : ""}.`, 6000);
+    loadPipeline();
+  } catch (e) { toast(e.message, 6000); }
+  b.disabled = false; b.textContent = "Check Gmail";
 }
 
 // ================= insights: what your own search says so far =================
@@ -1196,6 +1219,7 @@ function renderPipeline() {
         <span class="item__body"><span class="item__title">${esc(r.company)}</span><span class="item__meta" title="${esc(r.role)}">${esc(r.role)}</span></span>
         <span class="item__aside">${scoreNum(r.score_after)}</span></div>
       <div class="app-card__meta">${r.applied_on ? `<span class="chip chip--ok chip--pill num" title="The day you marked this applied">Applied on: ${esc(dayLabel(r.applied_on))}</span>` : `<span class="num" title="Date this CV was made">Tailored ${esc(dayLabel(r.created.slice(0, 10)))}</span>`}<span class="app-card__host" title="${esc(r.job_url || "")}${r.job_id ? `, ID ${esc(r.job_id)}` : ""}">${esc(host(r.job_url || ""))}</span>${statusSel(r)}</div>
+      ${mailTag(r)}
       <div class="app-card__acts">
         ${r.job_url ? `<a class="btn btn--sm" href="${esc(r.job_url)}" target="_blank" rel="noopener" data-stop title="${esc(r.job_url)}">Open posting</a>` : `<span class="type-meta">No link saved</span>`}
         <a class="btn btn--sm btn--ghost" href="/apps/${esc(r.id)}/pdf?download=1" data-stop title="${esc(r.pdf)}">PDF</a>
@@ -1228,6 +1252,10 @@ function renderPipeline() {
   $$("[data-open]").forEach((el) => (el.onclick = (e) => { if (!e.target.closest("select, [data-stop], details")) openApp(el.dataset.open); }));
   $$("[data-findc]").forEach((b) => (b.onclick = () => findContacts(b.dataset.findc)));
   $$("[data-refer]").forEach((b) => (b.onclick = () => askReferral(b.dataset.refer, b.dataset.url, b.dataset.kind)));
+  $$("[data-mailstatus]").forEach((b) => (b.onclick = async () => {
+    await api(`/api/apps/${b.dataset.mailstatus}/track`, { body: { status: b.dataset.statusTo, source: "mail" } });
+    loadPipeline();
+  }));
   $$("[data-person]").forEach((b) => (b.onclick = async () => {
     try { await api(`/api/apps/${b.dataset.person}/people`, { body: { url: b.dataset.url, action: b.dataset.action } }); loadPipeline(); }
     catch (e) { toast(e.message, 5000); }
@@ -2267,6 +2295,15 @@ function warmHtml(r) {
 }
 
 const ASK_LABEL = { referral: "Ask for a referral", hiring_manager: "Write to them", recruiter: "Recruiter note", intro: "Ask for an intro", follow_up: "Write the follow-up" };
+
+// What the employer's mail said, verified in Gmail, with the status change it implies for you to make.
+function mailTag(r) {
+  const m = r.mail;
+  if (!m) return "";
+  const look = { received: ["tag--ok", "Received"], rejected: ["tag--bad", "Rejected"], callback: ["tag--accent tag--solid", "Callback"] }[m.kind];
+  return `<div class="app-card__mail chip-row"><a class="tag ${look[0]}" href="${esc(m.url)}" target="_blank" rel="noopener" data-stop title="${esc(m.subject)} (${esc(m.from)})">${look[1]} · verified from mail ${esc(dayLabel(m.date))}</a>
+      ${m.suggest ? `<button class="btn btn--sm" data-mailstatus="${esc(r.id)}" data-status-to="${esc(m.suggest)}" data-stop>Mark ${esc(m.suggest.toLowerCase())}</button>` : ""}</div>`;
+}
 
 // One person's thread: write the message that fits them, mark it sent, then follow up or mark the reply.
 function personSteps(appId, p) {

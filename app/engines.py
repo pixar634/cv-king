@@ -19,8 +19,9 @@ SYSTEM = ("You work for one job seeker: writing, research, job search or form fi
 INSTRUCTION = "Follow the brief provided on stdin and reply with the JSON object only."
 
 
-# Never available to a connector run, even by mistake: sending, forwarding, deleting, relabelling and reading mail.
-GMAIL_BLOCKED = ["mcp__claude_ai_Gmail__" + t for t in (
+# Never available to a connector run unless the run names it: sending, forwarding, deleting and relabelling are
+# never named; reading is named only by the read-only inbox check, drafting only by the cold mail's save.
+GMAIL_BLOCKED = ["mcp__claude_ai_Gmail__" + t for t in ("create_draft",
     "send_message", "forward", "reply", "update_draft", "delete_draft", "trash_message", "trash_thread",
     "untrash_message", "untrash_thread", "mark_message_spam", "mark_thread_spam", "unmark_message_spam",
     "unmark_thread_spam", "label_message", "label_thread", "unlabel_message", "unlabel_thread",
@@ -61,8 +62,8 @@ class ClaudeCLI:
         return shutil.which("claude") is not None
 
     def run(self, brief: str, timeout: int = 420, tools: list[str] | None = None) -> str:
-        """`tools` is ["WebSearch"] for research runs, or exactly one Gmail connector tool (create_draft) for
-        saving a cold email; writing runs get no tools at all."""
+        """`tools` is ["WebSearch"] for research runs, the Gmail connector's create_draft for saving a cold email, or
+        its search_threads and get_thread for the read-only inbox check; writing runs get no tools at all."""
         exe = shutil.which("claude")
         if not exe:
             raise EngineError("The claude CLI is not on PATH.")
