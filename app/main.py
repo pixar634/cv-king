@@ -481,8 +481,15 @@ def app_report(app_id: str):
     folder = _app_dir(app_id)
     jd = folder / "jd.txt"
     row = next((r for r in tracker.load() if r["id"] == app_id), {})
+    from . import callback
+    profile = load_profile()
+    try:
+        chance = callback.for_app(app_id, profile, _prefs(profile))
+    except Exception:  # an old report without what the guide needs: the CV still opens
+        chance = None
     return tailor.load_report(app_id) | {"jd_text": jd.read_text("utf-8") if jd.exists() else "",
-                                         "job_url": row.get("job_url", ""), "domain": row.get("domain", "")}
+                                         "job_url": row.get("job_url", ""), "domain": row.get("domain", ""),
+                                         "callback": chance}
 
 
 @app.post("/api/apps/{app_id}/render")

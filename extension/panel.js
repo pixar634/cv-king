@@ -299,6 +299,8 @@ function appCard(row, rep) {
     <div class="row"><span class="chip ${row.status === "Applied" ? "ok" : ""}">${esc(row.status)}${row.applied_on ? ` ${esc(row.applied_on)}` : ""}</span>
       ${rep ? `<span class="chip ${failed.length ? "warn" : "ok"}">ATS ${ats.length - failed.length}/${ats.length} checks</span>` : ""}
       ${flags.length ? `<span class="chip warn">${flags.length} to check</span>` : ""}</div>
+    ${rep?.callback ? `<div class="row"><span class="chip ${rep.callback.label === "Strong" ? "ok" : rep.callback.label === "Long shot" ? "warn" : ""}">Callback: ${esc(rep.callback.label)}</span><span class="meta">${esc(rep.callback.band)}${rep.callback.warm.length ? `; with a referral ${esc(rep.callback.warm_band)}` : ""}</span></div>` : ""}
+    <span class="meta">ATS keywords (what a search or a skim finds)</span>
     <div class="score"><div><span class="meta">Before</span><b>${sc.before}%</b></div><div class="now"><span class="meta">Now</span><b>${sc.after}%</b></div><div><span class="meta">Ceiling</span><b>${sc.ceiling}%</b></div></div>
     <div class="meter" title="Keyword match: ${sc.after}% now, ${sc.ceiling}% is the most your profile can truthfully reach"><span style="width:${sc.after}%"></span><i style="left:${sc.ceiling}%"></i></div>
     ${(() => {   // must-haves aren't standard keywords: a 100% match can still miss several

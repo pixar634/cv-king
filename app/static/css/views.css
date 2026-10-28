@@ -443,3 +443,14 @@ body.is-setup #nav, body.is-setup #engineSeg, body.is-setup #openSettings { disp
 .net__dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
 #netPanel { display: flex; flex-direction: column; gap: var(--s-4); }
 @media (max-width: 900px) { .net .career__body { grid-template-columns: 1fr; grid-template-rows: 60vh auto; } }
+
+/* ---- the chance of a callback, above the keyword score ---- */
+.chance { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-4) var(--s-5); border: 1px solid var(--line-2); border-radius: var(--radius-card); background: var(--surface-2); }
+.chance__top { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--s-4); flex-wrap: wrap; }
+.chance__label { font: 800 28px/1.1 var(--font-sans); letter-spacing: -.01em; color: var(--tone, var(--white)); }
+.chance__band { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.chance__band .num { font-size: 18px; font-weight: 700; color: var(--text); }
+.chance.tone-good { --tone: var(--success-300); }
+.chance.tone-mid { --tone: var(--neo-paccha-500); }
+.chance.tone-low { --tone: var(--warning-300); }
+.chance__note { color: var(--text-4); }
