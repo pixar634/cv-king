@@ -643,10 +643,21 @@ function renderInsights() {
   const notes = (a.fit_notes || []).length || a.recruiter_note;
   const tabs = [["changes", "Changes", ""], ["keywords", "Keywords", `${covered}/${a.keywords.length}`], ["letter", "Letter", `<span id="letterCount"></span>`],
     ...(notes ? [["notes", "Notes", ""]] : []), ["ats", "ATS", `${passed}/${a.ats.length}`]];
-  $("#insights").innerHTML = `
+  // The chance of a callback leads; the keyword score is what an ATS search and a skim will find, nothing more.
+  const cb = a.callback;
+  const cbTone = cb ? { Strong: "tone-good", Possible: "tone-mid", "Long shot": "tone-low" }[cb.label] || "" : "";
+  const chance = cb ? `<section class="chance ${cbTone}">
+      <div class="chance__top"><div><span class="eyebrow">Chance of a callback</span><div class="chance__label">${esc(cb.label)}</div></div>
+        <div class="chance__band"><span class="num">${esc(cb.band)}</span><span class="type-meta">${cb.warm.length ? `with a referral ${esc(cb.warm_band)}` : "as a cold application"}</span></div></div>
+      ${cb.why.length ? `<p class="type-meta">${cb.why.map(esc).join(" · ")}</p>` : ""}
+      ${cb.own ? `<p class="type-meta">Your own record with ${esc(cb.label)} jobs: ${cb.own.callbacks} callbacks from ${cb.own.applied} applications${cb.own.rate === null ? "" : ` (${cb.own.rate}%)`}.</p>` : ""}
+      ${cb.warm.length ? `<p class="type-meta">You know ${cb.warm.map(esc).join(", ")} there: a referral moves this more than any CV change. Pipeline writes the ask.</p>` : ""}
+      <p class="type-meta chance__note" title="${esc(cb.source)}">A rough guide from published averages (about 3% of cold applications and 40% of referrals reach an interview), placed by the fit label. The keyword score below only says whether your skills will be found; screeners decide on title, level, years, location and must-haves.</p>
+    </section>` : "";
+  $("#insights").innerHTML = `${chance}
     <section class="score ${tone(rq.total ? Math.min(s.after, Math.round(100 * rq.shown / rq.total)) : s.after)}">
       <div class="score__top">
-        <div class="stat stat--xl"><span class="eyebrow">Keyword match</span><span class="stat__value">${s.after}<small>%</small></span></div>
+        <div class="stat stat--xl"><span class="eyebrow" title="How many of the posting's skill keywords this CV contains: what an ATS search or a quick skim finds">ATS keywords</span><span class="stat__value">${s.after}<small>%</small></span></div>
         <div class="score__stats">
           <div class="stat"><span class="eyebrow">Before</span><span class="stat__value">${s.before}<small>%</small></span></div>
           <div class="stat"><span class="eyebrow">Ceiling</span><span class="stat__value">${s.ceiling}<small>%</small></span></div>
