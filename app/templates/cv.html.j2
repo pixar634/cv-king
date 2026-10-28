@@ -51,6 +51,8 @@ strong { font-weight: 700; }
 .v-flowcv .entry .org, .v-flowcv .entry .loc, .v-classic .entry .org, .v-classic .entry .loc { display: inline; font-style: italic; }
 .v-flowcv .entry .loc::before, .v-classic .entry .loc::before { content: " \00B7  "; white-space: pre; }
 .loc:empty { display: none !important; }
+/* A project's link sits beside its role, in the wide column: in the narrow date column a long link ran into the text. */
+.plink { color: inherit; text-decoration: none; overflow-wrap: anywhere; }
 .when > span { display: block; }
 ul.bul { list-style: none; margin-top: 1pt; }
 /* The bullet is inline text on its own line, with a hanging indent. A floating (absolute) bullet
@@ -204,10 +206,10 @@ html.v-modern { font-family: "Plex", "Segoe UI", sans-serif; line-height: 1.34; 
   <h2>PROJECTS</h2>
   {% for p in doc.projects %}
   <div class="entry">
-    <div class="when"><span class="dates">{{ p.dates }}</span><span class="loc">{{ p.url }}</span></div>
+    <div class="when"><span class="dates">{{ p.dates }}</span></div>
     <div class="what">
       <div class="role">{{ p.name }}</div>
-      <div class="org">{{ p.role }}</div>
+      <div class="org">{{ p.role }}</div>{% if p.url %}<a class="loc plink" href="{{ p.url if '://' in p.url else 'https://' ~ p.url }}">{{ p.url }}</a>{% endif %}
       <ul class="bul">
         {% for b in p.bullets %}<li>{{ b | md }}</li>
         {% endfor %}
