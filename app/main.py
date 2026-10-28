@@ -947,14 +947,12 @@ def fit_preview(body: dict = Body(...)):
         extract.market_for(body.get("location") or "", body.get("remote"))
     same = tracker.find_same(body.get("company") or "", body.get("role") or "", body.get("url") or "")
     # The same fit label Discover shows, for a job pasted, opened in the extension or about to be tailored.
-    from .fit import strong_skills
     job = {"title": body.get("role") or "", "company": body.get("company") or "", "location": body.get("location") or "",
            "remote": body.get("remote"), "description": text, "posted": body.get("posted") or "", "method": body.get("method") or ""}
-    ranked = discover._rank(job, strong_skills(profile), discover.with_profile(prefs))
     from . import warm
-    out |= {"warm": [{k: p[k] for k in ("name", "position", "url")} for p in warm.at(job["company"])[:5]]}
-    out |= {"label": "Long shot" if ranked.get("excluded") else ranked.get("fit"),
-            "label_why": ranked.get("reasons", [])[:1] if ranked.get("excluded") else ranked.get("fit_why", [])}
+    fit = discover.label_for(job, profile, prefs)
+    out |= {"warm": [{k: p[k] for k in ("name", "position", "url")} for p in warm.at(job["company"])[:5]],
+            "label": fit["label"], "label_why": fit["why"]}
     return out | {"gate": gate.check(text, body.get("role") or "", body.get("location") or "", market, body.get("remote"),
                                      profile, prefs, company=body.get("company") or ""),
                   "already": same and {"id": same["id"], "status": same.get("status"), "story": tracker.story(same),

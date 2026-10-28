@@ -1614,6 +1614,15 @@ def _plain(words: list[str], n: int = 30) -> list[str]:
     return [w for w in words or [] if w and not w.startswith("re:")][:n]
 
 
+def label_for(job: dict, profile: dict, prefs: dict) -> dict:
+    """{"label", "why"}: the fit label for one job outside a scan (a pasted link, the extension, a CV's report)."""
+    from .fit import strong_skills
+    ranked = _rank(job, strong_skills(profile), with_profile(prefs))
+    if ranked.get("excluded"):
+        return {"label": "Long shot", "why": ranked.get("reasons", [])[:1]}
+    return {"label": ranked.get("fit"), "why": ranked.get("fit_why", [])}
+
+
 def chrome_prompt(prefs: dict, days: int) -> str:
     """A self-contained prompt for Claude in Chrome, written from this profile's strategy."""
     from .profile import experience_years_label

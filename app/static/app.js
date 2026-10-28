@@ -1128,15 +1128,23 @@ async function loadInsights() {
   }
   const d = await api("/api/insights");
   const f = d.funnel;
-  $("#insightsSub").textContent = f.applied ? `${f.applied} applied, ${f.replied} replied, ${f.interviews} interview${f.interviews === 1 ? "" : "s"}` : "Nothing applied yet";
+  $("#insightsSub").textContent = f.applied ? `${f.applied} applied, ${f.callbacks} callback${f.callbacks === 1 ? "" : "s"}, ${f.replied} replied` : "Nothing applied yet";
   const pct = (v) => (v === null || v === undefined ? `<span title="Fewer than ${d.min_n} applications: too few to say">–</span>` : `${v}<small>%</small>`);
   const tile = (label, value, title = "") => `<div class="stat" title="${esc(title)}"><span class="eyebrow">${label}</span><span class="stat__value">${value}</span></div>`;
   const med = d.days_to_reply.median;
   const tiles = `<div class="insights__tiles">
       ${tile("CVs tailored", f.tailored)}${tile("Applied", f.applied)}
+      ${tile("Callback rate", pct(d.callback_rate) + `<small> goal ${d.target}%</small>`, "A recruiter call, an interview or an offer, out of applications sent. A rejection is a reply, not a callback.")}
       ${tile("Replied", f.replied, "A recruiter call, an interview, an offer or a rejection")}
       ${tile("Reply rate", pct(d.reply_rate))}${tile("Interviews", f.interviews)}${tile("Offers", f.offers)}
       ${tile("Days to a reply", med === null ? "–" : `${Math.round(med)}<small> median</small>`, `${d.days_to_reply.n} replies with dates`)}</div>`;
+  const cb = d.callbacks;
+  const cbTable = (title, list) => list.length ? `<div><span class="eyebrow">${title}</span>
+      <table><thead><tr><th></th><th class="num">Applied</th><th class="num">Callbacks</th><th class="num">Rate</th></tr></thead>
+      <tbody>${list.map((x) => `<tr><td>${esc(x.group)}</td><td class="num">${x.applied}</td><td class="num">${x.callbacks}</td><td class="num">${x.rate === null ? "–" : `${x.rate}%`}${x.rate !== null && x.rate >= d.target ? " ✓" : ""}</td></tr>`).join("")}</tbody></table></div>` : "";
+  const pauseNote = cb.pause.length ? `<div class="notice">No callbacks from ${cb.pause_after}+ applications in ${esc(cb.pause.join(", "))}. Pause cold applications there and use referrals, or change what the CV leads with.</div>` : "";
+  const callbacks = f.applied ? `<div><span class="eyebrow">Callbacks</span><p class="type-meta">Goal: ${d.target}% of applications turn into a recruiter call or interview. Rates show from ${d.min_n} applications in a group.</p>${pauseNote}</div>
+      ${cbTable("By how you applied", cb.by_channel)}${cbTable("By career track", cb.by_track)}${cbTable("By fit label", cb.by_fit)}${cbTable("By posting age when you applied", cb.by_age)}` : "";
   const bands = d.bands.filter((b) => b.applied);
   const table = bands.length ? `<div><span class="eyebrow">Replies by match score</span>
       <p class="type-meta">Does a higher match get more replies for you? Rates show from ${d.min_n} applications in a band.</p>
@@ -1149,7 +1157,7 @@ async function loadInsights() {
   const missing = d.missing.length ? `<div><span class="eyebrow">Skills jobs keep asking for</span>
       <p class="type-meta">Required by the jobs you tailored for, not in your profile. Have one after all? Click it to add it to your memory.</p>
       <div class="chip-row">${d.missing.map((m) => `<button class="chip chip--warn" data-gap="${esc(m.term)}" title="${m.jobs} job${m.jobs === 1 ? "" : "s"}"><span>${esc(m.term)} · ${m.jobs}</span></button>`).join("")}</div></div>` : "";
-  $("#insightsBody").innerHTML = tiles + (table || waiting || missing ? `<div class="insights__grid">${table}${waiting}${missing}</div>` : "")
+  $("#insightsBody").innerHTML = tiles + (callbacks || table || waiting || missing ? `<div class="insights__grid">${callbacks}${table}${waiting}${missing}</div>` : "")
     + (d.approximate ? `<p class="type-meta">Dates for applications from before the history began are the day you marked them applied, so times are approximate.</p>` : "");
   $$("#insightsBody [data-follow]").forEach((b) => (b.onclick = () => openColdMail(b.dataset.follow)));
   $$("#insightsBody [data-gap]").forEach((b) => (b.onclick = () => openMemory(b.dataset.gap)));
