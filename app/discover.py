@@ -174,8 +174,69 @@ def _slug_after(url: str, host_part: str) -> str:
     return path[0] if path else ""
 
 
-def from_ats(url: str) -> tuple[str, list[dict]] | None:
+def _post_json(url: str, payload: dict, timeout: int = 25):
+    if not public_url(url):
+        raise ValueError(f"Not a public web address: {url[:120]}")
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(), method="POST",
+                                 headers={"User-Agent": UA, "Accept": "application/json", "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read())
+
+
+ISO3 = {"IN": "IND", "GB": "GBR", "US": "USA", "CA": "CAN", "SG": "SGP", "AE": "ARE", "AU": "AUS", "DE": "DEU",
+        "NL": "NLD", "IE": "IRL", "FR": "FRA"}
+
+
+def from_workday(url: str, terms: list[str]) -> tuple[str, list[dict]]:
+    """A Workday careers site (company.wd5.myworkdayjobs.com/<site>) through the JSON search its own page uses. The
+    listing has titles, places and age; the description is read when you open a job."""
+    p = urlparse(url)
+    host = p.hostname or ""
+    tenant = host.split(".")[0]
+    path = [x for x in p.path.split("/") if x and not re.fullmatch(r"[a-z]{2}(-[A-Z]{2})?", x)]
+    if not path:
+        raise ValueError("Paste the Workday careers link with its site name, e.g. https://acme.wd5.myworkdayjobs.com/External")
+    api = f"https://{host}/wday/cxs/{tenant}/{path[0]}/jobs"
+    page = f"https://{host}/{path[0]}"
+    out, seen = [], set()
+    for t in terms or ["engineer"]:
+        data = _post_json(api, {"appliedFacets": {}, "limit": 20, "offset": 0, "searchText": t})
+        for j in data.get("jobPostings") or []:
+            link = page + (j.get("externalPath") or "")
+            if link in seen:
+                continue
+            seen.add(link)
+            out.append(_job(j.get("title"), tenant.replace("-", " ").title(), j.get("locationsText") or "", link,
+                            parse_posted(j.get("postedOn") or ""), j.get("postedOn") or "", method="workday"))
+    return "Workday search", out
+
+
+def from_amazon(terms: list[str]) -> tuple[str, list[dict]]:
+    """amazon.jobs' own search (the JSON its page loads), in your country, newest first."""
+    code = ISO3.get(strategy.COUNTRY_CODES.get((strategy.home()["country"] or "india").lower(), "IN"), "IND")
+    out, seen = [], set()
+    for t in terms or ["software engineer"]:
+        data = _json(f"https://www.amazon.jobs/en/search.json?base_query={quote(t)}&normalized_country_code%5B%5D={code}"
+                     f"&result_limit=50&sort=recent", timeout=25)
+        for j in data.get("jobs") or []:
+            link = "https://www.amazon.jobs" + (j.get("job_path") or "")
+            if link in seen:
+                continue
+            seen.add(link)
+            desc = "\n".join(x for x in (j.get("description"), "Basic qualifications:\n" + (j.get("basic_qualifications") or ""),
+                                          "Preferred qualifications:\n" + (j.get("preferred_qualifications") or "")) if x)
+            out.append(_job(j.get("title"), "Amazon", j.get("normalized_location") or j.get("location") or "", link,
+                            parse_posted(j.get("posted_date") or ""), j.get("posted_date") or "",
+                            description=htmllib.unescape(desc), method="amazon"))
+    return "amazon.jobs search", out
+
+
+def from_ats(url: str, terms: list[str] | None = None) -> tuple[str, list[dict]] | None:
     h = _host(url)
+    if h.endswith(".myworkdayjobs.com"):
+        return from_workday(url, terms or [])
+    if h in ("amazon.jobs", "www.amazon.jobs"):
+        return from_amazon(terms or [])
     if "greenhouse.io" in h:
         slug = _slug_after(url, "greenhouse") if "boards" in h or "job-boards" in h else ""
         m = re.search(r"[?&]for=([\w-]+)", url)
@@ -1103,6 +1164,8 @@ def _board_answers(api: str, name: str) -> bool:
 def find_board(name: str) -> tuple[str, str] | None:
     """Probe the public job boards for a company by name (e.g. "Eleven Labs" -> elevenlabs, eleven-labs)."""
     base = re.sub(r"[^a-z0-9]+", " ", name.lower()).strip()
+    if base.split(" ")[0] in ("amazon", "aws"):
+        return "amazon.jobs", "https://www.amazon.jobs/"
     slugs = list(dict.fromkeys(x for x in (base.replace(" ", ""), base.replace(" ", "-")) if x))
     cands = [(board, api.format(s=sl), page.format(s=sl)) for sl in slugs for board, api, page in ATS_BOARDS]
     with cf.ThreadPoolExecutor(max_workers=10) as pool:
@@ -1198,7 +1261,7 @@ def scan_one(src: dict, days: int, prefs: dict | None = None) -> dict:
             why = refused_reason(src["value"])
             if why:
                 return {"source": src["id"], "error": why, "jobs": []}
-            got = from_ats(src["value"])
+            got = from_ats(src["value"], board_terms(prefs or {}))
             if got is None:
                 if not robots_allows(src["value"]):
                     return {"source": src["id"], "error": "This site's robots.txt asks automated tools not to read that page.", "jobs": []}
@@ -1224,6 +1287,10 @@ def _save_jobs(state: dict) -> None:
     f.write_text(json.dumps(state, indent=1, ensure_ascii=False), "utf-8")
 
 
+MODEL_SEARCH_DAYS = 7
+MODEL_SEARCHES_PER_SCAN = 3
+
+
 def scan(source_ids: list[str] | None, days: int, prefs: dict, budget_s: int = 60, progress=lambda m: None) -> dict:
     from .sponsors import refresh_soon
     refresh_soon()   # the public sponsor registers, at most monthly, in the background
@@ -1232,6 +1299,17 @@ def scan(source_ids: list[str] | None, days: int, prefs: dict, budget_s: int = 6
     sources = [s for s in every if s["id"] in source_ids] if source_ids else [s for s in every if s["kind"] != "indeed"]
     url_sources = [s for s in sources if s["kind"] in ("url", "board")]
     web_sources = [s for s in sources if s["kind"] in ("websearch", "people", "indeed")]
+    if not source_ids:
+        # Model web searches use the same usage as tailoring: each at most weekly, a few per scan, favourites first.
+        week_ago = (dt.datetime.now() - dt.timedelta(days=MODEL_SEARCH_DAYS)).isoformat(timespec="seconds")
+        due = sorted((s for s in web_sources if s["kind"] != "indeed" and (s.get("last_scan") or "") < week_ago),
+                     key=lambda s: (not s.get("favourite"), s.get("last_scan") or ""))
+        skipped = len([s for s in web_sources if s["kind"] != "indeed"]) - len(due[:MODEL_SEARCHES_PER_SCAN])
+        web_sources = [s for s in web_sources if s["kind"] == "indeed"] + due[:MODEL_SEARCHES_PER_SCAN]
+        sources = url_sources + web_sources
+        if skipped:
+            progress(f"{skipped} web search{'es' if skipped != 1 else ''} skipped: run at most weekly, "
+                     f"{MODEL_SEARCHES_PER_SCAN} per scan, to save usage for tailoring")
     n_indeed = sum(1 for x in sources if x["kind"] == "indeed")
     if n_indeed == len(sources):
         progress(f"Searching Indeed for {n_indeed} career track{'s' if n_indeed != 1 else ''}, one after another")
