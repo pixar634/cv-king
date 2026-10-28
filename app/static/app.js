@@ -1214,12 +1214,18 @@ function renderPipeline() {
   const headHtml = `<h2 class="type-h2">${cur[1]}</h2><span class="type-meta num">${cur[2].length} ${cur[2].length === 1 ? "application" : "applications"}</span>`;
   const statusSel = (r) => `<select class="control--sm" data-status="${esc(r.id)}" aria-label="Status">${S.state.statuses.map((s) => `<option ${s === r.status ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>`
     + (r.status !== "Generated" ? `<select class="control--sm" data-channel="${esc(r.id)}" aria-label="How you applied" title="How you applied${r.posting_age != null ? `; the posting was ${r.posting_age} days old` : ""}"><option value="">How you applied?</option>${(S.state.channels || []).map((c) => `<option ${c === r.channel ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>` : "");
-  const appCard = (r) => `<div class="card card--interactive app-card" data-open="${esc(r.id)}">
+  // Bento: an application with something going on (mail, outreach, people) gets a double-wide card, its follow-up
+  // work in a second column; a CV not sent yet stays a single tile. Every card in a row is the same height.
+  const appCard = (r) => {
+    const side = `${mailTag(r)}${outreachHtml(r)}${warmHtml(r)}${contactsHtml(r)}`;
+    const wide = side.trim().length > 0;
+    return `<div class="card card--interactive app-card ${wide ? "app-card--wide" : ""}" data-open="${esc(r.id)}">
+      <div class="app-card__main">
       <div class="item">${logoTile(r.id, r.logo, r.company)}
         <span class="item__body"><span class="item__title">${esc(r.company)}</span><span class="item__meta" title="${esc(r.role)}">${esc(r.role)}</span></span>
         <span class="item__aside">${scoreNum(r.score_after)}</span></div>
-      <div class="app-card__meta">${r.applied_on ? `<span class="chip chip--ok chip--pill num" title="The day you marked this applied">Applied on: ${esc(dayLabel(r.applied_on))}</span>` : `<span class="num" title="Date this CV was made">Tailored ${esc(dayLabel(r.created.slice(0, 10)))}</span>`}<span class="app-card__host" title="${esc(r.job_url || "")}${r.job_id ? `, ID ${esc(r.job_id)}` : ""}">${esc(host(r.job_url || ""))}</span>${statusSel(r)}</div>
-      ${mailTag(r)}
+      <div class="app-card__meta">${r.applied_on ? `<span class="chip chip--ok chip--pill num" title="The day you marked this applied">Applied on: ${esc(dayLabel(r.applied_on))}</span>` : `<span class="num" title="Date this CV was made">Tailored ${esc(dayLabel(r.created.slice(0, 10)))}</span>`}<span class="app-card__host" title="${esc(r.job_url || "")}${r.job_id ? `, ID ${esc(r.job_id)}` : ""}">${esc(host(r.job_url || ""))}</span></div>
+      <div class="app-card__state">${statusSel(r)}</div>
       <div class="app-card__acts">
         ${r.job_url ? `<a class="btn btn--sm" href="${esc(r.job_url)}" target="_blank" rel="noopener" data-stop title="${esc(r.job_url)}">Open posting</a>` : `<span class="type-meta">No link saved</span>`}
         <a class="btn btn--sm btn--ghost" href="/apps/${esc(r.id)}/pdf?download=1" data-stop title="${esc(r.pdf)}">PDF</a>
@@ -1227,7 +1233,8 @@ function renderPipeline() {
         <button class="btn btn--sm btn--ghost" data-prep="${esc(r.id)}" data-stop title="Interview questions for this job">Interview</button>
         <button class="btn btn--sm btn--ghost" data-cold="${esc(r.id)}" data-stop title="Write a cold email for this job">Cold mail</button>
         <button class="btn btn--sm btn--ghost" data-findc="${esc(r.id)}" data-stop title="Search the web for the people who hire for this role" ${PC.running[r.id] ? "disabled" : ""}>${PC.data[r.id] ? "Find contacts again" : "Find contacts"}</button>
-      </div>${outreachHtml(r)}${warmHtml(r)}${contactsHtml(r)}</div>`;
+      </div></div>${wide ? `<div class="app-card__side">${side}</div>` : ""}</div>`;
+  };
   const flightCard = (b) => b.dup && !b.below_min ? `<div class="card app-card" data-flight="${esc(b.id)}">
       <div class="item"><span class="logo logo--sm">${initial(b.company || b.role)}</span><span class="item__body"><span class="item__title">${esc(b.company || "This job")}</span><span class="item__meta">${esc(b.role || "")}</span></span><span class="tag tag--warn">Already applied</span></div>
       <div class="progress__text" style="margin-top:0">${esc(b.stage)}</div>

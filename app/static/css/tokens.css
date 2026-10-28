@@ -84,6 +84,9 @@
   /* ---- space (4px grid) ---- */
   --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 20px; --s-6: 24px; --s-8: 32px; --s-10: 40px; --s-12: 48px;
 
+  /* ---- shape ---- */
+  --radius-card: 12px;   /* cards are softly rounded; buttons and plunk edges stay sharp */
+
   /* ---- size ---- */
   --h-sm: 30px; --h-md: 40px; --h-lg: 50px;   /* NeoPOP button heights */
   --topbar: 60px;

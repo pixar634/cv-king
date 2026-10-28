@@ -6,13 +6,16 @@
    ====================================================================== */
 .topbar {
   position: sticky; top: 0; z-index: 20; height: var(--topbar);
-  display: grid; grid-template-columns: 1fr auto 1fr; align-items: stretch; padding: 0 var(--s-6);
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s-6); align-items: stretch; padding: 0 var(--s-6);
   background: var(--bg); border-bottom: 1px solid var(--line);
 }
 .brand { display: flex; align-items: center; gap: 12px; font-weight: 500; font-size: 13px; letter-spacing: .28em; color: var(--text-2); }
 .brand b { font-weight: 800; color: var(--white); letter-spacing: .28em; margin-left: .28em; }
 .brand__mark { --edge-r: var(--neo-paccha-600); --edge-b: var(--neo-paccha-700); width: 16px; height: 16px; background: var(--accent); }
-.tabs--nav { gap: var(--s-8); border-bottom: 0; }
+.tabs--nav { gap: var(--s-8); border-bottom: 0; justify-self: center; max-width: 100%; }
+/* Seven screens: the gaps close up before the menu would touch the logo or the profile switcher; past that it scrolls. */
+@media (max-width: 1440px) { .tabs--nav { gap: var(--s-5); } }
+@media (max-width: 1240px) { .tabs--nav { gap: var(--s-4); } .brand { letter-spacing: .18em; } .brand b { letter-spacing: .18em; } }
 .tabs--nav > button { padding: 0; height: 100%; font-size: 11.5px; }
 .tabs--nav > button.on::after { bottom: 0; }
 .topbar__right { justify-self: end; display: flex; align-items: center; gap: var(--s-3); }
@@ -193,9 +196,23 @@
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: var(--s-4); align-items: start; }
 .card-grid > .board__none { grid-column: 1 / -1; }
 .board__none { padding: var(--s-5) var(--s-3); border: 1px dashed var(--line-2); text-align: center; font-size: 12.5px; color: var(--text-3); }
-.app-card { display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); }
+.app-card { display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); min-width: 0; }
+.app-card__main { display: flex; flex-direction: column; gap: var(--s-3); min-width: 0; flex: 1; }
+.app-card__main .app-card__acts { margin-top: auto; }   /* actions line up along the bottom of a row */
+.app-card__state { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.app-card__state select { flex: 1 1 140px; min-width: 0; max-width: 100%; }
+/* The Pipeline board as a bento grid: equal heights per row, active applications twice as wide. */
+#board { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); align-items: stretch; grid-auto-flow: row dense; }
+.app-card--wide { grid-column: span 2; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s-4) var(--s-5); }
+.app-card__side { display: flex; flex-direction: column; gap: var(--s-3); min-width: 0; padding-left: var(--s-5); border-left: 1px solid var(--line); }
+.app-card__side > :first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.app-card__side .app-card__contacts { margin: 0; padding: 0; }
+@media (max-width: 760px) {
+  .app-card--wide { grid-column: auto; grid-template-columns: minmax(0, 1fr); }
+  .app-card__side { padding-left: 0; border-left: 0; padding-top: var(--s-3); border-top: 1px solid var(--line); }
+}
 .app-card .item { padding: 0; }
-.app-card__meta { display: flex; align-items: center; gap: var(--s-2); font-size: 12px; color: var(--text-3); white-space: nowrap; }
+.app-card__meta { display: flex; align-items: center; gap: var(--s-2); font-size: 12px; color: var(--text-3); white-space: nowrap; min-width: 0; }
 .app-card__host { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .app-card__acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .app-card.err .progress__text { color: var(--bad); }
