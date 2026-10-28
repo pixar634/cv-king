@@ -10,6 +10,7 @@ import csv
 import datetime as dt
 import io
 import json
+import re
 import uuid
 
 from .config import data_dir, output_dir
@@ -62,6 +63,46 @@ def _index() -> dict[str, list[dict]]:
 def companies() -> set[str]:
     """Employer keys where you know someone: what Discover and the fit label count."""
     return set(_index())
+
+
+LEVELS = {0: "Intern", 1: "Junior", 2: "Mid-level", 3: "Senior", 4: "Lead", 5: "Staff / principal", 6: "Head / director",
+          7: "VP / C-level"}
+FUNCTION_WORDS = re.compile(r"engineer|developer|architect|sde|swe|software|platform|backend|frontend|full[\s-]?stack|"
+                            r"data|ml|machine learning|ai|forward deployed|solutions|product|devops|infrastructure|security|"
+                            r"mobile|cloud|applied", re.I)
+
+
+def _words(text: str) -> set[str]:
+    return {w.lower() for w in FUNCTION_WORDS.findall(text or "")}
+
+
+def who_to_ask(company: str, role: str = "", limit: int = 8) -> list[dict]:
+    """The people you know at a company, most useful first for this role, each with why and the kind of message
+    that fits: someone who manages or leads in the role's own area may be the hiring manager or know them; a peer
+    in that area can refer you and tell you about the team; a recruiter can route you to the right person."""
+    from .network import kind
+    from .strategy import title_level
+    want = _words(role)
+    out = []
+    for p in at(company):
+        k, level = kind(p["position"]), title_level(p["position"])
+        near = bool(want & _words(p["position"])) or not want
+        if k == "leader" and near:
+            score, why, ask = 0, "Manages or leads in this area: may be the hiring manager, or know who is", "hiring_manager"
+        elif k == "peer" and near:
+            score, why, ask = 1, "Works in this area: can refer you and tell you what the team is like", "referral"
+        elif k == "recruiter":
+            score, why, ask = 2, "Recruiter: can pass your CV to the recruiter for this role", "recruiter"
+        elif k == "leader":
+            score, why, ask = 3, "A leader in another area: can point you to the right manager", "intro"
+        elif k == "peer":
+            score, why, ask = 4, "An engineer in another area: can still refer you", "referral"
+        else:
+            score, why, ask = 5, "Works there: can refer you or introduce you", "intro"
+        out.append({k2: p[k2] for k2 in ("name", "position", "url")} | {
+            "kind": k, "level": LEVELS.get(level, ""), "why": why, "ask": ask, "_s": (score, -(level or 0))})
+    out.sort(key=lambda p: p.pop("_s"))
+    return out[:limit]
 
 
 def at(company: str) -> list[dict]:
