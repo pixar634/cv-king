@@ -35,10 +35,13 @@
     const facts = txt(".job-details-jobs-unified-top-card__tertiary-description-container", ".job-details-jobs-unified-top-card__primary-description-container", ".jobs-unified-top-card__subtitle-primary-grouping");
     const head = clean(top === document ? "" : top.innerText).slice(0, 2000);
     const link = top.querySelector(".job-details-jobs-unified-top-card__job-title a[href*='/jobs/view/'], a[href*='/jobs/view/']");
+    // "Bengaluru · Reposted 2 weeks ago · 100 applicants": the server turns the wording into a date.
+    const when = /\b(Reposted\s+)?(\d+\s+(?:minute|hour|day|week|month|year)s?\s+ago|just now|today|yesterday)\b/i.exec(`${facts} ${head}`);
     return {
       url: location.href, paneId: (/\/jobs\/view\/(\d+)/.exec(link?.href || "") || [])[1] || "",
       role: txt(".job-details-jobs-unified-top-card__job-title h1", ".job-details-jobs-unified-top-card__job-title", ".jobs-unified-top-card__job-title", ".t-24", "h1"),
       company: txt(".job-details-jobs-unified-top-card__company-name a", ".job-details-jobs-unified-top-card__company-name", ".jobs-unified-top-card__company-name"),
+      posted: when ? when[2] : "", reposted: !!(when && when[1]),
       place: clean(facts.split("·")[0]), workplace: (/\b(Remote|Hybrid|On-site)\b/.exec(head) || [])[1] || "",
       description: desc ? desc.innerText.trim().slice(0, 40000) : "",
       easy: [...top.querySelectorAll("button, a")].some((b) => /easy apply/i.test(b.innerText || b.getAttribute("aria-label") || "")),

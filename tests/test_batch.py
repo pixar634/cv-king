@@ -37,3 +37,10 @@ def test_a_finished_job_can_be_tailored_again(started):
     first = batch.add([job], {})
     batch._mine()[first[0]]["status"] = "done"
     assert batch.add([job], {}) != first
+
+
+def test_the_pages_own_posted_wording_is_kept_as_a_date(started):
+    import datetime as dt
+    batch.add([{"jd": "x" * 300, "company": "Acme", "role": "AI Engineer", "posted": "Reposted 2 weeks ago"}], {})
+    req = started[0][2]
+    assert req["posted"] == (dt.date.today() - dt.timedelta(days=14)).isoformat()
