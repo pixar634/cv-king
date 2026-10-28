@@ -383,13 +383,18 @@ def job_status(jid: str):
 
 @app.get("/api/apps")
 def apps():
-    from . import warm
-    from . import coldmail, contacts
+    from . import coldmail, contacts, warm
     try:
         found = contacts.load_all()
     except OSError:   # no applications folder yet
         found = {}
-    return [r | {"warm": warm.who_to_ask(r.get("company") or "", r.get("role") or "", 5),
+
+    def people(r):
+        """Who to ask there, each with any message you've written them and where its follow-up stands."""
+        sent = warm.people_state(r["id"])
+        return [p | {"msg": sent.get(p["url"])} for p in warm.who_to_ask(r.get("company") or "", r.get("role") or "", 5)]
+
+    return [r | {"warm": people(r),
                  "outreach_state": tracker.outreach_state(r), "has_contacts": bool(found.get(r["id"])),
                  "has_mail": bool(coldmail.load(r["id"])["mails"])}
             for r in tracker.load()]
@@ -434,8 +439,20 @@ def referral_ask(app_id: str, body: dict = Body(...)):
     from . import warm
     _app_dir(app_id)
     engine = _prefs(load_profile())["defaults"]["engine"]
-    return {"job": start_job("referral", lambda a, u, c, e, progress: warm.referral(a, u, c, e, progress),
-                             app_id, body.get("url") or "", body.get("context") or "", engine)}
+    return {"job": start_job("referral", lambda a, u, c, e, k, progress: warm.referral(a, u, c, e, progress, k),
+                             app_id, body.get("url") or "", body.get("context") or "", engine, body.get("kind") or "")}
+
+
+@app.post("/api/apps/{app_id}/people")
+def person_step(app_id: str, body: dict = Body(...)):
+    """What happened with one person you wrote to: sent, followed_up, replied, or undo."""
+    from . import warm
+    _app_dir(app_id)
+    try:
+        warm.mark(app_id, body.get("url") or "", body.get("action") or "")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return warm.people_state(app_id)
 
 
 @app.get("/api/apps/{app_id}")

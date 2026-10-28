@@ -267,7 +267,6 @@ def outreach_state(row: dict, today: dt.date | None = None) -> dict:
     """Where an application's outreach stands: none, sent, followup_due (from day 5), overdue (past day 7),
     followed_up or replied, with the day a follow-up is due. A cold email marked sent counts as outreach."""
     from .coldmail import load as mails
-    today = today or dt.date.today()
     o = dict(row.get("outreach") or {})
     if not o.get("sent_on"):
         try:
@@ -276,6 +275,13 @@ def outreach_state(row: dict, today: dt.date | None = None) -> dict:
             sent = []
         if sent:
             o["sent_on"] = sent[0]
+    return followup_state(o, today)
+
+
+def followup_state(o: dict, today: dt.date | None = None) -> dict:
+    """From sent_on / followed_up_on / replied_on: none, sent, followup_due (from day 5), overdue (past day 7),
+    followed_up or replied, with the day a follow-up is due."""
+    today = today or dt.date.today()
     if o.get("replied_on"):
         return {"state": "replied", "on": o["replied_on"]}
     if o.get("followed_up_on"):
