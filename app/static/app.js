@@ -86,6 +86,7 @@ async function boot() {
   wireStage();
   wireDiscover();
   wireDrawer();
+  wireNetworkControls();
   wireEngineSwitch();
   $("#careerGen").onclick = generateCareer;
   renderChips();
@@ -118,7 +119,7 @@ function wireNav() {
   $("#nav").onclick = (e) => { const b = e.target.closest("button"); if (b) showView(b.dataset.view); };
 }
 
-const VIEWS = ["tailor", "discover", "pipeline", "interview", "outreach", "career"];
+const VIEWS = ["tailor", "discover", "pipeline", "interview", "outreach", "career", "network"];
 function showView(v) {
   const from = $(".view.on")?.id.slice(2);
   $$("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.view === v));
@@ -128,6 +129,7 @@ function showView(v) {
     if (v === "discover") loadFound();
     if (v === "pipeline") loadPipeline();
     if (v === "career") loadCareer();
+    if (v === "network") loadNetwork().catch((e) => toast(e.message, 5000));
     if (v === "interview") loadInterview();
     if (v === "outreach") loadColdMail();
     renderDock();
