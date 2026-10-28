@@ -437,7 +437,8 @@ def analyse(pdf: Path, doc: dict, profile: dict, jd_text: str, jd_meta: dict, ma
     from .profile import experience_months
     years_n = experience_months(profile) // 12
     lvl = level_check(jd_meta.get("title") or "", jd_text, years_n, strong_skills(profile),
-                      (profile.get("preferences") or {}).get("max_years_asked", years_n + 2), profile)
+                      (profile.get("preferences") or {}).get("max_years_asked", years_n + 2), profile,
+                      jd_meta.get("company") or "")
     if lvl["verdict"] != "ok":
         flags.insert(0, {"level": "error" if lvl["verdict"] == "above" else "warn", "kind": "level",
                          "text": ("Above your level: " if lvl["verdict"] == "above" else "A stretch: ") + "; ".join(lvl["reasons"])

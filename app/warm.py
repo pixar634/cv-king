@@ -85,7 +85,7 @@ def who_to_ask(company: str, role: str = "", limit: int = 8) -> list[dict]:
     want = _words(role)
     out = []
     for p in at(company):
-        k, level = kind(p["position"]), title_level(p["position"])
+        k, level = kind(p["position"]), title_level(p["position"], company=p["company"])
         near = bool(want & _words(p["position"])) or not want
         if k == "leader" and near:
             score, why, ask = 0, "Manages or leads in this area: may be the hiring manager, or know who is", "hiring_manager"

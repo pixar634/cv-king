@@ -594,7 +594,7 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 21
+RANK_VERSION = 22
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "regions", "places", "pay_floor_home_lpa", "pay_floor_remote_lpa", "pay_floor_abroad_eur", "pay_tiers")
 
@@ -753,14 +753,14 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     from .fit import level_check
     years = prefs.get("candidate_years", 3)
     level = level_check(title, desc, years, evidence, prefs.get("max_years_asked", years + 2),
-                        {"experience": [{"title": t} for t in prefs.get("_held", [])]})
+                        {"experience": [{"title": t} for t in prefs.get("_held", [])]}, job.get("company") or "")
     if level["verdict"] == "above" and not prefs.get("include_above"):
         return job | {"match": 0, "reasons": ["above your level: " + "; ".join(level["reasons"])], "excluded": True}
     # Below the candidate's level only when the title says so; a sideways move into another kind of role isn't a step down.
     # A services firm's Lead is a product company's Senior, so that title is at your level, not below it.
     mine = strategy.level()["rank"]
     floor = min(mine, prefs.get("_floor", mine))
-    named = strategy.title_level(title)
+    named = strategy.title_level(title, company=job.get("company") or "")
     sideways = strategy.lateral(title)
     if named is not None and named < floor and not sideways and not prefs.get("include_senior"):
         return job | {"match": 0, "reasons": ["below your level"], "excluded": True}
