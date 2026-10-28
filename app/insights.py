@@ -39,6 +39,16 @@ def _report(app_id: str) -> dict:
         return {}
 
 
+def most_missed(con) -> list[dict]:
+    """Required skills the tailored jobs asked for that the profile lacked, most asked first: [{term, jobs}].
+    Each report says what the profile lacked when it was tailored; what the profile (or memory) has now is skipped."""
+    gaps = [dict(r) for r in con.execute(
+        "SELECT term, COUNT(DISTINCT app_id) AS jobs FROM keywords WHERE in_profile = 0 AND tier = 'required' "
+        "GROUP BY term ORDER BY jobs DESC, term")]
+    ptext, terms = profile_text(load_profile()), taxonomy().terms
+    return [g for g in gaps if not (g["term"] in terms and any(p.search(ptext) for p in terms[g["term"]].patterns))]
+
+
 def compute(today: dt.date | None = None) -> dict:
     today = today or dt.date.today()
     db.sync()
@@ -48,12 +58,7 @@ def compute(today: dt.date | None = None) -> dict:
         events: dict[str, list[dict]] = {}
         for e in con.execute("SELECT app_id, to_status, at, source FROM status_events ORDER BY at, id"):
             events.setdefault(e["app_id"], []).append(dict(e))
-        gaps = [dict(r) for r in con.execute(
-            "SELECT term, COUNT(DISTINCT app_id) AS jobs FROM keywords WHERE in_profile = 0 AND tier = 'required' "
-            "GROUP BY term ORDER BY jobs DESC, term")]
-    # Each report says what the profile lacked when it was tailored; skip what the profile (or memory) has now.
-    ptext, terms = profile_text(load_profile()), taxonomy().terms
-    missing = [g for g in gaps if not (g["term"] in terms and any(p.search(ptext) for p in terms[g["term"]].patterns))][:10]
+        missing = most_missed(con)[:10]
 
     rows = []
     for a in apps:

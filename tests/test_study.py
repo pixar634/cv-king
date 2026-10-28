@@ -81,3 +81,64 @@ def test_unknown_kinds_are_refused():
     [item] = study.add(["Go"])
     with pytest.raises(ValueError):
         study.update(item["id"], {"kind": "hobby"})
+
+
+def keyword_rows(rows):
+    """Applications and their keyword results, as a sync copies them from the reports."""
+    with closing(db.connect()) as con, con:
+        for app_id, company, term in rows:
+            con.execute("INSERT OR IGNORE INTO applications (id, company, role) VALUES (?, ?, 'Engineer')", (app_id, company))
+            con.execute("INSERT INTO keywords (app_id, term, tier, covered, in_profile) VALUES (?, ?, 'required', 0, 0)", (app_id, term))
+
+
+def test_suggestions_are_the_most_required_skills_not_on_the_list():
+    keyword_rows([("a1", "Acme", "Kubernetes"), ("a2", "Initech", "Kubernetes"), ("a1", "Acme", "Terraform"),
+                  ("a2", "Initech", "Python")])                 # the profile has Python: never suggested
+    assert [(g["term"], g["jobs"]) for g in study.suggestions()] == [("Kubernetes", 2), ("Terraform", 1)]
+    [item] = study.add(["Kubernetes"], asked=True)
+    assert {a["company"] for a in item["asks"]} == {"Acme", "Initech"} and all(a["must_have"] for a in item["asks"])
+    assert [g["term"] for g in study.suggestions()] == ["Terraform"]
+
+
+def test_a_finished_skill_goes_into_the_growth_log_and_on_your_cvs():
+    from app import career
+    from app.profile import load_profile
+    [item] = study.add(["LangGraph"])
+    assert API.post(f"/api/study/{item['id']}/log", json={}).status_code == 400   # not done yet
+    study.update(item["id"], {"status": "done"})
+    logged = API.post(f"/api/study/{item['id']}/log", json={"use_on_cv": True}).json()
+    [entry] = career.log()
+    assert (entry["kind"], entry["text"], entry["use_on_cv"]) == ("skill", "LangGraph", True)
+    assert logged["log_id"] == entry["id"] and "LangGraph" in load_profile()["confirmed_skills"]
+    assert API.post(f"/api/study/{item['id']}/log", json={}).status_code == 400   # once only
+    career.remove_log(entry["id"])
+    assert study.items()[0]["log_id"] is None                                     # taken out of the log: can log again
+
+
+def test_a_finished_project_is_logged_as_done_work_never_as_a_skill():
+    from app import career
+    [item] = study.add(["RAG search over my notes"], kind="project")
+    study.update(item["id"], {"status": "done"})
+    study.log(item["id"], use_on_cv=True)
+    [entry] = career.log()
+    assert (entry["kind"], entry["text"], entry["use_on_cv"]) == ("did", "Built a project: RAG search over my notes", False)
+
+
+def test_the_career_map_reads_the_study_list():
+    add_app("a1")
+    study.add([{"term": "LangGraph", "must_have": True}], "a1")
+    item = next(i for i in study.add(["AWS Solutions Architect"], kind="certification") if i["kind"] == "certification")
+    study.update(item["id"], {"status": "learning", "target_on": "2027-03-01", "notes": "Udemy course"})
+    lines = study.for_brief().splitlines()
+    assert lines[0] == "- AWS Solutions Architect [certification; learning; aiming for 2027-03-01] plan: Udemy course"
+    assert lines[1] == "- LangGraph [skill; to study; required by 1 of 1 tailored jobs that named it]"
+
+
+def test_an_older_study_table_gets_the_new_column():
+    with closing(db.connect()) as con, con:
+        con.execute("DROP TABLE study_items")
+        con.execute("CREATE TABLE study_items (id INTEGER PRIMARY KEY AUTOINCREMENT, term TEXT NOT NULL, key TEXT NOT NULL UNIQUE, "
+                    "kind TEXT NOT NULL DEFAULT 'skill', status TEXT NOT NULL DEFAULT 'todo', notes TEXT NOT NULL DEFAULT '', "
+                    "target_on TEXT, added TEXT NOT NULL, updated TEXT NOT NULL, done_on TEXT)")
+        con.execute("INSERT INTO study_items (term, key, added, updated) VALUES ('Go', 'go', 'x', 'x')")
+    assert study.items()[0]["log_id"] is None and study.items()[0]["term"] == "Go"

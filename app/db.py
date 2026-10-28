@@ -19,7 +19,7 @@ from contextlib import closing
 
 from .config import data_dir, output_dir
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS status_events (
@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS study_items (
   target_on TEXT,                          -- when you mean to have it, YYYY-MM-DD
   added     TEXT NOT NULL,
   updated   TEXT NOT NULL,
-  done_on   TEXT
+  done_on   TEXT,
+  log_id    TEXT                           -- the Career growth-log entry it became, once logged
 );
 CREATE TABLE IF NOT EXISTS study_asks (    -- the applications whose posting asked for it
   item_id   INTEGER NOT NULL,
@@ -135,6 +136,9 @@ def connect() -> sqlite3.Connection:
     if "channel" not in {r[1] for r in con.execute("PRAGMA table_info(applications)")}:
         con.execute("DROP TABLE applications")
         con.executescript(SCHEMA)
+    # The study list is never rebuilt: a column added later is added in place.
+    if "log_id" not in {r[1] for r in con.execute("PRAGMA table_info(study_items)")}:
+        con.execute("ALTER TABLE study_items ADD COLUMN log_id TEXT")
     con.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
     return con
 

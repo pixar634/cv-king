@@ -41,6 +41,11 @@ THE CANDIDATE'S GROWTH LOG (what they have done, are doing, learned and want, ne
 "goal" entries are not achievements yet, so never put them in you_have):
 {growth}
 
+THE CANDIDATE'S STUDY LIST (skills, certifications and projects they mean to take up, mostly what job postings
+required and their profile lacked; only "done" items are achieved, so never put the others in you_have). Where an item
+closes a step's gap, name it in that step's to_build as written here, so they see it is already planned:
+{study}
+
 Return JSON only:
 {{"summary": "2 or 3 plain sentences: where this person stands now and what their strongest levers are",
   "goal_assessment": "2 or 3 sentences: which routes can lead to the long-term goal, the realistic timeline, and what decides it",
@@ -204,7 +209,7 @@ def remove_log(entry_id: str) -> None:
 def generate(engine_id: str = "claude:opus", progress=lambda m: None) -> dict:
     profile = load_profile()
     current = next((r for r in profile["experience"] if not r.get("end")), profile["experience"][0])
-    from . import profiles, strategy
+    from . import profiles, strategy, study
     notes_path = data_dir() / "career_notes.md"
     if not notes_path.exists() and profiles.is_legacy():
         notes_path = ROOT / "CAREER_MAP.md"
@@ -227,6 +232,7 @@ def generate(engine_id: str = "claude:opus", progress=lambda m: None) -> dict:
                          wants=strat.get("career_wants") or "not stated; propose the strongest routes the profile supports",
                          current=f"{current['title']} at {current['company']}",
                          profile=json.dumps(facts, ensure_ascii=False)[:30000], notes=notes,
+                         study=study.for_brief() or "(empty)",
                          growth="\n".join(f"- {e['date']} [{LOG_KINDS.get(e['kind'], e['kind'])}] {e['text']}" for e in log()) or "(empty)")
     progress("Researching the market and reading your whole history (2 to 5 minutes)")
     engine = get_engine(engine_id)

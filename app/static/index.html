@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="/static/css/tokens.css?v=1">
 <link rel="stylesheet" href="/static/css/base.css?v=4">
 <link rel="stylesheet" href="/static/css/components.css?v=13">
-<link rel="stylesheet" href="/static/css/views.css?v=16">
+<link rel="stylesheet" href="/static/css/views.css?v=17">
 </head>
 <body>
 <header class="topbar">
@@ -265,7 +265,7 @@
       <div class="page__intro">
         <span class="eyebrow">Study</span>
         <h1 class="type-h1">What to learn next</h1>
-        <p class="page__lede">What the jobs asked for that your profile doesn't show. Tick a gap under a tailored CV's Keywords and press <b>Study later</b>, or add your own. Nothing here goes on a CV: once you can talk about one in an interview, add it to your memory.</p>
+        <p class="page__lede">What the jobs asked for that your profile doesn't show. Tick a gap under a tailored CV's Keywords and press <b>Study later</b>, or add your own. When you finish one, log it: the career map reads it, and a skill can go on your CVs.</p>
       </div>
       <div class="page__controls"><div class="seg" id="studyFilter"><button data-f="open" class="on">To do</button><button data-f="done">Done</button><button data-f="all">All</button></div></div>
     </header>
@@ -274,6 +274,7 @@
       <select id="studyKind" aria-label="Kind"></select>
       <button class="btn" id="studyAdd">Add</button>
     </div>
+    <div class="study-suggest" id="studySuggest"></div>
     <div class="list" id="studyList"></div>
   </div>
 </section>
