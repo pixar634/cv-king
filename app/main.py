@@ -411,7 +411,14 @@ def mail_last():
 def mail_check():
     """Read the inbox (read-only, through the Gmail connector) for what employers said about each application."""
     from . import mailcheck
-    return {"job": start_job("mail", lambda progress: mailcheck.check("claude:sonnet", progress))}
+    def both(progress):
+        out = mailcheck.check("claude:sonnet", progress)
+        try:
+            out["recruiter_jobs"] = mailcheck.inbound("claude:sonnet", _prefs(load_profile()), progress=progress)
+        except Exception as e:  # the replies are worth keeping even if the recruiter read fails
+            out["recruiter_jobs"] = {"error": str(e)[:300], "read": 0, "shown": 0, "jobs": []}
+        return out
+    return {"job": start_job("mail", both)}
 
 
 @app.post("/api/apps/{app_id}/outreach")

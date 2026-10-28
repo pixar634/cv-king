@@ -594,7 +594,7 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 20
+RANK_VERSION = 21
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "regions", "places", "pay_floor_home_lpa", "pay_floor_remote_lpa", "pay_floor_abroad_eur", "pay_tiers")
 
@@ -856,8 +856,11 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     fit = fit_label(job, target=target, held_titles=prefs.get("_held", []), level=level["verdict"],
                     at_level=named is not None and floor <= named <= mine, must=must, terms=terms,
                     match=score if not unscored else 0, pay=pv, open_state=o["state"],
-                    warm=(warm := _company(job.get("company")) in prefs.get("_warm", ())))
+                    warm=(warm := _company(job.get("company")) in prefs.get("_warm", ())),
+                    inbound=job.get("method") == "recruiter mail")
     order += fit["points"] * 6
+    if job.get("method") == "recruiter mail":
+        reasons.insert(0, "a recruiter wrote to you")
     from .areas import tag
     return job | {"skills": skills, "match": max(0, min(100, score)), "estimate": estimate, "unscored": unscored, "order": order,
                   "reasons": reasons, "excluded": False, "open": o["state"], "pay": pv["label"],
@@ -1431,7 +1434,8 @@ def job_detail(job_id: str, prefs: dict | None = None) -> dict:
     j = state["jobs"].get(job_id)
     if not j:
         raise KeyError(job_id)
-    if j.get("_trimmed") or len(j.get("description", "")) < SNIPPET:
+    # A job read from a recruiter's email has its text already; its link is a Gmail message, never fetched.
+    if (j.get("_trimmed") or len(j.get("description", "")) < SNIPPET) and j.get("method") != "recruiter mail":
         short = len(j.get("description", ""))
         if j.get("detail_api"):
             d = _json(j["detail_api"])

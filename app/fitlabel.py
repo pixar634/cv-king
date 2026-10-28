@@ -36,7 +36,7 @@ def days_old(job: dict) -> int | None:
 
 
 def compute(job: dict, *, target: bool, held_titles: list[str], level: str, at_level: bool, must: tuple[int, int],
-            terms: int, match: int, pay: dict, open_state: str, warm: bool = False) -> dict:
+            terms: int, match: int, pay: dict, open_state: str, warm: bool = False, inbound: bool = False) -> dict:
     """{"label", "points", "why"}: points from what predicts a callback; why lists the ones that counted."""
     pts, why = 0, []
 
@@ -47,6 +47,8 @@ def compute(job: dict, *, target: bool, held_titles: list[str], level: str, at_l
 
     if warm:
         add(3, "you know someone there")
+    if inbound:
+        add(2, "a recruiter wrote to you")
     if target:
         add(2, "one of your tracks")
     if held(job.get("title", ""), held_titles):
