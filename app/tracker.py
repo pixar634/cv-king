@@ -99,6 +99,12 @@ def went_out(row: dict) -> bool:
     return row.get("status") not in (None, "", "Generated") or bool(row.get("applied_on"))
 
 
+def job_id(row: dict) -> str:
+    """The posting's ID, to quote when asking for a referral: the one saved, else the one in the job link."""
+    from .extract import _job_id_from_url
+    return str(row.get("job_id") or "").strip() or _job_id_from_url(row.get("job_url") or "")
+
+
 def story(row: dict) -> str:
     """'Applied 12 Oct, Rejected 24 Oct': what happened to an application, from its status history."""
     day = lambda at: dt.date.fromisoformat(at[:10]).strftime("%d %b").lstrip("0") if at else ""

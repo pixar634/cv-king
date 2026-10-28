@@ -216,6 +216,7 @@
 .app-card .item { padding: 0; }
 .app-card__meta { display: flex; align-items: center; gap: var(--s-2); font-size: 12px; color: var(--text-3); white-space: nowrap; min-width: 0; }
 .app-card__host { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.app-card__jobid { flex: none; max-width: 50%; }
 .app-card__acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .app-card.err .progress__text { color: var(--bad); }
 

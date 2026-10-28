@@ -409,7 +409,7 @@ def apps():
         c = chances.get(r["id"])
         return {k: c[k] for k in ("label", "band", "why", "missing")} if c else None
 
-    return [r | {"warm": people(r), "mail": mailcheck.verdict(r["id"], r.get("status")), "callback": chance(r),
+    return [r | {"job_id": tracker.job_id(r), "warm": people(r), "mail": mailcheck.verdict(r["id"], r.get("status")), "callback": chance(r),
                  "callback_pending": pending and chances.get(r["id"]) is None,
                  "outreach_state": tracker.outreach_state(r), "has_contacts": bool(found.get(r["id"])),
                  "has_mail": bool(coldmail.load(r["id"])["mails"])}
