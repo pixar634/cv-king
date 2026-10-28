@@ -803,6 +803,8 @@ BOARDS = {
     "arbeitnow": "Arbeitnow: Germany and Europe, many with visa sponsorship",
     "workinfinland": "Work in Finland: jobs in Finland open to international talent",
     "hn": "Hacker News \"Who is hiring\": posts open worldwide, in APAC or where you live",
+    "remoteok": "Remote OK: remote tech jobs",
+    "wwr": "We Work Remotely: remote programming jobs",
 }
 
 WIF_API = "https://www.workinfinland.com/api/jobs/?"   # the feed behind workinfinland.com/en/open-jobs; robots.txt allows it
@@ -901,6 +903,49 @@ def from_hn(home: re.Pattern | None = None) -> list[dict]:
     return out
 
 
+REMOTEOK_API = "https://remoteok.com/api"
+WWR_FEEDS = ["remote-programming-jobs", "remote-full-stack-programming-jobs", "remote-back-end-programming-jobs"]
+
+
+def from_remoteok(terms: list[str]) -> list[dict]:
+    """Remote OK's public JSON feed (its terms: name Remote OK as the source and link back to its posting, which
+    every card does). The first row is its legal notice, not a job."""
+    rows = _json(REMOTEOK_API, timeout=30)
+    words = [t.lower() for t in terms]
+    out = []
+    for j in rows[1:] if isinstance(rows, list) else []:
+        title = j.get("position") or ""
+        text = f"{title} {' '.join(j.get('tags') or [])}".lower()
+        if words and not any(all(w in text for w in t.split()) for t in words) and not HN_ROLE.search(title):
+            continue
+        out.append(_job(title, j.get("company"), j.get("location") or "Remote", j.get("url"), _iso(j.get("date")),
+                        description=j.get("description", ""), remote=True, method="remoteok"))
+    return out
+
+
+def from_wwr() -> list[dict]:
+    """We Work Remotely's category RSS feeds; each item names its region ("Anywhere in the World") and type."""
+    out, seen = [], set()
+    for cat in WWR_FEEDS:
+        root = ET.fromstring(_get(f"https://weworkremotely.com/categories/{cat}.rss", 25, "application/rss+xml"))
+        for it in root.iter("item"):
+            link = (it.findtext("link") or "").strip()
+            if link in seen:
+                continue
+            seen.add(link)
+            company, _, role = (it.findtext("title") or "").partition(": ")
+            kind = it.findtext("type") or ""
+            region = it.findtext("region") or "Remote"
+            desc = f"{htmllib.unescape(it.findtext('description') or '')}\nEmployment type: {kind}"
+            try:
+                posted = dt.datetime.strptime((it.findtext("pubDate") or "")[:25].strip(), "%a, %d %b %Y %H:%M:%S").date().isoformat()
+            except ValueError:
+                posted = ""
+            out.append(_job(role or company, company if role else "", region, link, posted, description=desc,
+                            remote=True, method="wwr"))
+    return out
+
+
 def from_board(board: str, prefs: dict) -> tuple[str, list[dict]]:
     terms = board_terms(prefs) or ["engineer"]
     out = []
@@ -937,6 +982,10 @@ def from_board(board: str, prefs: dict) -> tuple[str, list[dict]]:
         return "Work in Finland feed", from_work_in_finland()
     if board == "hn":
         return "Hacker News (Algolia API)", from_hn(home_country_pattern())
+    if board == "remoteok":
+        return "Remote OK API", from_remoteok(terms)
+    if board == "wwr":
+        return "We Work Remotely RSS", from_wwr()
     if board == "arbeitnow":
         for page in (1, 2):
             data = _json(f"https://www.arbeitnow.com/api/job-board-api?page={page}", timeout=30)
