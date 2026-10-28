@@ -25,7 +25,7 @@ from urllib.parse import quote, urljoin, urlparse
 from . import strategy, taste
 from .config import data_dir, output_dir
 from .engines import ENGINES, EngineError, parse_json_reply
-from .jd import strip_html
+from .jd import _as_text, strip_html
 from .untrusted import fence
 from .keywords import MIN_TERMS, taxonomy
 from .fit import strong_skills
@@ -382,10 +382,13 @@ def _jsonld_jobs(blobs: list[str], base: str) -> list[dict]:
         loc = loc[0] if isinstance(loc, list) and loc else loc
         addr = (loc.get("address") if isinstance(loc, dict) else {}) or {}
         addr = addr if isinstance(addr, dict) else {}
-        location = ", ".join(x for x in (addr.get("addressLocality"), addr.get("addressCountry") if isinstance(addr.get("addressCountry"), str) else "") if x)
-        out.append(_job(j.get("title"), org.get("name", "") if isinstance(org, dict) else str(org), location,
-                        urljoin(base, j.get("url") or base), _iso(j.get("datePosted")),
-                        description=j.get("description", ""), remote=(j.get("jobLocationType") == "TELECOMMUTE"),
+        # schema.org lets any of these be a list or an object ("addressLocality": ["Bengaluru", "Pune"]): read as text.
+        text = lambda v: ", ".join(dict.fromkeys(x.strip() for x in _as_text(v).replace("• ", "").splitlines() if x.strip()))
+        location = ", ".join(x for x in (text(addr.get("addressLocality")), text(addr.get("addressCountry"))) if x)
+        link = j.get("url") if isinstance(j.get("url"), str) else ""
+        out.append(_job(text(j.get("title")), text(org.get("name", "")) if isinstance(org, dict) else text(org), location,
+                        urljoin(base, link or base), _iso(text(j.get("datePosted"))),
+                        description=_as_text(j.get("description")), remote=(j.get("jobLocationType") == "TELECOMMUTE"),
                         method="schema.org"))
     return out
 
