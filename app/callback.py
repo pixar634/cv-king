@@ -41,7 +41,7 @@ def _sig(app_id: str, prefs: dict) -> str:
     return hashlib.sha1(json.dumps(parts, default=str).encode()).hexdigest()[:16]
 
 
-SIG_VERSION = 2
+SIG_VERSION = 3
 
 
 def for_app(app_id: str, profile: dict, prefs: dict, own: dict | None = None) -> dict:
