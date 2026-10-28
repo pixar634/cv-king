@@ -148,6 +148,11 @@ def profile_text(profile: dict) -> str:
     return "\n".join(p for p in parts if p)
 
 
+def project_key(p: dict) -> str:
+    """A project's id, or its name when the profile gave it none."""
+    return p.get("id") or p.get("name", "")
+
+
 def projects_for(profile: dict, track: str) -> list[dict]:
     """Projects shown for a track: those tagged with it, and untagged ones everywhere."""
     return [p for p in profile.get("projects", []) if not p.get("tracks") or track in p["tracks"]]
