@@ -194,10 +194,14 @@ function finish(parts) {
 // The job against your profile before any writing: measured in code, the same numbers tailoring will report.
 const fitBody = (j) => ({ jd: j.description, role: j.role || "", company: j.company || "", url: j.url || "", location: j.location || "", market: j.market || "", remote: !!j.remote });
 
+// Languages and frameworks the posting names that aren't on your CV; must-haves first.
+const stackChips = (missing) => (missing || []).length ? `<div class="row">${[...missing].sort((x, y) => y.must - x.must)
+  .map((s) => `<span class="chip ${s.must ? "bad" : "warn"}">No ${esc(s.name)}${s.must ? " · must-have" : ""}</span>`).join("")}</div>` : "";
+
 function gateHtml(g, a) {
   if (a) return `<div class="notice ${a.sent ? "bad" : ""}"><b>You already have this one</b> (${esc(a.story)}).${a.sent ? " Use Replace on it in JobMagnet to write it again." : ""}</div>`;
-  if (!g || g.verdict === "ok") return "";
-  return `<div class="notice ${g.verdict === "stop" ? "bad" : ""}"><b>${g.verdict === "stop" ? "Fails a screen" : "A stretch"}.</b> ${g.reasons.map(esc).join(" · ")}. Worth tailoring only with a referral.</div>`;
+  if (!g || g.verdict === "ok") return stackChips(g?.missing);
+  return `<div class="notice ${g.verdict === "stop" ? "bad" : ""}"><b>${g.verdict === "stop" ? "Fails a screen" : "A stretch"}.</b> ${g.reasons.map(esc).join(" · ")}. Worth tailoring only with a referral.</div>${stackChips(g.missing)}`;
 }
 
 function fitHtml(f) {
@@ -299,7 +303,8 @@ function appCard(row, rep) {
     <div class="row"><span class="chip ${row.status === "Applied" ? "ok" : ""}">${esc(row.status)}${row.applied_on ? ` ${esc(row.applied_on)}` : ""}</span>
       ${rep ? `<span class="chip ${failed.length ? "warn" : "ok"}">ATS ${ats.length - failed.length}/${ats.length} checks</span>` : ""}
       ${flags.length ? `<span class="chip warn">${flags.length} to check</span>` : ""}</div>
-    ${rep?.callback ? `<div class="row"><span class="chip ${rep.callback.label === "Strong" ? "ok" : rep.callback.label === "Long shot" ? "warn" : ""}">Callback: ${esc(rep.callback.label)}</span><span class="meta">${esc(rep.callback.band)}${rep.callback.warm.length ? `; with a referral ${esc(rep.callback.warm_band)}` : ""}</span></div>` : ""}
+    ${rep?.callback ? `<div class="row"><span class="chip ${rep.callback.label === "Strong" ? "ok" : rep.callback.label === "Long shot" ? "warn" : ""}">Callback: ${esc(rep.callback.label)}</span><span class="meta">${esc(rep.callback.band)}${rep.callback.warm.length ? `; with a referral ${esc(rep.callback.warm_band)}` : ""}</span></div>
+      ${(rep.callback.why || []).length ? `<div class="meta">${rep.callback.why.map(esc).join(" · ")}</div>` : ""}${stackChips(rep.callback.missing)}` : ""}
     <span class="meta">ATS keywords (what a search or a skim finds)</span>
     <div class="score"><div><span class="meta">Before</span><b>${sc.before}%</b></div><div class="now"><span class="meta">Now</span><b>${sc.after}%</b></div><div><span class="meta">Ceiling</span><b>${sc.ceiling}%</b></div></div>
     <div class="meter" title="Keyword match: ${sc.after}% now, ${sc.ceiling}% is the most your profile can truthfully reach"><span style="width:${sc.after}%"></span><i style="left:${sc.ceiling}%"></i></div>
