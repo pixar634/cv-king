@@ -1,8 +1,10 @@
 """HTML -> PDF through the installed Chrome (no browser download), fitted to the page limit."""
 import contextvars
 import copy
+import os
 import re
 import threading
+import uuid
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -145,13 +147,21 @@ class Renderer:
         self._pw.stop()
 
     def pdf(self, html: str, out: Path) -> int:
-        src = out.with_suffix(".print.html")
-        src.write_text(for_print(html), "utf-8")
-        self._page.goto(src.as_uri(), wait_until="load")
-        self._page.evaluate("document.fonts.ready.then(() => true)")
-        self._page.pdf(path=str(out), prefer_css_page_size=True, print_background=True)
-        src.unlink(missing_ok=True)
-        return len(PdfReader(str(out)).pages)
+        """Print to a file of its own, then swap it in whole: two prints of the same CV at once (a preview asked
+        for twice) must never read, serve or delete each other's half-written files."""
+        tag = uuid.uuid4().hex[:8]
+        src, tmp = out.with_name(f"{out.stem}.{tag}.print.html"), out.with_name(f"{out.stem}.{tag}.part.pdf")
+        try:
+            src.write_text(for_print(html), "utf-8")
+            self._page.goto(src.as_uri(), wait_until="load")
+            self._page.evaluate("document.fonts.ready.then(() => true)")
+            self._page.pdf(path=str(tmp), prefer_css_page_size=True, print_background=True)
+            pages = len(PdfReader(str(tmp)).pages)
+            os.replace(tmp, out)
+            return pages
+        finally:
+            src.unlink(missing_ok=True)
+            tmp.unlink(missing_ok=True)
 
 
 def set_metadata(pdf: Path, title: str, author: str, subject: str) -> None:

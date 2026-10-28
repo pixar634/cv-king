@@ -6,6 +6,7 @@ the page fit, the score, and the checks that every number and skill in the outpu
 import datetime as dt
 import json
 import re
+import threading
 from pathlib import Path
 
 import yaml
@@ -852,8 +853,13 @@ def apply_edits(app_id: str, html: str) -> dict:
     return report
 
 
+_preview_locks: dict[str, threading.Lock] = {}
+_preview_guard = threading.Lock()
+
+
 def preview_base(options_req: dict) -> Path:
-    """Your profile in a chosen layout before any JD, so layouts can be compared at once."""
+    """Your profile in a chosen layout before any JD, so layouts can be compared at once. The page can ask for
+    the same preview twice at once; the second waits for the first instead of printing over it."""
     profile = load_profile()
     market_id = options_req.get("market") or home_market()
     options = resolve_options(options_req, market_id, profile)
@@ -861,5 +867,8 @@ def preview_base(options_req: dict) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
     doc = build_doc(profile, base_plan(profile), options)
     pdf = folder / f"preview_{options['variant']}_{options['max_pages']}p.pdf"
-    fit_and_print(doc, pdf, options["max_pages"])
+    with _preview_guard:
+        lock = _preview_locks.setdefault(str(pdf), threading.Lock())
+    with lock:
+        fit_and_print(doc, pdf, options["max_pages"])
     return pdf
