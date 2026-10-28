@@ -229,8 +229,9 @@ function fitBlock(f) {
       ${f.warnings.map((w) => `<div class="type-meta">“${esc(w)}”</div>`).join("")}</div>` : "";
   if (!f.measured) return gateNotice(f.gate, f.already) + warn + `<p class="type-meta">This posting names too few standard skills to score. Read it before tailoring.</p>`;
   const list = (label, terms, cls) => terms.length ? `<div><span class="eyebrow">${label}</span><div class="chip-row">${terms.map((t) => `<span class="chip ${cls}"><span>${esc(t)}</span></span>`).join("")}</div></div>` : "";
+  const warmLine = (f.warm || []).length ? `<div class="notice">You know ${f.warm.length === 1 ? "someone" : `${f.warm.length} people`} there: ${f.warm.map((p) => `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.name)}</a> (${esc(p.position)})`).join(", ")}. A referral is worth more than any CV change; after tailoring, Pipeline writes the ask.</div>` : "";
   const label = f.label ? `<div class="job__foot"><span class="tag ${f.label === "Strong" ? "tag--ok" : f.label === "Long shot" ? "tag--warn" : ""}">${esc(f.label)}</span><span class="type-meta">${esc((f.label_why || []).join(", "))}</span></div>` : "";
-  return `<div class="job__fit">${gateNotice(f.gate, f.already)}${label}${warn}
+  return `<div class="job__fit">${gateNotice(f.gate, f.already)}${label}${warmLine}${warn}
       <div class="job__foot"><span class="type-meta">Your CV <b class="num">${f.now}%</b> · can reach <b class="num">${f.reach}%</b>${f.minimum ? ` · your filter ${f.minimum}%` : ""}</span></div>
       <div style="position:relative" title="${f.now}% with your CV as it is; ${f.reach}% is the most your profile can truthfully reach">
         <div class="meter meter--segmented"><span class="meter__ceil" style="width:${f.reach}%"></span><span class="meter__fill" style="width:${f.now}%"></span></div></div>
@@ -987,6 +988,7 @@ async function loadFound() {
         ${isNew(j) ? `<span class="tag tag--accent tag--solid">New</span>` : ""}
         ${j.pay === "meets" ? `<span class="tag tag--ok" title="States pay at or above your floor">Pay meets</span>` : j.pay === "likely" ? `<span class="tag" title="Pay range or company tier reaches your floor">Pay likely</span>` : ""}
         ${j.open === "unclear" ? `<span class="tag tag--warn" title="Doesn't say if it hires where you live, or if it sponsors a visa">Check eligibility</span>` : ""}
+        ${j.warm ? `<span class="tag tag--accent" title="Someone in your LinkedIn connections works there: ask for a referral">You know someone</span>` : ""}
         ${isFav(j) ? `<span class="tag tag--accent" title="One of your favourite companies" aria-label="Favourite">${ICON.star.replace("<svg", "<svg style=\"width:9px;height:9px\"")}</span>` : ""}
         <a class="icon-btn icon-btn--sm" href="${esc(j.url)}" target="_blank" rel="noopener" title="Open the posting" aria-label="Open the posting">${ICON.out}</a>
         <button class="icon-btn icon-btn--sm job-card__pass" title="Not for me: hide it, and Discover learns to push down jobs like it" aria-label="Not for me">${ICON.x}</button>
@@ -1190,7 +1192,7 @@ function renderPipeline() {
         <button class="btn btn--sm btn--ghost" data-prep="${esc(r.id)}" data-stop title="Interview questions for this job">Interview</button>
         <button class="btn btn--sm btn--ghost" data-cold="${esc(r.id)}" data-stop title="Write a cold email for this job">Cold mail</button>
         <button class="btn btn--sm btn--ghost" data-findc="${esc(r.id)}" data-stop title="Search the web for the people who hire for this role" ${PC.running[r.id] ? "disabled" : ""}>${PC.data[r.id] ? "Find contacts again" : "Find contacts"}</button>
-      </div>${contactsHtml(r)}</div>`;
+      </div>${warmHtml(r)}${contactsHtml(r)}</div>`;
   const flightCard = (b) => b.dup && !b.below_min ? `<div class="card app-card" data-flight="${esc(b.id)}">
       <div class="item"><span class="logo logo--sm">${initial(b.company || b.role)}</span><span class="item__body"><span class="item__title">${esc(b.company || "This job")}</span><span class="item__meta">${esc(b.role || "")}</span></span><span class="tag tag--warn">Already applied</span></div>
       <div class="progress__text" style="margin-top:0">${esc(b.stage)}</div>
@@ -1214,6 +1216,7 @@ function renderPipeline() {
   $("#stageNav").innerHTML = navHtml; $("#stageHead").innerHTML = headHtml; $("#board").innerHTML = boardHtml;
   $$("[data-open]").forEach((el) => (el.onclick = (e) => { if (!e.target.closest("select, [data-stop], details")) openApp(el.dataset.open); }));
   $$("[data-findc]").forEach((b) => (b.onclick = () => findContacts(b.dataset.findc)));
+  $$("[data-refer]").forEach((b) => (b.onclick = () => askReferral(b.dataset.refer, b.dataset.url)));
   $$("[data-coldto]").forEach((b) => (b.onclick = () => contactToColdMail(b.dataset.coldto, b)));
   $$("[data-contacts-of]").forEach((d) => d.addEventListener("toggle", () => (d.open ? PC.open.add(d.dataset.contactsOf) : PC.open.delete(d.dataset.contactsOf))));
   $$("[data-prep]").forEach((b) => (b.onclick = () => openInterview(b.dataset.prep)));
@@ -2213,6 +2216,27 @@ async function loadContacts() {
   if (r) { PC.data = r.contacts; PC.running = r.running; }
 }
 
+// People you know at this company, from your LinkedIn export, each with a referral ask written on request.
+function warmHtml(r) {
+  if (!(r.warm || []).length) return "";
+  const person = (p) => `<div class="contact"><div class="contact__who"><b>${esc(p.name)}</b></div><div class="type-meta">${esc(p.position)}</div>
+      <div class="contact__acts"><a class="btn btn--link" href="${esc(p.url)}" target="_blank" rel="noopener" data-stop>Profile</a><span class="sp"></span>
+      <button class="btn btn--sm btn--primary" data-refer="${esc(r.id)}" data-url="${esc(p.url)}" data-stop>Ask for a referral</button></div></div>`;
+  return `<details class="disclosure app-card__contacts"><summary>People you know<span class="disclosure__aside num">${r.warm.length}</span></summary>
+      <div class="app-card__contacts-body">${r.warm.map(person).join("")}<p class="type-meta">The ask is copied for you to paste into LinkedIn; nothing is sent.</p></div></details>`;
+}
+
+async function askReferral(appId, url) {
+  try {
+    toast("Writing the referral ask", 4000);
+    const { job } = await api(`/api/apps/${appId}/referral`, { body: { url } });
+    const ask = await pollJob(job, () => {});
+    await navigator.clipboard.writeText(ask.message).catch(() => {});
+    const errs = (ask.flags || []).filter((f) => f.level === "error").map((f) => f.text);
+    toast(errs.length ? `Copied, but check it first: ${errs.join(" ")}` : `Copied: paste it into a LinkedIn message to ${ask.to.name}.`, 7000);
+  } catch (e) { toast(e.message, 5000); }
+}
+
 function contactsHtml(r) {
   const id = r.id, c = PC.data[id], running = PC.running[id];
   if (running) return `<div class="app-card__contacts-run"><div class="progress"></div><div class="progress__text" style="margin-top:6px">Finding the people who hire for this role</div></div>`;
@@ -2592,6 +2616,14 @@ function wireDrawer() {
   $("#addUrl").onclick = () => addSource("url", $("#srcUrl"));
   $("#addQuery").onclick = () => addSource("websearch", $("#srcQuery"));
   $("#savePeople").onclick = savePeople;
+  $("#connFile").onchange = async () => {
+    const f = $("#connFile").files[0]; if (!f) return;
+    try {
+      const s = await api("/api/connections", { body: { csv: await f.text() } });
+      $("#connStatus").textContent = `${s.people} people at ${s.companies} companies, imported ${s.imported}`;
+      toast("Connections imported. Discover marks companies where you know someone.");
+    } catch (e) { toast(e.message, 5000); }
+  };
   $("#savePay").onclick = async () => {
     await savePrefs({ pay_floor_home_lpa: +$("#payHome").value || 0, pay_floor_remote_lpa: +$("#payRemote").value || 0,
       pay_floor_abroad_eur: +$("#payAbroad").value || 0, pay_tiers: $("#payTiers").value });
@@ -2617,6 +2649,7 @@ async function fillDrawer() {
   $("#dSenior").checked = !!S.prefs.include_senior;
   $("#dMaxYears").value = String(S.prefs.max_years_asked || 11);
   $("#offices").value = S.prefs.offices || "";
+  api("/api/connections").then((s) => { $("#connStatus").textContent = s.people ? `${s.people} people at ${s.companies} companies, imported ${s.imported}` : "Not added yet"; }).catch(() => {});
   $("#payHome").value = S.prefs.pay_floor_home_lpa || 0; $("#payRemote").value = S.prefs.pay_floor_remote_lpa || 0;
   $("#payAbroad").value = S.prefs.pay_floor_abroad_eur || 0; $("#payTiers").value = S.prefs.pay_tiers || "";
   $("#places").value = (S.prefs.places || []).join("\n");

@@ -383,7 +383,34 @@ def job_status(jid: str):
 
 @app.get("/api/apps")
 def apps():
-    return tracker.load()
+    from . import warm
+    return [r | {"warm": [{k: p[k] for k in ("name", "position", "url")} for p in warm.at(r.get("company") or "")[:5]]}
+            for r in tracker.load()]
+
+
+@app.get("/api/connections")
+def connections():
+    from . import warm
+    return warm.summary()
+
+
+@app.post("/api/connections")
+def connections_import(body: dict = Body(...)):
+    """Your own LinkedIn export's Connections.csv, read in the browser and sent as text."""
+    from . import warm
+    try:
+        return warm.import_csv(body.get("csv") or "")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/apps/{app_id}/referral")
+def referral_ask(app_id: str, body: dict = Body(...)):
+    from . import warm
+    _app_dir(app_id)
+    engine = _prefs(load_profile())["defaults"]["engine"]
+    return {"job": start_job("referral", lambda a, u, c, e, progress: warm.referral(a, u, c, e, progress),
+                             app_id, body.get("url") or "", body.get("context") or "", engine)}
 
 
 @app.get("/api/apps/{app_id}")
@@ -906,6 +933,8 @@ def fit_preview(body: dict = Body(...)):
     job = {"title": body.get("role") or "", "company": body.get("company") or "", "location": body.get("location") or "",
            "remote": body.get("remote"), "description": text, "posted": body.get("posted") or "", "method": body.get("method") or ""}
     ranked = discover._rank(job, strong_skills(profile), discover.with_profile(prefs))
+    from . import warm
+    out |= {"warm": [{k: p[k] for k in ("name", "position", "url")} for p in warm.at(job["company"])[:5]]}
     out |= {"label": "Long shot" if ranked.get("excluded") else ranked.get("fit"),
             "label_why": ranked.get("reasons", [])[:1] if ranked.get("excluded") else ranked.get("fit_why", [])}
     return out | {"gate": gate.check(text, body.get("role") or "", body.get("location") or "", market, body.get("remote"),
