@@ -627,6 +627,19 @@ def letter_export(app_id: str, body: dict = Body(...)):
                     headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
 
 
+@app.delete("/api/apps/{app_id}")
+def app_remove(app_id: str):
+    """Take an application off the Pipeline; its folder moves to output/_trash. A broken one (no report) can go too."""
+    root = output_dir().resolve()
+    if root not in (root / app_id).resolve().parents:
+        raise HTTPException(404, "No such application")
+    try:
+        dest = tracker.remove(app_id)
+    except KeyError:
+        raise HTTPException(404, "Not in the tracker")
+    return {"removed": app_id, "moved_to": f"output/{tracker.TRASH}/{dest.name}"}
+
+
 @app.post("/api/apps/{app_id}/track")
 def app_track(app_id: str, body: dict = Body(...)):
     try:

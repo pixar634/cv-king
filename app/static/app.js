@@ -1273,6 +1273,7 @@ function renderPipeline() {
         <button class="btn btn--sm btn--ghost" data-prep="${esc(r.id)}" data-stop title="Interview questions for this job">Interview</button>
         <button class="btn btn--sm btn--ghost" data-cold="${esc(r.id)}" data-stop title="Write a cold email for this job">Cold mail</button>
         <button class="btn btn--sm btn--ghost" data-findc="${esc(r.id)}" data-stop title="Search the web for the people who hire for this role" ${PC.running[r.id] ? "disabled" : ""}>${PC.data[r.id] ? "Find contacts again" : "Find contacts"}</button>
+        <button class="btn btn--sm btn--ghost app-card__remove" data-delapp="${esc(r.id)}" data-stop title="Take this application off the Pipeline (its folder moves to output/_trash)">Remove</button>
       </div></div>${wide ? `<div class="app-card__side">${side}</div>` : ""}</div>`;
   };
   const flightCard = (b) => b.dup && !b.below_min ? `<div class="card app-card" data-flight="${esc(b.id)}">
@@ -1306,6 +1307,16 @@ function renderPipeline() {
   $$("[data-person]").forEach((b) => (b.onclick = async () => {
     try { await api(`/api/apps/${b.dataset.person}/people`, { body: { url: b.dataset.url, action: b.dataset.action } }); loadPipeline(); }
     catch (e) { toast(e.message, 5000); }
+  }));
+  $$("[data-delapp]").forEach((b) => (b.onclick = async () => {
+    const r = (S.apps || []).find((x) => x.id === b.dataset.delapp);
+    if (!confirm(`Remove ${r ? `${r.company}, ${r.role}` : "this application"} from your Pipeline?\n\nIts CV and notes move to output/_trash, so you can put it back by moving the folder.`)) return;
+    try {
+      await api(`/api/apps/${b.dataset.delapp}`, { method: "DELETE" });
+      if (S.app?.id === b.dataset.delapp) { S.app = null; S.job = null; renderJobCard(); }
+      toast("Removed from your Pipeline");
+      loadPipeline();
+    } catch (e) { toast(e.message, 5000); }
   }));
   $$("[data-outreach]").forEach((b) => (b.onclick = async () => { await api(`/api/apps/${b.dataset.outreach}/outreach`, { body: { action: b.dataset.action } }); loadPipeline(); }));
   $$("[data-coldto]").forEach((b) => (b.onclick = () => contactToColdMail(b.dataset.coldto, b)));
