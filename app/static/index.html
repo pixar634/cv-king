@@ -299,6 +299,11 @@
       <div><button class="btn btn--sm" id="savePlaces">Save places</button></div>
     </section>
     <section class="drawer__section">
+      <h3 class="eyebrow">People you know</h3>
+      <p class="type-meta">A referral is the biggest lever on a callback. Download your LinkedIn data (LinkedIn, Settings, Data privacy, Get a copy of your data, Connections) and add its <code>Connections.csv</code> here. It stays in your profile's data folder; nothing is scraped. Discover then marks companies where you know someone, and each application lists them with a referral ask.</p>
+      <div class="field-row"><input type="file" id="connFile" accept=".csv,text/csv"><span class="type-meta" id="connStatus"></span></div>
+    </section>
+    <section class="drawer__section">
       <h3 class="eyebrow">Pay floor</h3>
       <p class="type-meta">Jobs that state pay below your floor are hidden; ones at or above it rank first. Abroad, the work permit's own salary threshold applies too. 0 means no floor.</p>
       <div class="field-row"><label class="field"><span class="type-meta">In your city (LPA)</span><input type="number" min="0" step="1" id="payHome"></label>
