@@ -394,10 +394,24 @@ def apps():
         sent = warm.people_state(r["id"])
         return [p | {"msg": sent.get(p["url"])} for p in warm.who_to_ask(r.get("company") or "", r.get("role") or "", 5)]
 
-    return [r | {"warm": people(r),
+    from . import mailcheck
+    return [r | {"warm": people(r), "mail": mailcheck.verdict(r["id"], r.get("status")),
                  "outreach_state": tracker.outreach_state(r), "has_contacts": bool(found.get(r["id"])),
                  "has_mail": bool(coldmail.load(r["id"])["mails"])}
             for r in tracker.load()]
+
+
+@app.get("/api/mail")
+def mail_last():
+    from . import mailcheck
+    return mailcheck.last()
+
+
+@app.post("/api/mail/check")
+def mail_check():
+    """Read the inbox (read-only, through the Gmail connector) for what employers said about each application."""
+    from . import mailcheck
+    return {"job": start_job("mail", lambda progress: mailcheck.check("claude:sonnet", progress))}
 
 
 @app.post("/api/apps/{app_id}/outreach")

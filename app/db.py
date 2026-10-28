@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS interviews (app_id TEXT, generated_at TEXT, engine TE
 CREATE TABLE IF NOT EXISTS documents (name TEXT, app_id TEXT, json TEXT);        -- strategy, career_map
 CREATE TABLE IF NOT EXISTS app_documents (name TEXT, app_id TEXT, json TEXT);    -- interview, codetest, contacts per application
 """
-SOURCES = ("tailor", "app", "extension", "seed")
+SOURCES = ("tailor", "app", "extension", "seed", "mail")
 
 
 def path():
