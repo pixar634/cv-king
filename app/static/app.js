@@ -231,7 +231,7 @@ function fitBlock(f) {
       ${f.warnings.map((w) => `<div class="type-meta">“${esc(w)}”</div>`).join("")}</div>` : "";
   if (!f.measured) return gateNotice(f.gate, f.already) + warn + `<p class="type-meta">This posting names too few standard skills to score. Read it before tailoring.</p>`;
   const list = (label, terms, cls) => terms.length ? `<div><span class="eyebrow">${label}</span><div class="chip-row">${terms.map((t) => `<span class="chip ${cls}"><span>${esc(t)}</span></span>`).join("")}</div></div>` : "";
-  const warmLine = (f.warm || []).length ? `<div class="notice">You know ${f.warm.length === 1 ? "someone" : `${f.warm.length} people`} there: ${f.warm.map((p) => `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.name)}</a> (${esc(p.position)})`).join(", ")}. A referral is worth more than any CV change; after tailoring, Pipeline writes the ask.</div>` : "";
+  const warmLine = (f.warm || []).length ? `<div class="notice">You know ${f.warm.length === 1 ? "someone" : `${f.warm.length} people`} there. Ask <a href="${esc(f.warm[0].url)}" target="_blank" rel="noopener">${esc(f.warm[0].name)}</a> first (${esc(f.warm[0].position)}): ${esc(f.warm[0].why.toLowerCase())}.${f.warm.length > 1 ? ` Also: ${f.warm.slice(1).map((p) => esc(p.name)).join(", ")}.` : ""} A referral is worth more than any CV change; after tailoring, Pipeline writes the ask.</div>` : "";
   const label = f.label ? `<div class="job__foot"><span class="tag ${f.label === "Strong" ? "tag--ok" : f.label === "Long shot" ? "tag--warn" : ""}">${esc(f.label)}</span><span class="type-meta">${esc((f.label_why || []).join(", "))}</span></div>` : "";
   return `<div class="job__fit">${gateNotice(f.gate, f.already)}${label}${warmLine}${warn}
       <div class="job__foot"><span class="type-meta">Your CV <b class="num">${f.now}%</b> · can reach <b class="num">${f.reach}%</b>${f.minimum ? ` · your filter ${f.minimum}%` : ""}</span></div>
@@ -2253,7 +2253,8 @@ function outreachHtml(r) {
 // People you know at this company, from your LinkedIn export, each with a referral ask written on request.
 function warmHtml(r) {
   if (!(r.warm || []).length) return "";
-  const person = (p) => `<div class="contact"><div class="contact__who"><b>${esc(p.name)}</b></div><div class="type-meta">${esc(p.position)}</div>
+  const person = (p, i) => `<div class="contact"><div class="contact__who"><b>${esc(p.name)}</b>${i === 0 ? `<span class="tag tag--ok">Ask first</span>` : ""}${p.level ? `<span class="tag">${esc(p.level)}</span>` : ""}</div><div class="type-meta">${esc(p.position)}</div>
+      <div class="type-meta contact__why">${esc(p.why)}</div>
       <div class="contact__acts"><a class="btn btn--link" href="${esc(p.url)}" target="_blank" rel="noopener" data-stop>Profile</a><span class="sp"></span>
       <button class="btn btn--sm btn--primary" data-refer="${esc(r.id)}" data-url="${esc(p.url)}" data-stop>Ask for a referral</button></div></div>`;
   return `<details class="disclosure app-card__contacts"><summary>People you know<span class="disclosure__aside num">${r.warm.length}</span></summary>

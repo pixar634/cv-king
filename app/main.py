@@ -389,7 +389,7 @@ def apps():
         found = contacts.load_all()
     except OSError:   # no applications folder yet
         found = {}
-    return [r | {"warm": [{k: p[k] for k in ("name", "position", "url")} for p in warm.at(r.get("company") or "")[:5]],
+    return [r | {"warm": warm.who_to_ask(r.get("company") or "", r.get("role") or "", 5),
                  "outreach_state": tracker.outreach_state(r), "has_contacts": bool(found.get(r["id"])),
                  "has_mail": bool(coldmail.load(r["id"])["mails"])}
             for r in tracker.load()]
@@ -958,7 +958,7 @@ def fit_preview(body: dict = Body(...)):
            "remote": body.get("remote"), "description": text, "posted": body.get("posted") or "", "method": body.get("method") or ""}
     from . import warm
     fit = discover.label_for(job, profile, prefs)
-    out |= {"warm": [{k: p[k] for k in ("name", "position", "url")} for p in warm.at(job["company"])[:5]],
+    out |= {"warm": warm.who_to_ask(job["company"], job["title"], 5),
             "label": fit["label"], "label_why": fit["why"]}
     return out | {"gate": gate.check(text, body.get("role") or "", body.get("location") or "", market, body.get("remote"),
                                      profile, prefs, company=body.get("company") or ""),
