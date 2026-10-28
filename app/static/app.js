@@ -541,6 +541,17 @@ function renderEditor() {
       r.bullets.map((b, bi) => row(b, `data-r="${ri}" data-b="${bi}"`,
         `${bi ? tool(`data-up="${ri}:${bi}"`, "Move up", ICON.up) : ""}${tool(`data-del="${ri}:${bi}"`, "Remove this bullet", ICON.x)}`)).join("")
       + `<button class="btn btn--sm btn--dashed" data-addb="${ri}">Add a bullet</button>`)),
+    // Projects: shown on every CV by default; here you can leave the section, a project or a bullet out of this one.
+    ...((ED.projects || []).length ? [`<div class="editor__row"><span class="eyebrow">Projects · ${ED.projects.filter((p) => !p.hidden).length} of ${ED.projects.length} on this CV</span>
+      <span class="editor__tools"><button class="btn btn--sm btn--ghost" data-pall="${ED.projects.every((p) => p.hidden) ? "show" : "hide"}">${ED.projects.every((p) => p.hidden) ? "Put the Projects section back" : "Leave the Projects section out"}</button></span></div>`] : []),
+    ...(ED.projects || []).map((p, pi) => sec(false, `<span>${esc(p.name)}</span><span class="disclosure__sub">Project${p.dates ? `, ${esc(p.dates)}` : ""}${p.hidden ? ", left out" : ""}</span>`,
+      `<label class="check"><input type="checkbox" data-ph="${pi}" ${p.hidden ? "" : "checked"}> Show on this CV</label>
+      <span class="eyebrow" style="margin-top:6px">Role line</span><input type="text" data-p="${pi}" data-k="role" value="${esc(p.role)}">
+      <span class="eyebrow" style="margin-top:6px">Bullets</span>`
+      + p.bullets.map((b, bi) => row(b, `data-p="${pi}" data-pb="${bi}"`,
+        `${bi ? tool(`data-pup="${pi}:${bi}"`, "Move up", ICON.up) : ""}${tool(`data-pdel="${pi}:${bi}"`, "Remove this bullet", ICON.x)}`)).join("")
+      + `<button class="btn btn--sm btn--dashed" data-paddb="${pi}">Add a bullet</button>
+      <p class="type-meta">Changes here are for this CV only; your profile keeps the original.</p>`)),
     sec(false, `Cover letter<span class="disclosure__aside">${ED.cover_letter ? `${ED.cover_letter.split(/\s+/).length} words` : "none yet"}</span>`,
       ta(ED.cover_letter || "", 'data-f="cover_letter" style="min-height:160px"')),
   ].join("");
@@ -555,6 +566,11 @@ function renderEditor() {
       const g = ED.skills[+t.dataset.g];
       if (t.dataset.k === "label") g.label = t.value; else g.items = t.value.split(",").map((s) => s.trim()).filter(Boolean);
     } else if (t.dataset.r !== undefined) ED.roles[+t.dataset.r].bullets[+t.dataset.b] = t.value;
+    else if (t.dataset.ph !== undefined) { ED.projects[+t.dataset.ph].hidden = !t.checked; markDirty(); return; }
+    else if (t.dataset.p !== undefined) {
+      const p = ED.projects[+t.dataset.p];
+      if (t.dataset.k === "role") p.role = t.value; else p.bullets[+t.dataset.pb] = t.value;
+    }
     markDirty();
   };
   body.onclick = (e) => {
@@ -564,6 +580,10 @@ function renderEditor() {
     else if (b.dataset.addb !== undefined) ED.roles[+b.dataset.addb].bullets.push("");
     else if (b.dataset.delg !== undefined) ED.skills.splice(+b.dataset.delg, 1);
     else if (b.dataset.addg !== undefined) ED.skills.push({ label: "New group", items: [] });
+    else if (b.dataset.pdel) { const [p, i] = b.dataset.pdel.split(":").map(Number); ED.projects[p].bullets.splice(i, 1); }
+    else if (b.dataset.pup) { const [p, i] = b.dataset.pup.split(":").map(Number); const l = ED.projects[p].bullets; [l[i - 1], l[i]] = [l[i], l[i - 1]]; }
+    else if (b.dataset.paddb !== undefined) ED.projects[+b.dataset.paddb].bullets.push("");
+    else if (b.dataset.pall) ED.projects.forEach((p) => (p.hidden = b.dataset.pall === "hide"));
     else return;
     const open = $$("details", body).map((d) => d.open);
     renderEditor();
@@ -578,7 +598,8 @@ async function saveSections() {
   $("#edSave").disabled = true;
   try {
     S.app = await api(`/api/apps/${S.app.id}/plan`, { method: "PUT",
-      body: { headline: ED.headline, summary: ED.summary, skills: ED.skills, roles: ED.roles.map((r) => ({ id: r.id, bullets: r.bullets })), cover_letter: ED.cover_letter } });
+      body: { headline: ED.headline, summary: ED.summary, skills: ED.skills, roles: ED.roles.map((r) => ({ id: r.id, bullets: r.bullets })), cover_letter: ED.cover_letter,
+        projects: (ED.projects || []).map((p) => ({ id: p.id, role: p.role, bullets: p.bullets, hidden: p.hidden })) } });
     markDirty(false);
     renderInsights(); S.mode = "pdf"; showApp(true);
     const errs = [...(S.app.plan_flags || []), ...(S.app.analysis_flags || [])].filter((f) => f.level === "error").length;

@@ -45,11 +45,18 @@ def build_doc(profile: dict, plan: dict, options: dict) -> dict:
     ]
     market_id = options["market"]
     languages = [l for l in profile.get("languages", []) if not l.get("markets") or market_id in l["markets"]]
-    from .profile import projects_for
-    projects = [{"name": p["name"], "role": p.get("role", ""), "url": p.get("url", ""),
-                 "dates": f"{fmt_month(p.get('start'))} – {fmt_month(p.get('end'))}" if p.get("start") else "",
-                 "bullets": [b["text"] for b in p["bullets"]]}
-                for p in projects_for(profile, options.get("track", ""))]
+    from .profile import project_key, projects_for
+    # A CV can carry its own wording for a project (edited by hand), or leave one out; the profile is untouched.
+    edits = plan.get("projects") or {}
+    projects = []
+    for p in projects_for(profile, options.get("track", "")):
+        own = edits.get(project_key(p)) or {}
+        if own.get("hidden"):
+            continue
+        projects.append({"name": p["name"], "role": own.get("role") if own.get("role") is not None else p.get("role", ""),
+                         "url": p.get("url", ""),
+                         "dates": f"{fmt_month(p.get('start'))} – {fmt_month(p.get('end'))}" if p.get("start") else "",
+                         "bullets": list(own["bullets"]) if own.get("bullets") is not None else [b["text"] for b in p["bullets"]]})
     variant = options.get("variant") if options.get("variant") in LAYOUTS else "flowcv"
     one_page = int(options.get("max_pages") or 2) == 1
     layout = LAYOUTS[variant]

@@ -776,7 +776,23 @@ def get_plan(app_id: str) -> dict:
                    "dates": f"{fmt_month(roles[rid]['start'])} – {fmt_month(roles[rid].get('end'))}",
                    "bullets": bullets} for rid, bullets in plan["experience"].items() if rid in roles],
         "cover_letter": load_report(app_id).get("cover_letter", ""),
+        "projects": _plan_projects(profile, plan, load_report(app_id).get("options", {}).get("track", "")),
     }
+
+
+def _plan_projects(profile: dict, plan: dict, track: str) -> list[dict]:
+    """This CV's projects as editable sections: its own wording where it has one, else the profile's."""
+    from .profile import fmt_month, project_key, projects_for
+    edits = plan.get("projects") or {}
+    out = []
+    for p in projects_for(profile, track):
+        own = edits.get(project_key(p)) or {}
+        out.append({"id": project_key(p), "name": p["name"],
+                    "dates": f"{fmt_month(p.get('start'))} – {fmt_month(p.get('end'))}" if p.get("start") else "",
+                    "role": own.get("role") if own.get("role") is not None else p.get("role", ""),
+                    "bullets": own["bullets"] if own.get("bullets") is not None else [b["text"] for b in p["bullets"]],
+                    "hidden": bool(own.get("hidden"))})
+    return out
 
 
 def save_plan(app_id: str, body: dict) -> dict:
@@ -797,6 +813,12 @@ def save_plan(app_id: str, body: dict) -> dict:
         known = set(plan["experience"])
         plan["experience"] = {r["id"]: [clean(b) for b in r.get("bullets", []) if clean(b)]
                               for r in body["roles"] if r.get("id") in known}
+    if body.get("projects") is not None:
+        from .profile import project_key
+        known = {project_key(p) for p in load_profile().get("projects", [])}
+        plan["projects"] = {p["id"]: {"role": clean(p.get("role")), "hidden": bool(p.get("hidden")),
+                                      "bullets": [clean(b) for b in p.get("bullets", []) if clean(b)]}
+                            for p in body["projects"] if p.get("id") in known}
     (folder / "plan.json").write_text(json.dumps(plan, indent=2, ensure_ascii=False), "utf-8")
     if "cover_letter" in body and body["cover_letter"].strip():
         from .letters import keep_letter
