@@ -384,8 +384,26 @@ def job_status(jid: str):
 @app.get("/api/apps")
 def apps():
     from . import warm
-    return [r | {"warm": [{k: p[k] for k in ("name", "position", "url")} for p in warm.at(r.get("company") or "")[:5]]}
+    from . import coldmail, contacts
+    try:
+        found = contacts.load_all()
+    except OSError:   # no applications folder yet
+        found = {}
+    return [r | {"warm": [{k: p[k] for k in ("name", "position", "url")} for p in warm.at(r.get("company") or "")[:5]],
+                 "outreach_state": tracker.outreach_state(r), "has_contacts": bool(found.get(r["id"])),
+                 "has_mail": bool(coldmail.load(r["id"])["mails"])}
             for r in tracker.load()]
+
+
+@app.post("/api/apps/{app_id}/outreach")
+def outreach_step(app_id: str, body: dict = Body(...)):
+    """Outreach on an application: sent, followed_up, replied, or undo."""
+    _app_dir(app_id)
+    try:
+        r = tracker.outreach(app_id, body.get("action") or "")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return r | {"outreach_state": tracker.outreach_state(r)}
 
 
 @app.get("/api/connections")

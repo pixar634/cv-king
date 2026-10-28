@@ -1192,7 +1192,7 @@ function renderPipeline() {
         <button class="btn btn--sm btn--ghost" data-prep="${esc(r.id)}" data-stop title="Interview questions for this job">Interview</button>
         <button class="btn btn--sm btn--ghost" data-cold="${esc(r.id)}" data-stop title="Write a cold email for this job">Cold mail</button>
         <button class="btn btn--sm btn--ghost" data-findc="${esc(r.id)}" data-stop title="Search the web for the people who hire for this role" ${PC.running[r.id] ? "disabled" : ""}>${PC.data[r.id] ? "Find contacts again" : "Find contacts"}</button>
-      </div>${warmHtml(r)}${contactsHtml(r)}</div>`;
+      </div>${outreachHtml(r)}${warmHtml(r)}${contactsHtml(r)}</div>`;
   const flightCard = (b) => b.dup && !b.below_min ? `<div class="card app-card" data-flight="${esc(b.id)}">
       <div class="item"><span class="logo logo--sm">${initial(b.company || b.role)}</span><span class="item__body"><span class="item__title">${esc(b.company || "This job")}</span><span class="item__meta">${esc(b.role || "")}</span></span><span class="tag tag--warn">Already applied</span></div>
       <div class="progress__text" style="margin-top:0">${esc(b.stage)}</div>
@@ -1217,6 +1217,7 @@ function renderPipeline() {
   $$("[data-open]").forEach((el) => (el.onclick = (e) => { if (!e.target.closest("select, [data-stop], details")) openApp(el.dataset.open); }));
   $$("[data-findc]").forEach((b) => (b.onclick = () => findContacts(b.dataset.findc)));
   $$("[data-refer]").forEach((b) => (b.onclick = () => askReferral(b.dataset.refer, b.dataset.url)));
+  $$("[data-outreach]").forEach((b) => (b.onclick = async () => { await api(`/api/apps/${b.dataset.outreach}/outreach`, { body: { action: b.dataset.action } }); loadPipeline(); }));
   $$("[data-coldto]").forEach((b) => (b.onclick = () => contactToColdMail(b.dataset.coldto, b)));
   $$("[data-contacts-of]").forEach((d) => d.addEventListener("toggle", () => (d.open ? PC.open.add(d.dataset.contactsOf) : PC.open.delete(d.dataset.contactsOf))));
   $$("[data-prep]").forEach((b) => (b.onclick = () => openInterview(b.dataset.prep)));
@@ -2214,6 +2215,24 @@ const PC = { data: {}, running: {}, open: new Set() };
 async function loadContacts() {
   const r = await api("/api/contacts").catch(() => null);
   if (r) { PC.data = r.contacts; PC.running = r.running; }
+}
+
+// After applying, the steps that turn an application into a callback: someone to write to, the note, the email,
+// and a follow-up five to seven days later.
+function outreachHtml(r) {
+  if (r.status === "Generated" || ["Rejected", "Withdrawn", "Offer"].includes(r.status)) return "";
+  const o = r.outreach_state || { state: "none" };
+  const tick = (ok, label, title) => `<span class="chip ${ok ? "chip--ok" : "chip--muted"}" title="${esc(title)}"><span>${ok ? "✓ " : ""}${label}</span></span>`;
+  const step = (action, label, primary) => `<button class="btn btn--sm ${primary ? "btn--primary" : "btn--ghost"}" data-outreach="${esc(r.id)}" data-action="${action}" data-stop>${label}</button>`;
+  const due = o.due ? dayLabel(o.due) : "";
+  const now = o.state === "none" ? step("sent", "Outreach sent", true)
+    : o.state === "sent" ? `<span class="type-meta">Follow-up due ${esc(due)}</span>${step("replied", "Replied")}`
+    : o.state === "followup_due" || o.state === "overdue" ? `<span class="tag ${o.state === "overdue" ? "tag--bad" : "tag--warn"}">Follow-up ${o.state === "overdue" ? "overdue" : "due"}</span>${step("followed_up", "Follow-up sent", true)}${step("replied", "Replied")}`
+    : o.state === "followed_up" ? `<span class="type-meta">Followed up ${esc(dayLabel(o.on))}</span>${step("replied", "Replied")}`
+    : `<span class="tag tag--ok">Replied ${esc(dayLabel(o.on))}</span>`;
+  return `<div class="app-card__outreach chip-row">${tick(r.has_contacts || (r.warm || []).length, "Contact", "Someone to write to: Find contacts, or a person you know there")}
+      ${tick(true, "LinkedIn note", "The CV's recruiter note: copy it from the CV's page")}${tick(r.has_mail, "Email", "A cold email for this job (Cold mail)")}
+      ${now}${o.state !== "none" ? step("undo", "Undo") : ""}</div>`;
 }
 
 // People you know at this company, from your LinkedIn export, each with a referral ask written on request.
