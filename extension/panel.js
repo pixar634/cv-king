@@ -8,7 +8,7 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const S = { tab: null, ctx: null, rows: [], reports: {}, items: {}, busy: {}, granted: false, warnedEmpty: false, session: null, view: null };
+const S = { tab: null, ctx: null, rows: [], reports: {}, items: {}, busy: {}, granted: false, warnedEmpty: false, session: null, view: null, li: {} };
 chrome.permissions.contains(ALL_SITES).then((g) => (S.granted = g));
 
 async function api(path, opts = {}) {
@@ -73,10 +73,25 @@ function sessionForm() {
     <button class="btn btn--ghost btn--block" id="sCancel">Back</button></div>`;
 }
 
+// Where a queued job has got to: tailoring, a CV ready to send, or sent.
+function queueState(q) {
+  const it = S.items[q.itemId];
+  const app = S.rows.find((r) => (it?.app_id && r.id === it.app_id) || String(r.job_id || "") === q.jid);
+  if (app) return app.status === "Generated" ? ["CV ready", "ok"] : [app.status, "ok"];
+  if (it?.status === "error") return ["Stopped", "warn"];
+  return [it?.stage || "Waiting", ""];
+}
+
 function sessionCard() {
-  const s = S.session;
+  const s = S.session, queue = s.queue || [];
   const where = [...MODES.filter(([v]) => (s.modes || []).includes(v)).map(([, l]) => l), s.place].filter(Boolean).join(" · ");
+  const states = queue.map(queueState);
+  const count = (w) => states.filter(([t]) => w(t)).length;
+  const list = queue.length ? `<div class="meta">${queue.length} queued · ${count((t) => t === "CV ready")} ready to send · ${count((t) => !["CV ready", "Stopped", "Waiting"].includes(t) && S.rows.some((r) => r.status === t))} sent</div>
+    <ul class="list queue">${queue.map((q, i) => `<li><span class="chip ${states[i][1]}">${esc(states[i][0])}</span><button class="linkbtn" data-goto="${esc(q.jid)}" title="Open this job">${esc(q.company)} · ${esc(q.role)}</button></li>`).join("")}</ul>`
+    : `<p class="meta" style="margin:0">Click a job in LinkedIn's list: I read it here. Queue the ones worth a tailored CV and keep going; they're written in the background.</p>`;
   return `<div class="card session"><div class="row"><span class="eyebrow">Easy Apply session</span><span class="meta">${esc(s.title)}${where ? ` · ${esc(where)}` : ""}</span></div>
+    ${list}
     <div class="row"><button class="btn btn--sm" id="sOpen">Open the search</button><button class="btn btn--sm btn--ghost" id="sEdit">Change it</button>
       <button class="btn btn--sm btn--ghost" id="sEnd">End session</button></div></div>`;
 }
@@ -93,6 +108,80 @@ async function startSession() {
     await chrome.tabs.update(S.tab.id, { url });
   } catch (e) { draw(`<div class="card"><div class="notice bad">${esc(e.message)}</div></div>`); }
 }
+
+function liJob(u) {
+  try {
+    const x = new URL(u);
+    if (!x.hostname.endsWith("linkedin.com")) return "";
+    const m = /\/jobs\/view\/(?:[^/]*?-)?(\d{6,})/.exec(x.pathname);
+    const cur = x.searchParams.get("currentJobId") || "";
+    return m ? m[1] : /^\d+$/.test(cur) ? cur : "";
+  } catch { return ""; }
+}
+const liUrl = (jid) => `https://www.linkedin.com/jobs/view/${jid}/`;
+
+// Read the job LinkedIn shows and score it. On a search page the pane swaps a moment after the address changes:
+// wait until it shows this job.
+async function readLinkedIn(tabId, jid) {
+  if (S.li[jid]) return;
+  for (let i = 0; i < 5; i++) {
+    const [j] = await inPage("linkedin", null, { tabId }).catch(() => []);
+    if (j && j.description.length > 300 && (!j.paneId || j.paneId === jid)) {
+      const job = { ...j, location: [j.place, j.workplace && `(${j.workplace})`].filter(Boolean).join(" ") };
+      const fit = await api("/api/fit", { body: fitBody({ description: job.description, role: job.role, company: job.company,
+        url: liUrl(jid), location: job.location, remote: j.workplace === "Remote" }) }).catch(() => null);
+      S.li[jid] = { job, fit };
+      return;
+    }
+    await sleep(1200);
+  }
+  S.li[jid] = { failed: true };
+}
+
+function liCard(jid, li, q) {
+  const it = q && S.items[q.itemId];
+  if (li.failed) {
+    return `<div class="card"><span class="eyebrow">LinkedIn job</span><p class="sub" style="margin:0">I couldn't read this job's pane. Open it on its own page, or use Tailor below.</p>
+      <button class="btn btn--block" id="liAgain">Read it again</button></div>`;
+  }
+  const { job, fit } = li;
+  const risky = fit?.below || (fit?.gate && fit.gate.verdict !== "ok") || fit?.label === "Long shot";
+  return `<div class="card"><span class="eyebrow">LinkedIn job</span><h2>${esc(job.role || "Untitled role")}</h2>
+    <div class="sub">${esc(job.company)}${job.location ? ` · ${esc(job.location)}` : ""}</div>
+    <div class="row">${job.easy ? `<span class="chip ok">Easy Apply</span>` : `<span class="chip">Applies on the company's site</span>`}
+      ${job.applied ? `<span class="chip warn">You applied on LinkedIn</span>` : ""}</div>
+    ${it?.status === "error" ? `<div class="notice">${esc(it.stage)}</div>` : ""}
+    ${fitHtml(fit)}
+    ${job.applied ? "" : `<button class="btn ${risky ? "" : "btn--primary"} btn--block" id="liQueue" data-force="${risky ? 1 : ""}">${risky ? "Queue anyway" : "Queue: tailor a CV for it"}</button>`}
+    <p class="meta" style="margin:0">${risky ? "Long shots rarely call back without a referral. " : ""}Queued CVs are written in the background; keep clicking through the list.</p></div>`;
+}
+
+async function queueJob(jid, force) {
+  const { job, fit } = S.li[jid];
+  try {
+    const { ids } = await api("/api/batch", { body: { items: [{ jd: job.description, company: job.company, role: job.role,
+      job_url: liUrl(jid), job_id: jid, location: job.location, market: fit?.market || "auto", ...(force ? { force: true } : {}) }] } });
+    S.items[ids[0]] = { id: ids[0], status: "queued", stage: "Waiting for a free slot", company: job.company, role: job.role };
+    await saveSession({ queue: [...(S.session.queue || []).filter((q) => q.jid !== jid),
+      { jid, itemId: ids[0], company: job.company, role: job.role, label: fit?.label || "" }] });
+  } catch (e) { return draw(`<div class="card"><div class="notice bad">${esc(e.message)}</div></div>`); }
+  render();
+}
+
+// Queued CVs: follow them while the panel is open, and redraw only when one has moved on.
+setInterval(async () => {
+  const queue = S.session?.active ? S.session.queue || [] : [];
+  const open = queue.filter((q) => !["CV ready", "Stopped"].includes(queueState(q)[0]) && !S.rows.some((r) => String(r.job_id || "") === q.jid));
+  if (!open.length || document.hidden) return;
+  try {
+    const items = await api("/api/batch");
+    const before = open.map((q) => queueState(q).join()).join("|");
+    for (const q of open) { const it = items.find((i) => i.id === q.itemId); if (it) S.items[q.itemId] = it; }
+    if (open.some((q) => S.items[q.itemId]?.status === "done")) S.rows = await api("/api/apps").catch(() => S.rows);
+    const c = S.ctx;
+    if (c && !S.busy[c.tab.id] && S.view !== "session" && open.map((q) => queueState(q).join()).join("|") !== before) refresh();
+  } catch { /* the app stopped; the next refresh says so */ }
+}, 4000);
 
 // Reading every site needs your OK once; without it the panel can still read the tab you opened it on.
 function askAccess() {
@@ -170,7 +259,10 @@ async function doRefresh() {
   const here = mem.url && urlKey(mem.url) === urlKey(tab.url);
   // An application from this page, or the one you were tailoring in this tab when the form opened.
   const app = matchApp(tab.url) || ((isForm || here) && mem.appId ? S.rows.find((r) => r.id === mem.appId) : null);
-  S.ctx = { tab, mem, probe, isForm, here, app };
+  const jid = S.session?.active ? liJob(tab.url) : "";
+  if (jid && !app) await readLinkedIn(tab.id, jid);
+  if (S.tab.id !== tab.id) return;
+  S.ctx = { tab, mem, probe, isForm, here, app, jid };
   if (mem.itemId && !mem.appId) watchItem(tab.id, mem.itemId);
   if (here && mem.job && !mem.fit) S.ctx.mem = await remember(tab.id, { fit: await api("/api/fit", { body: fitBody(mem.job) }).catch(() => null) });
   if (app && !S.reports[app.id]) S.reports[app.id] = await api(`/api/apps/${app.id}`).catch(() => null);
@@ -190,7 +282,7 @@ function renderOffline() {
 function render() {
   const c = S.ctx;
   if (!c) return;
-  const { tab, mem, probe, isForm, here, app } = c;
+  const { tab, mem, probe, isForm, here, app, jid } = c;
   const busy = S.busy[tab.id];
   const parts = [];
   if (S.view === "session") return finish([sessionForm()]);
@@ -205,8 +297,12 @@ function render() {
   // Still writing for the posting this tab was on: keep saying so after Apply opens a form at another address,
   // instead of offering to tailor the same job again.
   const inFlight = item && ["queued", "running"].includes(item.status);
+  const q = jid && (S.session?.queue || []).find((x) => x.jid === jid);
+  const qItem = q && S.items[q.itemId];
   if (item && (here || isForm || inFlight) && item.status !== "done") parts.push(itemCard(item));
   else if (app) parts.push(appCard(app, S.reports[app.id]));
+  else if (qItem && ["queued", "running"].includes(qItem.status)) parts.push(itemCard(qItem));
+  else if (jid && S.li[jid] && !busy) parts.push(liCard(jid, S.li[jid], q));
   else if (!busy) parts.push(postingCard(mem, here));
   if (isForm) parts.push(formCard(app, mem));
   else if (app && !busy && probe.password) parts.push(`<div class="card"><span class="eyebrow">Sign in first</span>
@@ -226,6 +322,9 @@ function finish(parts) {
   on("sEdit", () => { S.view = "session"; render(); });
   on("sOpen", () => chrome.tabs.update(S.tab.id, { url: S.session.url }));
   on("sEnd", () => saveSession(null).then(render));
+  on("liQueue", (e) => queueJob(S.ctx.jid, !!e.currentTarget.dataset.force));
+  on("liAgain", () => { delete S.li[S.ctx.jid]; refresh(); });
+  document.querySelectorAll("[data-goto]").forEach((b) => (b.onclick = () => chrome.tabs.update(S.tab.id, { url: liUrl(b.dataset.goto) })));
   on("tailor", () => tailorHere(false));
   on("readOnly", () => tailorHere(true));
   on("tailorForce", () => tailorHere(false, "", true));
@@ -600,6 +699,7 @@ $("#reload").onclick = async () => {
   clearTimeout(refreshing);
   if (S.ctx?.app) delete S.reports[S.ctx.app.id];
   if (S.ctx?.mem?.fit) await remember(S.ctx.tab.id, { fit: null });   // score the posting again, in case the profile changed
+  if (S.ctx?.jid) delete S.li[S.ctx.jid];
   try { await doRefresh(); } finally { b.classList.remove("spin"); }
 };
 

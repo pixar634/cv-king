@@ -25,3 +25,9 @@ def test_job_id_from_linkedin_pages():
     assert linkedin.job_id("https://www.linkedin.com/jobs/collections/recommended/?currentJobId=4012345678") == "4012345678"
     assert linkedin.job_id("https://example.com/jobs/view/4012345678") == ""
     assert linkedin.job_id("https://www.linkedin.com/feed/") == ""
+
+
+def test_fit_says_which_market_the_job_is_in():
+    c = TestClient(app, base_url="http://127.0.0.1:8765")
+    jd = "We need a Python engineer to build FastAPI services on AWS with PostgreSQL, Docker and Kubernetes. " * 4
+    assert c.post("/api/fit", json={"jd": jd, "role": "Engineer", "location": "Bengaluru, Karnataka, India (Hybrid)"}).json()["market"] == "india"

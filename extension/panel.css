@@ -81,3 +81,6 @@ details summary { cursor: pointer; color: var(--text-2); }
 .check { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); cursor: pointer; }
 .check input { width: auto; accent-color: var(--accent); }
 .session { border-color: var(--accent-b); }
+.queue li { align-items: center; }
+.linkbtn { appearance: none; background: none; border: 0; padding: 0; font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+.linkbtn:hover { color: var(--accent); }

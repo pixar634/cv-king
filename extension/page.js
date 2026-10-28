@@ -26,6 +26,26 @@
     };
   }
 
+  // LinkedIn's job pane (a job page, or the job open beside a search list), read from its markup: no model needed,
+  // so each job you click is scored in about a second. paneId says which job the pane shows while it's still swapping.
+  function linkedin() {
+    const top = document.querySelector(".job-details-jobs-unified-top-card__container--two-pane, .job-details-jobs-unified-top-card__container, .jobs-unified-top-card, .jobs-details__main-content, .job-view-layout") || document;
+    const txt = (...sels) => { for (const s of sels) { const t = clean(top.querySelector(s)?.innerText); if (t) return t; } return ""; };
+    const desc = document.querySelector("#job-details, .jobs-description__content, .jobs-description-content__text, .jobs-box__html-content");
+    const facts = txt(".job-details-jobs-unified-top-card__tertiary-description-container", ".job-details-jobs-unified-top-card__primary-description-container", ".jobs-unified-top-card__subtitle-primary-grouping");
+    const head = clean(top === document ? "" : top.innerText).slice(0, 2000);
+    const link = top.querySelector(".job-details-jobs-unified-top-card__job-title a[href*='/jobs/view/'], a[href*='/jobs/view/']");
+    return {
+      url: location.href, paneId: (/\/jobs\/view\/(\d+)/.exec(link?.href || "") || [])[1] || "",
+      role: txt(".job-details-jobs-unified-top-card__job-title h1", ".job-details-jobs-unified-top-card__job-title", ".jobs-unified-top-card__job-title", ".t-24", "h1"),
+      company: txt(".job-details-jobs-unified-top-card__company-name a", ".job-details-jobs-unified-top-card__company-name", ".jobs-unified-top-card__company-name"),
+      place: clean(facts.split("·")[0]), workplace: (/\b(Remote|Hybrid|On-site)\b/.exec(head) || [])[1] || "",
+      description: desc ? desc.innerText.trim().slice(0, 40000) : "",
+      easy: [...top.querySelectorAll("button, a")].some((b) => /easy apply/i.test(b.innerText || b.getAttribute("aria-label") || "")),
+      applied: /\bApplied \d+ \w+ ago\b|Application submitted/i.test(head),
+    };
+  }
+
   // ---------- reading a form ----------
   function textOf(el) {
     if (!el) return "";
@@ -232,5 +252,5 @@
     return { clicked: s.text };
   }
 
-  window.__jm = { grab, probe, scan, fill, values, submit };
+  window.__jm = { grab, linkedin, probe, scan, fill, values, submit };
 })();

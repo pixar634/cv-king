@@ -1038,7 +1038,7 @@ def fit_preview(body: dict = Body(...)):
     from . import warm
     fit = discover.label_for(job, profile, prefs)
     out |= {"warm": warm.who_to_ask(job["company"], job["title"], 5),
-            "label": fit["label"], "label_why": fit["why"]}
+            "label": fit["label"], "label_why": fit["why"], "market": market}
     return out | {"gate": gate.check(text, body.get("role") or "", body.get("location") or "", market, body.get("remote"),
                                      profile, prefs, company=body.get("company") or ""),
                   "already": same and {"id": same["id"], "status": same.get("status"), "story": tracker.story(same),
