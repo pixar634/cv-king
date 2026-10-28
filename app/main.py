@@ -402,7 +402,7 @@ def apps():
     # The chance of a callback per card, from what's already worked out; the rest is worked out in the background
     # and the page asks again, so the Pipeline never waits on it.
     rows = tracker.load()
-    chances = {r["id"]: callback.cached(r["id"], prefs, own) for r in rows}
+    chances = {r["id"]: callback.cached(r["id"], prefs, own) for r in rows if not r.get("outside")}   # no CV, no guide
     pending = callback.work_out_soon([i for i, c in chances.items() if c is None], profile, prefs)
 
     def chance(r):
@@ -452,6 +452,12 @@ def network_graph(sample: bool = False):
     """You, the companies your connections work at, and the people there; a labelled sample until you add them."""
     from . import network
     return network.graph(_prefs(load_profile()), sample)
+
+
+@app.post("/api/apps/import-linkedin")
+def apps_import_linkedin(body: dict = Body(...)):
+    """Applications from LinkedIn's Job Applications.csv since a date, onto the Pipeline as made outside JobMagnet."""
+    return tracker.import_linkedin_applications(body.get("csv") or "", body.get("since") or "")
 
 
 @app.get("/api/connections")
