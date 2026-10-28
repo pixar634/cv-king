@@ -178,7 +178,7 @@ def state():
                    for k, v in tailor.tracks().items()},
         "voices": {k: {"label": v["label"], "best_for": v["best_for"]} for k, v in letters.voices().items() if k != "banned_phrases"},
         "engines": [{"id": e.id, "label": e.label, "available": e.available()} for e in ENGINES.values()],
-        "statuses": tracker.STATUSES,
+        "statuses": tracker.STATUSES, "channels": tracker.CHANNELS,
         "areas": {home["city"]: zones} if zones else {},
     }
 
