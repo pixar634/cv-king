@@ -26,7 +26,7 @@ def test_funnel_and_reply_rate():
     add("c", 55, [("Applied", "2026-10-03")])
     add("d", 45, [])
     d = insights.compute(TODAY)
-    assert d["funnel"] == {"tailored": 4, "applied": 3, "replied": 2, "interviews": 1, "offers": 0}
+    assert d["funnel"] == {"tailored": 4, "applied": 3, "replied": 2, "callbacks": 1, "interviews": 1, "offers": 0}
     assert d["reply_rate"] is None                     # 3 applied: too few to give a rate
     assert d["days_to_reply"] == {"median": 5.5, "n": 2}   # 7 days and 4 days
 
@@ -78,3 +78,26 @@ def test_a_skill_the_profile_has_now_is_not_listed_missing():
         {"term": t, "tier": "required", "weight": 3, "covered": False, "covered_before": False, "in_profile": False}
         for t in ("React", "Kubernetes")]}), "utf-8")
     assert [m["term"] for m in insights.compute(TODAY)["missing"]] == ["Kubernetes"]
+
+
+def test_callback_rate_apart_from_rejections_and_by_channel_and_track():
+    import json
+
+    from app.config import output_dir
+    for i in range(10):
+        add(f"t{i}", 70, [("Applied", "2026-10-02")] + ([("Recruiter call", "2026-10-06")] if i < 3 else [("Rejected", "2026-10-06")]))
+        folder = output_dir() / f"t{i}"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "report.json").write_text(json.dumps({"options": {"track": "ic_lead" if i < 5 else "product_manager"},
+                                                        "fit_label": "Strong" if i < 3 else "Long shot"}), "utf-8")
+    rows = tracker.load()
+    for r in rows:
+        r["channel"] = "referral" if r["id"] in ("t0", "t1", "t2") else "Easy Apply"
+    tracker._save(rows)
+    d = insights.compute(TODAY)
+    assert d["callback_rate"] == 30 and d["reply_rate"] == 100   # rejections are replies, never callbacks
+    cb = d["callbacks"]
+    assert {x["group"]: x["callbacks"] for x in cb["by_channel"]} == {"Easy Apply": 0, "referral": 3}
+    assert {x["group"]: x["rate"] for x in cb["by_fit"]} == {"Long shot": 0, "Strong": None}   # 3 is too few for a rate
+    assert {x["group"]: x["applied"] for x in cb["by_track"]} == {"IC Lead": 5, "Product Manager": 5}
+    assert cb["pause"] == []   # no track has 10 applications yet

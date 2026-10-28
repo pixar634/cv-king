@@ -527,6 +527,17 @@ def _print(folder: Path, profile: dict, plan: dict, options: dict, company: str,
 
 
 
+def _fit_label(req: dict, text: str, company: str, role: str, profile: dict) -> str:
+    """The fit label when the CV was written, kept with it so Insights can show callbacks by label."""
+    from .discover import label_for
+    try:
+        job = {"title": role, "company": company, "location": req.get("location") or "", "remote": req.get("remote"),
+               "description": text, "posted": req.get("posted") or "", "method": req.get("method") or ""}
+        return label_for(job, profile, profile.get("preferences") or {})["label"] or ""
+    except Exception:  # a label is a nicety; a CV is never lost over it
+        return ""
+
+
 class AlreadyApplied(EngineError):
     """A CV was already written, or an application already sent, for this job: stopped before any writing."""
 
@@ -649,6 +660,7 @@ def run(req: dict, progress=lambda m: None) -> dict:
         "cover_letter": cover, "fit_notes": raw.get("fit_notes") or [], "jd_meta": jd_meta,
         "options": options, "edited": False, "notes": (req.get("notes") or "").strip(),
         "job": {k: req.get(k, "") for k in ("job_url", "job_id", "location", "posted", "discover_match")},
+        "fit_label": _fit_label(req, jd["text"], company, role, profile),
     }
     (folder / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), "utf-8")
     tracker.add_from_report(report, req)
