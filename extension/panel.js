@@ -218,13 +218,13 @@ function matchApp(url) {
 async function probeTab(tabId) {
   try {
     return (await inPage("probe", null, { all: true, tabId })).reduce((a, p) => ({ fields: a.fields + p.fields, file: a.file || p.file,
-      thanks: a.thanks || p.thanks, password: a.password + (p.password || 0) }), { fields: 0, file: false, thanks: false, password: 0 });
+      thanks: a.thanks || p.thanks, password: a.password + (p.password || 0), popup: a.popup || !!p.popup }), { fields: 0, file: false, thanks: false, password: 0, popup: false });
   } catch { return null; }
 }
 
 // Sites like Workday move from sign-in to each form step without loading a new page, so look again every few
 // seconds while the panel is open, and redraw only when what the page holds has changed.
-const probeSig = (p) => (p ? `${p.fields}|${p.file}|${p.thanks}|${p.password}` : "none");
+const probeSig = (p) => (p ? `${p.fields}|${p.file}|${p.thanks}|${p.password}|${p.popup}` : "none");
 setInterval(async () => {
   const c = S.ctx;
   if (!c || document.hidden || S.busy[c.tab.id]) return;
@@ -255,7 +255,8 @@ async function doRefresh() {
   probe = await probeTab(tab.id);
   if (S.tab.id !== tab.id) return;
   // A page you said is the form counts as one, however few fields it shows.
-  const isForm = !!probe && (probe.fields >= 4 || (probe.file && probe.fields >= 2) || (mem.formUrl === tab.url && probe.fields > 0));
+  // An application popup (LinkedIn Easy Apply) counts from its first field: its contact step has only two or three.
+  const isForm = !!probe && (probe.fields >= 4 || (probe.file && probe.fields >= 2) || (probe.popup && probe.fields > 0) || (mem.formUrl === tab.url && probe.fields > 0));
   const here = mem.url && urlKey(mem.url) === urlKey(tab.url);
   // An application from this page, or the one you were tailoring in this tab when the form opened.
   const app = matchApp(tab.url) || ((isForm || here) && mem.appId ? S.rows.find((r) => r.id === mem.appId) : null);
@@ -308,7 +309,7 @@ function render() {
   else if (app && !busy && probe.password) parts.push(`<div class="card"><span class="eyebrow">Sign in first</span>
     <p class="sub" style="margin:0">This is the site's sign-in or create-account step. Sign in or create your account yourself: I never fill passwords. When the application form opens, I'll pick it up.</p>
     ${probe.fields ? `<button class="btn btn--block" id="fillHere">Fill the email and other fields here</button>` : ""}</div>`);
-  else if (app && !busy) parts.push(`<div class="card"><span class="eyebrow">Next</span><p class="sub" style="margin:0">Press <b>Apply</b> on the page. When the form opens, I'll fill it in for you to check.</p>
+  else if (app && !busy) parts.push(`<div class="card"><span class="eyebrow">Next</span><p class="sub" style="margin:0">Press <b>${jid ? "Easy Apply" : "Apply"}</b> on the page. When the form opens, I'll fill it in for you to check${jid ? ", one step at a time, with this CV attached" : ""}.</p>
     ${probe.fields ? `<button class="btn btn--block" id="fillHere">This is the form: fill it</button>` : ""}</div>`);
   finish(parts);
 }
@@ -478,12 +479,21 @@ function appCard(row, rep) {
       <button class="btn btn--sm btn--ghost" id="tailorAgain">Tailor again</button></div></div>`;
 }
 
+// Right after sending: the people you know there, while it's fresh. A referral turns a cold application warm.
+function outreachHtml(app) {
+  const warm = (app && S.rows.find((r) => r.id === app.id)?.warm) || [];
+  if (!warm.length) return "";
+  return `<div class="fit__list"><span class="meta">Message someone you know at ${esc(app.company)} today:</span>
+    <ul class="list">${warm.slice(0, 3).map((w) => `<li><a href="${esc(w.url)}" target="_blank">${esc(w.name)}</a><span class="meta">${esc(w.position)}</span></li>`).join("")}</ul>
+    <a class="btn btn--sm" href="${SERVER}/?app=${encodeURIComponent(app.id)}" target="_blank">Write the note in JobMagnet</a></div>`;
+}
+
 function formCard(app, mem) {
   const f = mem.fill && mem.fill.url === S.tab.url ? mem.fill : null;
   const options = S.rows.slice(0, 40).map((r) => `<option value="${esc(r.id)}" ${app && r.id === app.id ? "selected" : ""}>${esc(r.company)} · ${esc(r.role)}</option>`).join("");
   const picker = `<label class="need"><span class="eyebrow">Application</span><select id="pickApp"><option value="">Pick the CV for this form</option>${options}</select></label>`;
   if (mem.submitted && mem.submittedUrl === S.tab.url) {
-    return `<div class="card"><span class="eyebrow">Application form</span><div class="notice ok">Submitted (pressed “${esc(mem.submitted)}”). It's marked Applied in Pipeline.</div></div>`;
+    return `<div class="card"><span class="eyebrow">Application form</span><div class="notice ok">Submitted (pressed “${esc(mem.submitted)}”). It's marked Applied in Pipeline.</div>${outreachHtml(app)}</div>`;
   }
   if (!f) {
     return `<div class="card"><span class="eyebrow">Application form</span>${picker}
@@ -506,7 +516,7 @@ function formCard(app, mem) {
     <p class="meta" style="margin:0">Filled fields are outlined in yellow on the page, the ones that need you in orange. Check them, then submit.</p>
     ${f.needs.length ? `<div>${needs}</div>` : ""}
     ${S.warnedEmpty ? `<div class="notice">${esc(S.warnedEmpty)}</div>` : ""}
-    <button class="btn btn--primary btn--block" id="submit" ${f.submitText ? "" : "disabled"}>${f.submitText ? `Submit: press “${esc(f.submitText)}”` : "No submit button found"}</button>
+    <button class="btn btn--primary btn--block" id="submit" ${f.submitText ? "" : "disabled"}>${!f.submitText ? "No submit button found" : /submit|send/i.test(f.submitText) ? `Submit: press “${esc(f.submitText)}”` : `Next step: press “${esc(f.submitText)}”`}</button>
     <button class="btn btn--ghost btn--block" id="fill">Fill again</button></div>`;
 }
 
@@ -664,10 +674,12 @@ async function submitForm() {
   const final = /submit|send/i.test(r.clicked);
   const left = after.thanks || (after.url && after.url !== f.url) || after.fields < before / 2;
   if (final && left) {
-    await api(`/api/apps/${app.id}/track`, { body: { status: "Applied", source: "extension" } }).catch(() => {});
+    await api(`/api/apps/${app.id}/track`, { body: { status: "Applied", source: "extension", ...(S.ctx.jid ? { channel: "Easy Apply" } : {}) } }).catch(() => {});
     await remember(tabId, { fill: null, submitted: r.clicked, submittedUrl: S.tab.url });
   } else if (!final) {
     await remember(tabId, { fill: null, step: r.clicked });
+    // LinkedIn's popup moves to its next step in place: fill it as soon as it's there, for you to check again.
+    if (S.ctx.jid && S.tab.id === tabId) { await sleep(800); await doRefresh(); if (S.ctx.isForm) return fillForm(); }
   } else {
     return stuck("The form is still here, so it may not have gone through. Check the page for errors, fix them, and press Submit again. If it did go through, mark it applied.");
   }

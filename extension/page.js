@@ -46,6 +46,15 @@
     };
   }
 
+  // An application in a popup (LinkedIn Easy Apply and the like): read, fill and submit inside it, not the page behind.
+  // A cookie banner or a sign-in box doesn't count: it must be an Easy Apply popup or hold a real form.
+  function root() {
+    const d = [...document.querySelectorAll(".jobs-easy-apply-modal, [data-test-modal-id*='easy-apply'], [role=dialog]")].filter(visible)
+      .find((x) => x.matches(".jobs-easy-apply-modal, [data-test-modal-id*='easy-apply']") || x.querySelector("input[type=file]")
+        || x.querySelectorAll("input:not([type=checkbox]):not([type=radio]):not([type=hidden]), select, textarea").length >= 2);
+    return d || document;
+  }
+
   // ---------- reading a form ----------
   function textOf(el) {
     if (!el) return "";
@@ -113,7 +122,7 @@
   async function scan() {
     const fields = [];
     const seenGroups = new Set();
-    const els = [...document.querySelectorAll("input, textarea, select")].filter((el) => !el.disabled && !el.closest("[aria-hidden=true]"));
+    const els = [...root().querySelectorAll("input, textarea, select")].filter((el) => !el.disabled && !el.closest("[aria-hidden=true]"));
     for (const el of els) {
       const type = (el.type || "").toLowerCase();
       if (["hidden", "submit", "button", "reset", "image", "search", "password"].includes(type)) continue;
@@ -144,13 +153,13 @@
 
   // Is this an application form? Cheap: no dropdowns are opened.
   function probe() {
-    const els = [...document.querySelectorAll("input, textarea, select")].filter((el) => !el.disabled && (el.type === "file" || visible(el))
+    const els = [...root().querySelectorAll("input, textarea, select")].filter((el) => !el.disabled && (el.type === "file" || visible(el))
       && !["hidden", "submit", "button", "reset", "image", "search", "password"].includes((el.type || "").toLowerCase()) && !el.closest("header, nav, footer, [role=search]"));
-    const thanks = /thank you for (applying|your application)|application (has been |was )?(submitted|received|sent)|we('ve| have) received your application/i
+    const thanks = /thank you for (applying|your application)|application (has been |was )?(submitted|received|sent)|we('ve| have) received your application|your application was sent/i
       .test((document.body?.innerText || "").slice(0, 20000));
     // A visible password box means a sign-in or create-account step: never filled, but worth telling apart from a form.
     const password = [...document.querySelectorAll("input[type=password]")].filter((el) => !el.disabled && visible(el)).length;
-    return { fields: els.length, file: els.some((el) => el.type === "file"), url: location.href, thanks, password };
+    return { fields: els.length, file: els.some((el) => el.type === "file"), url: location.href, thanks, password, popup: root() !== document };
   }
 
   // ---------- filling ----------
@@ -230,13 +239,13 @@
 
   // ---------- submitting ----------
   function submitButton() {
-    const cands = [...document.querySelectorAll("button, input[type=submit], [role=button]")].filter(visible);
+    const cands = [...root().querySelectorAll("button, input[type=submit], [role=button]")].filter(visible);
     const text = (b) => clean(b.value && b.tagName === "INPUT" ? b.value : b.innerText || b.getAttribute("aria-label"));
     const score = (b) => {
       const t = text(b).toLowerCase();
-      if (!t || t.length > 40 || /cancel|back|save draft|sign in|log in|search|upload|attach/.test(t)) return 0;
+      if (!t || t.length > 40 || /cancel|back|dismiss|discard|save draft|sign in|log in|search|upload|attach/.test(t)) return 0;
       if (/^submit|submit application|send application|submit your application/.test(t)) return 3;
-      if (/^(apply|apply now|review|next|continue|save and continue)$/.test(t)) return 2;
+      if (/^(apply|apply now|review|review your application|next|continue|continue to next step|save and continue)$/.test(t)) return 2;
       if (b.type === "submit" && b.closest("form")) return 1;
       return 0;
     };
