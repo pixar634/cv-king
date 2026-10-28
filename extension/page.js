@@ -56,11 +56,21 @@
   }
 
   // ---------- reading a form ----------
+  // The text inside el, leaving out what sits inside elements matching `skip`. Read in place, never from a copy:
+  // copying makes Chrome re-check every date and number field, and a page that left one at "undefined" (Ashby)
+  // logs an error against the extension.
+  function textWithout(el, skip) {
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (t) => {
+      const hit = t.parentElement?.closest(skip);
+      return hit && hit !== el && el.contains(hit) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+    } });
+    let out = "";
+    while (walk.nextNode()) out += walk.currentNode.nodeValue;
+    return clean(out);
+  }
+
   function textOf(el) {
-    if (!el) return "";
-    const c = el.cloneNode(true);
-    c.querySelectorAll("input,select,textarea,button,script,style,[aria-hidden=true]").forEach((x) => x.remove());
-    return clean(c.textContent);
+    return el ? textWithout(el, "input,select,textarea,button,script,style,[aria-hidden=true]") : "";
   }
 
   function labelFor(el) {
@@ -89,9 +99,7 @@
     let n = inputs[0].parentElement;
     while (n && !inputs.every((i) => n.contains(i))) n = n.parentElement;
     for (let i = 0; n && i < 3; i++, n = n.parentElement) {
-      const c = n.cloneNode(true);
-      c.querySelectorAll("label, input").forEach((x) => x.remove());
-      const t = clean(c.textContent);
+      const t = textWithout(n, "label, input");
       if (t) return t.slice(0, 300);
     }
     return clean(inputs[0].name);
