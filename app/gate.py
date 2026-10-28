@@ -87,6 +87,8 @@ LANGUAGES = {"Java", "Spring Boot", ".NET", "C#", "Go", "Rust", "Ruby", "Ruby on
 # Wording that makes a skill a must-have even where the posting has no "Requirements" heading.
 DEMAND = re.compile(r"\b(strong|proven|solid|deep|expert|extensive|hands[\s-]?on|must|required|requirement|"
                     r"proficien\w*|mastery|advanced|\d+\+?\s*(years?|yrs))\b", re.I)
+# Wording that offers languages as alternatives: "any of the backend languages (Python, Go)", "Java or Python".
+ALTERNATIVE = re.compile(r"\b(or|any of|one of|one or more of|either|such as|e\.g|like|similar|equivalent|at least one)\b|/", re.I)
 
 
 def stack(text: str, title: str, strong: set[str], prefs: dict) -> dict:
@@ -102,11 +104,19 @@ def stack(text: str, title: str, strong: set[str], prefs: dict) -> dict:
             named[n] = None
     sentences = [s for s in re.split(r"(?<=[.;!?])\s+|\n+", text) if s.strip()]
     pats = lambda n: taxonomy().terms[n].patterns
+    in_title = set(taxonomy().find(title or ""))
+    mine = [n for n in LANGUAGES & set(strong) if n in taxonomy().terms]
 
     def must(n):
+        if n in in_title:
+            return True
+        said = [s for s in sentences if any(p.search(s) for p in pats(n))]
+        # Offered as one of several next to a language you have ("any of Python, Go"): yours meets it.
+        alt = [s for s in said if ALTERNATIVE.search(s) and any(p.search(s) for h in mine if h != n for p in pats(h))]
+        if said and len(alt) == len(said):
+            return False
         k = named[n]
-        return (k is None or k.tier == "required"
-                or any(DEMAND.search(s) and any(p.search(s) for p in pats(n)) for s in sentences))
+        return k is None or k.tier == "required" or any(DEMAND.search(s) for s in said if s not in alt)
     missing = [{"name": n, "must": must(n)} for n in sorted(named) if n not in strong]
     job = {"title": title or "", "description": text}
     skipped = [s for s in prefs.get("exclude_skills") or [] if needs_skill(job, s)]

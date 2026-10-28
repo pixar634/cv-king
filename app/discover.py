@@ -641,7 +641,7 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 24
+RANK_VERSION = 25
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "regions", "places", "pay_floor_home_lpa", "pay_floor_remote_lpa", "pay_floor_abroad_eur", "pay_tiers")
 

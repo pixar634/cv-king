@@ -11,6 +11,12 @@ DOTNET = ("Build cloud services for our platform. Strong web development experie
           "and able to troubleshoot complex scenarios. Experience with Azure. ") * 2
 MIXED = ("Build backend services. Strong experience in one or more of Java, Go or Python. React on the front end. "
          "You will own services end to end and review code. ") * 2
+BOTH = ("Build backend services. Strong experience in Python and Go is required. React on the front end. "
+        "You will own services end to end and review code. ") * 2
+# Word for word from a real posting: Go is offered beside Python, so Python meets it.
+ANY_OF = ("Requirements\nProgramming: 3+ years of experience with any of the backend languages (Python, Go).\n"
+          "Agent frameworks: hands-on experience building agents with LangGraph.\n"
+          "We're building intelligent systems that go far beyond automation.")
 
 
 def test_built_on_languages_you_dont_have_stops():
@@ -19,18 +25,28 @@ def test_built_on_languages_you_dont_have_stops():
     assert {m["name"]: m["must"] for m in got["missing"]} == {".NET": True, "C#": True}
 
 
-def test_a_skipped_skill_stops_and_alternatives_are_a_stretch():
+def test_a_skipped_skill_stops_and_a_second_language_is_a_stretch():
     assert "chosen to skip" in gate.stack(DOTNET, "Engineer", STRONG, {"exclude_skills": ["C#"]})["stop"][0]
-    got = gate.stack(MIXED, "Senior Software Engineer", STRONG, {})
-    assert got["stop"] == [] and got["stretch"] == ["Also asks for Go, Java as a must-have (not on your CV)"]
+    got = gate.stack(BOTH, "Senior Software Engineer", STRONG, {})
+    assert got["stop"] == [] and got["stretch"] == ["Also asks for Go as a must-have (not on your CV)"]
+
+
+def test_a_language_offered_beside_yours_is_met():
+    for text in (MIXED, ANY_OF):
+        got = gate.stack(text, "Senior AI Platform Engineer", STRONG, {})
+        assert got["stop"] == [] and got["stretch"] == [], text
+        assert not any(m["must"] for m in got["missing"])
+    assert gate.stack(ANY_OF, "Senior Go Engineer", STRONG, {})["stretch"]   # in the title, it's the job
 
 
 def test_discover_hides_and_ranks_by_it():
     prefs = discover.with_profile({"regions": ["city", "country"], "candidate_years": 7, "include_senior": True})
     job = lambda desc: {"title": "Senior Software Engineer", "company": "Acme", "location": "Bengaluru, India", "description": desc}
     assert discover.rank(job(DOTNET), STRONG, prefs)["excluded"]
+    both = discover.rank(job(BOTH), STRONG, prefs)
+    assert not both["excluded"] and any("Go" in w for w in both["fit_why"])
     mixed = discover.rank(job(MIXED), STRONG, prefs)
-    assert not mixed["excluded"] and any("Go, Java" in w for w in mixed["fit_why"])
+    assert not mixed["excluded"] and not any("Go" in w for w in mixed["fit_why"])
 
 
 def test_the_callback_card_lists_them_and_caps_a_strong_label():
