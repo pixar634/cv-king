@@ -141,6 +141,7 @@
 .chip--ok { --tone: var(--ok); } .chip--warn { --tone: var(--warn); } .chip--bad { --tone: var(--bad); } .chip--accent { --tone: var(--accent); }
 .chip--pill { min-height: 24px; padding: 2px 11px; border-radius: 999px; background: color-mix(in srgb, var(--tone) 14%, transparent); font-weight: 700; }
 .chip--muted { --tone: var(--text-3); text-decoration: line-through; text-decoration-color: var(--text-4); }
+.app-card__outreach .chip--muted { text-decoration: none; opacity: .6; }   /* a step not done yet, not a crossed-out one */
 .chip--x::after { content: "\00d7"; font-size: 14px; line-height: 1; color: var(--text-3); }
 .chip svg { width: 12px; height: 12px; flex: none; }
 .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -167,7 +168,8 @@
 /* ======================================================================
    Surfaces
    ====================================================================== */
-.card { background: var(--surface); border: 1px solid var(--line); padding: var(--s-5); }
+.card { background: var(--surface); border: 1px solid var(--line); padding: var(--s-5); border-radius: var(--radius-card); }
+.card.plunk { border-radius: 0; }   /* the 3D edges are drawn square */
 .card--flush { padding: 0; }
 .card--interactive { cursor: pointer; transition: border-color var(--dur), background-color var(--dur); }
 .card--interactive:hover { border-color: var(--line-3); }
