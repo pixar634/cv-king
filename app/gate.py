@@ -81,6 +81,47 @@ def openness(text: str, title: str = "", location: str = "", remote=None, market
     return {"state": "unclear", "why": "location unclear"}
 
 
+# Languages and the frameworks that define a stack: a job built on one you don't have is a different job.
+LANGUAGES = {"Java", "Spring Boot", ".NET", "C#", "Go", "Rust", "Ruby", "Ruby on Rails", "Scala", "C++", "Kotlin",
+             "Swift", "PHP", "Python", "TypeScript", "JavaScript", "Node.js"}
+# Wording that makes a skill a must-have even where the posting has no "Requirements" heading.
+DEMAND = re.compile(r"\b(strong|proven|solid|deep|expert|extensive|hands[\s-]?on|must|required|requirement|"
+                    r"proficien\w*|mastery|advanced|\d+\+?\s*(years?|yrs))\b", re.I)
+
+
+def stack(text: str, title: str, strong: set[str], prefs: dict) -> dict:
+    """The languages and stack frameworks a posting names that aren't on your CV.
+    {"missing": [{"name", "must"}], "skipped": [...], "stop": [...], "stretch": [...]}. A posting built on languages
+    you don't have (or have said you skip) is a different job, whatever its keyword score."""
+    from .discover import needs_skill
+    from .keywords import jd_keywords, taxonomy
+    text = text or ""
+    named = {n: k for n, k in jd_keywords(text).items() if n in LANGUAGES}
+    for n in taxonomy().find(title or ""):
+        if n in LANGUAGES and n not in named:
+            named[n] = None
+    sentences = [s for s in re.split(r"(?<=[.;!?])\s+|\n+", text) if s.strip()]
+    pats = lambda n: taxonomy().terms[n].patterns
+
+    def must(n):
+        k = named[n]
+        return (k is None or k.tier == "required"
+                or any(DEMAND.search(s) and any(p.search(s) for p in pats(n)) for s in sentences))
+    missing = [{"name": n, "must": must(n)} for n in sorted(named) if n not in strong]
+    job = {"title": title or "", "description": text}
+    skipped = [s for s in prefs.get("exclude_skills") or [] if needs_skill(job, s)]
+    have = [n for n in named if n in strong]
+    musts = [m["name"] for m in missing if m["must"]]
+    stop, stretch = [], []
+    if skipped:
+        stop.append(f"Needs {', '.join(skipped)}, which you've chosen to skip (Settings, Skip jobs that need)")
+    elif musts and not have:
+        stop.append(f"Built on {', '.join(musts)}, which isn't on your CV")
+    elif musts:
+        stretch.append(f"Also asks for {', '.join(musts)} as a must-have (not on your CV)")
+    return {"missing": missing, "skipped": skipped, "stop": stop, "stretch": stretch}
+
+
 def check(jd_text: str, title: str = "", location: str = "", market: str = "", remote=None,
           profile: dict | None = None, prefs: dict | None = None, track: str = "", company: str = "") -> dict:
     """{"verdict": "ok" | "stretch" | "stop", "reasons": [...]}: the same verdict everywhere a job can be tailored."""
@@ -96,6 +137,10 @@ def check(jd_text: str, title: str = "", location: str = "", market: str = "", r
         stops.append("Above your level: " + "; ".join(lvl["reasons"]))
     elif lvl["verdict"] == "stretch":
         stretches.append("A stretch: " + "; ".join(lvl["reasons"]))
+
+    st = stack(text, title, strong_skills(profile), prefs)
+    stops += st["stop"]
+    stretches += st["stretch"]
 
     o = openness(text, title, location, remote, market)
     if o["state"] == "closed":
@@ -118,7 +163,7 @@ def check(jd_text: str, title: str = "", location: str = "", market: str = "", r
         stretches.append(f"Wants someone who can join within about two weeks; you have {days} days' notice")
 
     verdict = "stop" if stops else "stretch" if stretches else "ok"
-    return {"verdict": verdict, "reasons": stops + stretches, "track": tid}
+    return {"verdict": verdict, "reasons": stops + stretches, "track": tid, "missing": st["missing"]}
 
 
 class NotEligible(Exception):

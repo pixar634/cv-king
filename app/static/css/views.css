@@ -454,3 +454,8 @@ body.is-setup #nav, body.is-setup #engineSeg, body.is-setup #openSettings { disp
 .chance.tone-mid { --tone: var(--neo-paccha-500); }
 .chance.tone-low { --tone: var(--warning-300); }
 .chance__note { color: var(--text-4); }
+
+/* The chance of a callback on each Pipeline card: label, band, and the first reason. */
+.app-card__chance { display: flex; align-items: baseline; gap: var(--s-2); min-width: 0; font-size: 12px; }
+.app-card__chance .num { color: var(--text-2); white-space: nowrap; }
+.app-card__why { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
