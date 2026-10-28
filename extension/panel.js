@@ -8,7 +8,7 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const S = { tab: null, ctx: null, rows: [], reports: {}, items: {}, busy: {}, granted: false, warnedEmpty: false };
+const S = { tab: null, ctx: null, rows: [], reports: {}, items: {}, busy: {}, granted: false, warnedEmpty: false, session: null, view: null };
 chrome.permissions.contains(ALL_SITES).then((g) => (S.granted = g));
 
 async function api(path, opts = {}) {
@@ -43,6 +43,55 @@ async function remember(tabId, patch) {
   try { await chrome.storage.session.set({ [key(tabId)]: m }); } catch { /* storage unavailable */ }
   if (S.ctx && S.ctx.tab.id === tabId) S.ctx.mem = m;
   return m;
+}
+
+// ---------- Easy Apply session ----------
+// You set the search and LinkedIn opens with Easy Apply jobs only. You click through the jobs yourself; the panel
+// reads each one, tailors the ones you queue, and fills the Easy Apply form for you to check and submit. Nothing
+// browses, clicks or submits on its own: LinkedIn bans that, and it's your account.
+async function loadSession() {
+  try { S.session = (await chrome.storage.local.get("session")).session || null; } catch { S.session = null; }
+  return S.session;
+}
+async function saveSession(patch) {
+  S.session = patch && { ...(S.session || {}), ...patch };
+  try { await chrome.storage.local.set({ session: S.session }); } catch { /* storage unavailable */ }
+  return S.session;
+}
+const MODES = [["remote", "Remote"], ["hybrid", "Hybrid"], ["on-site", "On-site"]];
+const WITHIN = [[1, "Past 24 hours"], [3, "Past 3 days"], [7, "Past week"], [30, "Past month"]];
+
+function sessionForm() {
+  const s = S.session || {}, modes = s.modes || ["remote", "hybrid"];
+  return `<div class="card"><span class="eyebrow">Easy Apply session</span>
+    <p class="sub" style="margin:0">Opens LinkedIn's search with Easy Apply jobs only. Click through the jobs yourself: I read each one, tailor a CV for the ones you queue, and fill the form when you press Easy Apply. You check it and submit.</p>
+    <label class="need"><span>Title</span><input id="sTitle" value="${esc(s.title || "")}" placeholder="Lead AI Engineer"></label>
+    <div class="need"><span>Where you'd work</span><div class="row">${MODES.map(([v, l]) => `<label class="check"><input type="checkbox" data-mode="${v}" ${modes.includes(v) ? "checked" : ""}>${l}</label>`).join("")}</div></div>
+    <label class="need"><span>City or country</span><input id="sPlace" value="${esc(s.place || "")}" placeholder="Bengaluru, or India for remote"></label>
+    <label class="need"><span>Posted</span><select id="sDays">${WITHIN.map(([d, l]) => `<option value="${d}" ${Number(s.days || 3) === d ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+    <button class="btn btn--primary btn--block" id="sStart">${s.active ? "Search again" : "Start the session"}</button>
+    <button class="btn btn--ghost btn--block" id="sCancel">Back</button></div>`;
+}
+
+function sessionCard() {
+  const s = S.session;
+  const where = [...MODES.filter(([v]) => (s.modes || []).includes(v)).map(([, l]) => l), s.place].filter(Boolean).join(" · ");
+  return `<div class="card session"><div class="row"><span class="eyebrow">Easy Apply session</span><span class="meta">${esc(s.title)}${where ? ` · ${esc(where)}` : ""}</span></div>
+    <div class="row"><button class="btn btn--sm" id="sOpen">Open the search</button><button class="btn btn--sm btn--ghost" id="sEdit">Change it</button>
+      <button class="btn btn--sm btn--ghost" id="sEnd">End session</button></div></div>`;
+}
+
+async function startSession() {
+  const title = $("#sTitle").value.trim();
+  if (!title) return $("#sTitle").focus();
+  const filters = { title, place: $("#sPlace").value.trim(), days: Number($("#sDays").value),
+    modes: [...document.querySelectorAll("[data-mode]")].filter((b) => b.checked).map((b) => b.dataset.mode) };
+  try {
+    const { url } = await api("/api/session/search", { body: filters });
+    await saveSession({ ...filters, active: true, url, queue: S.session?.active ? S.session.queue || [] : [] });
+    S.view = null;
+    await chrome.tabs.update(S.tab.id, { url });
+  } catch (e) { draw(`<div class="card"><div class="notice bad">${esc(e.message)}</div></div>`); }
 }
 
 // Reading every site needs your OK once; without it the panel can still read the tab you opened it on.
@@ -111,6 +160,7 @@ async function doRefresh() {
   if (state.setup) return draw(`<div class="card"><h2>Finish setting up first</h2><p class="sub">JobMagnet hasn't read your CV yet.</p>
     <a class="btn btn--primary" href="${SERVER}/" target="_blank">Open JobMagnet</a></div>`);
   S.rows = await api("/api/apps").catch(() => []);
+  await loadSession();
   const mem = await memory(tab.id);
   let probe = null;
   probe = await probeTab(tab.id);
@@ -143,6 +193,8 @@ function render() {
   const { tab, mem, probe, isForm, here, app } = c;
   const busy = S.busy[tab.id];
   const parts = [];
+  if (S.view === "session") return finish([sessionForm()]);
+  if (S.session?.active) parts.push(sessionCard());
   if (busy) parts.push(`<div class="card"><div class="progress"></div><div class="sub">${esc(busy)}</div></div>`);
   if (!probe) {
     parts.push(`<div class="card"><h2>Open a job posting</h2><p class="sub">I can't read this page. Open a job posting or an application form, then press the button again.</p>
@@ -169,6 +221,11 @@ function finish(parts) {
   draw(parts.join(""));
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
   on("access", () => askAccess().then(refresh));
+  on("sStart", startSession);
+  on("sCancel", () => { S.view = null; render(); });
+  on("sEdit", () => { S.view = "session"; render(); });
+  on("sOpen", () => chrome.tabs.update(S.tab.id, { url: S.session.url }));
+  on("sEnd", () => saveSession(null).then(render));
   on("tailor", () => tailorHere(false));
   on("readOnly", () => tailorHere(true));
   on("tailorForce", () => tailorHere(false, "", true));
@@ -545,6 +602,8 @@ $("#reload").onclick = async () => {
   if (S.ctx?.mem?.fit) await remember(S.ctx.tab.id, { fit: null });   // score the posting again, in case the profile changed
   try { await doRefresh(); } finally { b.classList.remove("spin"); }
 };
+
+$("#sessionBtn").onclick = async () => { await loadSession(); S.view = S.view === "session" ? null : "session"; if (S.ctx) render(); };
 
 chrome.tabs.onActivated.addListener(refresh);
 chrome.tabs.onUpdated.addListener((id, info) => { if (id === S.tab?.id && (info.status === "complete" || info.url)) refresh(); });
