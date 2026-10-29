@@ -1065,12 +1065,14 @@ async function loadFound() {
   const isNew = (j) => lastScan && (j.first_seen || "") >= lastScan.at.slice(0, 16) && scanLog.length > 1;
   const card = (j) => {
     const d = daysAgo(j.posted);
-    const where = [j.company || j.source, j.location, j.remote ? "remote" : ""].filter(Boolean).map(esc).join(" · ");
+    const where = [j.company || j.source, j.location].filter(Boolean).map(esc).join(" · ");
+    const remote = j.remote || /\bremote\b|work from home|\bwfh\b/i.test(j.location || "");
     return `<div class="card card--interactive job-card ${S.selected.has(j.id) ? "sel" : ""}" data-id="${j.id}">
       <div class="job-card__top">
         <input type="checkbox" ${S.selected.has(j.id) ? "checked" : ""} aria-label="Select ${esc(j.title)}">
         <span class="logo logo--sm">${initial(j.company || j.source)}</span>
         <span class="tag ${d === null ? "tag--warn" : d <= 3 ? "tag--ok" : ""}">${d === null ? "Date unknown" : ago(j.posted)}</span>
+        ${remote ? `<span class="tag tag--accent" title="A remote job: work from where you live">Remote</span>` : ""}
         ${isNew(j) ? `<span class="tag tag--accent tag--solid">New</span>` : ""}
         ${j.pay === "meets" ? `<span class="tag tag--ok" title="States pay at or above your floor">Pay meets</span>` : j.pay === "likely" ? `<span class="tag" title="Pay range or company tier reaches your floor">Pay likely</span>` : ""}
         ${j.open === "unclear" ? `<span class="tag tag--warn" title="Doesn't say if it hires where you live, or if it sponsors a visa">Check eligibility</span>` : ""}
