@@ -36,11 +36,11 @@
 #v-pipeline :is(input[type=search], select):focus { box-shadow: var(--nm-press-sm), 0 0 0 1.5px var(--accent); }
 #v-pipeline .pipe-search { height: 48px; padding: 0 18px; border-radius: 14px; box-shadow: var(--nm-press); font-size: 14px; }
 
-/* ---- buttons: raised, pressing in when clicked; ghost ones rise on hover ---- */
-#v-pipeline .btn:not(.btn--primary):not(.btn--accent) { border: 0; border-radius: 10px; background: var(--nm-base); box-shadow: var(--nm-raise-sm);
+/* ---- buttons: raised, pressing in when clicked; ghost ones rise on hover. Text links ("Profile") stay links ---- */
+#v-pipeline .btn:not(.btn--primary):not(.btn--accent):not(.btn--link) { border: 0; border-radius: 10px; background: var(--nm-base); box-shadow: var(--nm-raise-sm);
   transition: box-shadow .15s ease, color .2s ease; }
-#v-pipeline .btn:not(.btn--primary):not(.btn--accent):hover { color: var(--accent); }
-#v-pipeline .btn:not(.btn--primary):not(.btn--accent):active { box-shadow: var(--nm-press-sm); }
+#v-pipeline .btn:not(.btn--primary):not(.btn--accent):not(.btn--link):hover { color: var(--accent); }
+#v-pipeline .btn:not(.btn--primary):not(.btn--accent):not(.btn--link):active { box-shadow: var(--nm-press-sm); }
 #v-pipeline .btn--ghost { box-shadow: none !important; }
 #v-pipeline .btn--ghost:hover { box-shadow: var(--nm-raise-sm) !important; color: var(--text) !important; }
 
