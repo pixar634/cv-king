@@ -17,9 +17,26 @@ def test_places_show_only_with_rest_of_the_world_on():
     assert not rank(city_only)["excluded"]
     assert rank(city_only, location="Berlin, Germany")["excluded"]
     world = {"regions": ["city", "world"], "places": ["Germany"]}
-    assert not rank(world, location="Berlin, Germany")["excluded"]
-    assert rank(world, location="London, United Kingdom")["excluded"]          # abroad, but not one of your places
-    assert not rank({"regions": ["world"]}, location="London, United Kingdom")["excluded"]   # no places: every target
+    berlin = rank(world, location="Berlin, Germany")
+    assert not berlin["excluded"] and "a place you'd move to" in berlin["reasons"]
+
+
+def test_abroad_anywhere_shows_when_it_sponsors_and_silent_only_in_your_places():
+    world = {"regions": ["world"], "places": ["Germany"]}
+    silent = rank(world, location="Sydney, Australia")
+    assert silent["excluded"] and silent["reasons"] == [discover.ABROAD_SILENT]
+    assert not rank(world, location="Sydney, Australia", desc=DESC + " Visa sponsorship is available.")["excluded"]
+    assert rank(world, location="Austin, Texas")["excluded"]                     # US onsite stays out
+
+
+def test_remote_from_any_country_shows_when_it_hires_where_you_live():
+    remote = {"regions": ["remote"]}
+    assert not rank(remote, location="Remote, Australia", desc=DESC + " Open to candidates across APAC.")["excluded"]
+    assert not rank(remote, location="Remote - New Zealand", desc=DESC + " We also hire in India.")["excluded"]
+    local = rank(remote, location="Remote, Australia")
+    assert local["excluded"] and "Remote within another country" in local["reasons"][0]
+    assert rank(remote, location="Remote", desc=DESC + " Our office is in Indianapolis.")["open"] == "unclear"
+    assert rank({"regions": ["city"]}, location="Remote, Australia", desc=DESC + " Worldwide.")["excluded"]   # Remote off
 
 
 def test_a_listing_without_a_location_is_placed_by_its_text():

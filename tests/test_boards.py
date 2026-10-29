@@ -101,7 +101,7 @@ def test_work_in_finland_keeps_your_roles_and_describes_what_it_may(monkeypatch)
 
 
 def test_a_job_with_no_description_is_unscored_not_forty_percent():
-    p = prefs(regions=["city", "country", "remote", "world"])
+    p = prefs(regions=["city", "country", "remote", "world"], places=["Amsterdam, Netherlands"])
     bare = ranked(AMS | {"description": ""}, p)
     assert bare["unscored"] and not bare["excluded"]
     assert not ranked(AMS, p)["unscored"]
