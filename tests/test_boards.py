@@ -9,7 +9,7 @@ def prefs(**kw):
 
 def ranked(job, p):
     ev = discover.strong_skills(load_profile())
-    return discover.rank(job, ev, p, discover.rank_signature(p, ev))
+    return discover.apply_regions(discover.rank(job, ev, p, discover.rank_signature(p, ev)), set(discover.regions(p)))
 
 
 AMS = {"id": "j1", "title": "Lead Software Engineer", "company": "Acme", "location": "Amsterdam, North Holland, Netherlands",
