@@ -968,7 +968,7 @@ function renderAreaBar() {
   const regions = new Set(S.prefs.regions || regionList().map((r) => r[0]));
   const zones = Object.values(S.state.areas || {})[0] || [];
   $("#areaBar").innerHTML = `<div class="filter-group"><span class="eyebrow">Region</span><div class="chip-row">
-    ${regionList().map(([k, label]) => `<button data-reg="${k}" class="chip ${regions.has(k) ? "on" : ""}" ${k === "world" ? 'title="UK, EU, the Gulf and Singapore: your visa targets. US roles stay out."' : ""}>${label}</button>`).join("")}</div></div>
+    ${regionList().map(([k, label]) => `<button data-reg="${k}" class="chip ${regions.has(k) ? "on" : ""}" ${k === "world" ? `title="${(S.prefs.places || []).length ? "The places you'd move to (Settings). US roles stay out." : "UK, EU, the Gulf and Singapore: your visa targets. US roles stay out."}"` : ""}>${label}</button>`).join("")}</div></div>
     ${regions.has("city") && zones.length ? `<div class="filter-group"><span class="eyebrow">${esc(S.state.home.city)} area</span><div class="chip-row">
       ${zones.map((z) => `<button data-z="${esc(z)}" class="chip ${sel.has(z) ? "on" : ""}">${esc(z)}</button>`).join("")}</div>
       ${sel.size ? `<label class="check"><input type="checkbox" id="areaStrict" ${strict ? "checked" : ""}> Hide ${esc(S.state.home.city)} jobs that don't say where</label>` : ""}</div>` : ""}`;

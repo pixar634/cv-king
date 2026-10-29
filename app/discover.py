@@ -646,7 +646,8 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 26
+RANK_VERSION = 27
+MID, SENIOR = 2, 3     # strategy.LEVEL_WORDS ranks: "SDE II", "Senior"
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "regions", "places", "pay_floor_home_lpa", "pay_floor_remote_lpa", "pay_floor_abroad_eur", "pay_tiers")
 
@@ -800,11 +801,22 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     city = strategy.city_pattern()
     bucket = {"home": "city" if city and city.search(job.get("location") or "") else "country",
               "abroad": "world", "remote": "remote", "unknown": "unknown"}.get(reg, "excluded")
+    # Places you'd move to narrow "Rest of the world" to themselves; with that region off, they're off too.
     places = places_pattern(prefs)
-    if places and reg != "home" and places.search(job.get("location") or ""):
-        bucket, wanted = "place", wanted | {"place"}
+    if places and reg != "home":
+        if places.search(job.get("location") or ""):
+            bucket = "world"
+        elif bucket == "world":
+            bucket = "excluded"
+    # No location on the listing: the posting's own text says where. Until it's read, the job stays listed.
+    if bucket == "unknown" and len(desc) >= NO_TEXT:
+        head = desc[:3000]
+        bucket = ("city" if city and city.search(head) else "country" if home_country_pattern().search(head)
+                  else "unknown" if wanted & {"remote", "world"} else "excluded")
     if bucket == "excluded" or (bucket != "unknown" and bucket not in wanted):
-        return job | {"match": 0, "reasons": [f"outside your regions ({(job.get('location') or '')[:40]})"], "excluded": True}
+        where = (job.get("location") or "")[:40]
+        return job | {"match": 0, "reasons": [f"outside your regions ({where})" if where else "doesn't say where it is"],
+                      "excluded": True}
     for skill in prefs.get("exclude_skills") or []:
         if needs_skill(job, skill):
             return job | {"match": 0, "reasons": [f"needs {skill}"], "excluded": True}
@@ -830,7 +842,13 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     floor = min(mine, prefs.get("_floor", mine))
     named = strategy.title_level(title, company=job.get("company") or "")
     sideways = strategy.lateral(title)
-    if named is not None and named < floor and not sideways and not prefs.get("include_senior"):
+    from .fit import requirements
+    if named is None and not sideways and (asked := requirements(desc)["years"]) is not None and asked <= 6:
+        # A title with no level word ("Software Development Engineer"): the years it asks for say the level.
+        named = MID if asked <= 4 else SENIOR
+    # "Include Senior-level titles" lets Senior in, never the levels below it.
+    if (named is not None and named < floor and not sideways
+            and not (prefs.get("include_senior") and named >= SENIOR)):
         return job | {"match": 0, "reasons": ["below your level"], "excluded": True}
     target = bool(strategy.matching_tracks(title, tracks))
     reasons.append("target role" if target else "related role")

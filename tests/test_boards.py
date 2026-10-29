@@ -17,15 +17,14 @@ AMS = {"id": "j1", "title": "Lead Software Engineer", "company": "Acme", "locati
        "description": "Python, FastAPI, React, TypeScript, AWS and Kubernetes on our platform. " * 8}
 
 
-def test_a_place_you_would_move_to_is_wanted_without_the_abroad_switch():
-    assert ranked(AMS, prefs(regions=["city", "country", "remote"]))["excluded"]
-    got = ranked(AMS, prefs(regions=["city", "country", "remote"], places=["Amsterdam, Netherlands"]))
-    assert not got["excluded"]
+def test_a_place_you_would_move_to_needs_the_abroad_switch():
+    assert ranked(AMS, prefs(regions=["city", "country", "remote"], places=["Amsterdam, Netherlands"]))["excluded"]
+    assert not ranked(AMS, prefs(regions=["world"], places=["Amsterdam, Netherlands"]))["excluded"]
 
 
 def test_a_place_matches_on_its_country_alone():
     job = AMS | {"location": "Netherlands"}
-    assert not ranked(job, prefs(regions=["remote"], places=["Amsterdam, Netherlands"]))["excluded"]
+    assert not ranked(job, prefs(regions=["world"], places=["Amsterdam, Netherlands"]))["excluded"]
 
 
 def test_indeed_country_for_a_place():
