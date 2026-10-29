@@ -63,3 +63,8 @@
 }
 #v-pipeline details[open]::details-content { block-size: auto; opacity: 1; }
 @media (prefers-reduced-motion: reduce) { #v-pipeline details::details-content { transition: none; } }
+
+/* ---- room between the stage list and the board: the raised shadows need it, and the list's scroll area would
+   otherwise clip them at its edges ---- */
+#v-pipeline .split { gap: var(--s-12); }
+#v-pipeline .split__nav { padding: 8px 14px 14px 8px; margin: -8px -14px 0 -8px; }
