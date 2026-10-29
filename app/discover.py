@@ -648,7 +648,7 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 29
+RANK_VERSION = 30
 MID, SENIOR = 2, 3     # strategy.LEVEL_WORDS ranks: "SDE II", "Senior"
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "regions", "places", "pay_floor_home_lpa", "pay_floor_remote_lpa", "pay_floor_abroad_eur", "pay_tiers")
@@ -747,6 +747,11 @@ US_ONLY = re.compile(r"remote[\s,-]*(us|usa|united states|canada|amer)\b|\b(us|u
 
 
 # Words every JD shares (communication, mentoring, scalability...): they say nothing about fit or level.
+OTHER_FIELD = re.compile(
+    r"\b(security|cyber\s*security|compliance|devops|dev\s*ops|devsecops|site reliability|sre|network(ing)?|"
+    r"virtuali[sz]ation|infrastructure|ux|hardware|mechanical|electrical|civil|chemical|manufacturing|quality|"
+    r"validation|verification|firmware|rf|asic|fpga|silicon|test|systems? admin\w*|it support|help\s*desk|"
+    r"database admin\w*|dba|release|build)\b", re.I)
 GENERIC = {"Communication", "Problem solving", "Ownership", "Product thinking", "Clean code", "Mentoring",
            "Stakeholder management", "Scalability", "Technical documentation", "Agile", "Requirements gathering",
            "Data visualisation", "Enterprise software", "Startup experience", "Technical leadership", "Code review",
@@ -810,6 +815,10 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
         return job | {"match": 0, "reasons": ["not a target role"], "excluded": True}
     if strategy.parked_only(title):
         return job | {"match": 0, "reasons": ["a parked track: for a referral, not a cold application"], "excluded": True}
+    # "Engineer" alone lets in every kind of engineering: one that names another field is a different job,
+    # unless one of your own tracks covers it.
+    if (m := OTHER_FIELD.search(title)) and not strategy.matching_tracks(title, tracks):
+        return job | {"match": 0, "reasons": [f"another kind of engineering ({m.group(0)})"], "excluded": True}
     reg = region(job)
     wanted = set(regions(prefs))
     city = strategy.city_pattern()
@@ -1787,7 +1796,7 @@ def job_detail(job_id: str, prefs: dict | None = None) -> dict:
     # A job read from a recruiter's email has its text already; its link is a Gmail message, never fetched.
     if (j.get("_trimmed") or len(j.get("description", "")) < SNIPPET) and j.get("method") != "recruiter mail":
         short = len(j.get("description", ""))
-        j["_read_tried"] = dt.date.today().isoformat()
+        j["_read_tried"] = dt.datetime.now().isoformat(timespec="seconds")
         _read_posting(j)
         if len(j.get("description", "")) > short:
             # Scored on a snippet: rank it again on the full posting, so the card shows what Tailor will.
@@ -1837,13 +1846,13 @@ def _read_posting(j: dict) -> None:
 
 
 NO_TEXT = 300         # characters: below this a listing has no description to check, only a title
-READ_RETRY_DAYS = 3   # a posting that wouldn't load is tried again after this, not on every visit
+READ_RETRY_HOURS = 6  # a posting that wouldn't load (often a busy site) is tried again after this, not on every visit
 _reading: dict[str, dict] = {}
 
 
 def unread(j: dict) -> bool:
     """Listed with no full posting yet, so the checks that read it (languages, visa, level) haven't run."""
-    retry = (dt.date.today() - dt.timedelta(days=READ_RETRY_DAYS)).isoformat()
+    retry = (dt.datetime.now() - dt.timedelta(hours=READ_RETRY_HOURS)).isoformat(timespec="seconds")
     return (len(j.get("description", "")) < NO_TEXT and j.get("method") != "recruiter mail"
             and (j.get("_read_tried") or "") < retry)
 
@@ -1866,7 +1875,7 @@ def _start_reading(ids: list[str]) -> None:
                     with _lock:
                         state = _load_jobs()
                         if jid in state["jobs"]:
-                            state["jobs"][jid]["_read_tried"] = dt.date.today().isoformat()
+                            state["jobs"][jid]["_read_tried"] = dt.datetime.now().isoformat(timespec="seconds")
                             _save_jobs(state)
                 p["done"] = i
         finally:

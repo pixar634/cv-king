@@ -59,3 +59,20 @@ def test_include_senior_lets_senior_in_and_nothing_below():
     assert not rank(prefs, title="Senior Software Engineer")["excluded"]
     assert rank(prefs, title="Software Development Engineer II")["excluded"]
     assert rank(prefs, title="Associate Software Engineer")["excluded"]
+
+
+def test_another_kind_of_engineering_is_hidden_unless_a_track_covers_it():
+    from app import strategy
+    s = strategy.load()
+    s["tracks"]["ic_lead"]["also_match"] = ["software engineer", "platform engineer"]   # as real tracks are: no bare "engineer"
+    strategy.save(s)
+    prefs = {"regions": ["city"], "include_senior": True}
+    for title in ("Senior Corporate Security Engineer", "Senior Site Reliability Engineer", "Lead DevOps Engineer",
+                  "Senior Compliance Engineer", "Lead Network Engineer"):
+        got = rank(prefs, title=title)
+        assert got["excluded"] and got["reasons"][0].startswith("another kind of engineering"), title
+    assert not rank(prefs, title="Lead Software Engineer")["excluded"]
+    assert not rank(prefs, title="Lead Platform Engineer")["excluded"]
+    s["tracks"]["ic_lead"]["also_match"] += ["security engineer"]
+    strategy.save(s)
+    assert not rank(prefs, title="Senior Corporate Security Engineer")["excluded"]   # your own track: kept
