@@ -25,26 +25,32 @@ def test_built_on_languages_you_dont_have_stops():
     assert {m["name"]: m["must"] for m in got["missing"]} == {".NET": True, "C#": True}
 
 
-def test_a_skipped_skill_stops_and_a_second_language_is_a_stretch():
+def test_a_skipped_skill_stops_and_so_does_a_second_must_have_language():
     assert "chosen to skip" in gate.stack(DOTNET, "Engineer", STRONG, {"exclude_skills": ["C#"]})["stop"][0]
     got = gate.stack(BOTH, "Senior Software Engineer", STRONG, {})
-    assert got["stop"] == [] and got["stretch"] == ["Also asks for Go as a must-have (not on your CV)"]
+    assert got["stop"] == ["Also needs Go as a must-have, which isn't on your CV"]
+
+
+def test_a_must_have_language_stops_though_yours_is_named_elsewhere():
+    # A real posting's shape: Java is demanded; Python turns up only in a nice-to-have line.
+    text = ("Strong experience in Java, Spring Boot and Microservices.\nDesign and build travel booking services.\n"
+            "Nice to have: scripting in Python for tooling.\n") * 2
+    assert gate.stack(text, "Senior Software Engineer - Backend", STRONG, {})["stop"]
 
 
 def test_a_language_offered_beside_yours_is_met():
     for text in (MIXED, ANY_OF):
         got = gate.stack(text, "Senior AI Platform Engineer", STRONG, {})
-        assert got["stop"] == [] and got["stretch"] == [], text
+        assert got["stop"] == [], text
         assert not any(m["must"] for m in got["missing"])
-    assert gate.stack(ANY_OF, "Senior Go Engineer", STRONG, {})["stretch"]   # in the title, it's the job
+    assert gate.stack(ANY_OF, "Senior Go Engineer", STRONG, {})["stop"]   # in the title, it's the job
 
 
 def test_discover_hides_and_ranks_by_it():
     prefs = discover.with_profile({"regions": ["city", "country"], "candidate_years": 7, "include_senior": True})
     job = lambda desc: {"title": "Senior Software Engineer", "company": "Acme", "location": "Bengaluru, India", "description": desc}
     assert discover.rank(job(DOTNET), STRONG, prefs)["excluded"]
-    both = discover.rank(job(BOTH), STRONG, prefs)
-    assert not both["excluded"] and any("Go" in w for w in both["fit_why"])
+    assert discover.rank(job(BOTH), STRONG, prefs)["excluded"]
     mixed = discover.rank(job(MIXED), STRONG, prefs)
     assert not mixed["excluded"] and not any("Go" in w for w in mixed["fit_why"])
 

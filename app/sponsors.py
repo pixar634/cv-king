@@ -25,6 +25,7 @@ SUFFIX = re.compile(r"\b(ltd|limited|llp|plc|inc|incorporated|llc|corp|corporati
 UK_PLACES = re.compile(r"united kingdom|\buk\b|\bu\.k\.|great britain|england|scotland|wales|northern ireland|london|"
                        r"manchester|edinburgh|cambridge|oxford|bristol|glasgow|belfast|leeds|birmingham|reading", re.I)
 NL_PLACES = re.compile(r"netherlands|holland|amsterdam|rotterdam|utrecht|eindhoven|the hague|den haag|delft|leiden", re.I)
+TRADING_AS = re.compile(r" (?:t a|ta|trading as) ")   # in a normalised name: "t/a" has become "t a"
 _lock = threading.Lock()
 _loaded: dict = {}
 
@@ -92,7 +93,13 @@ def refresh_soon() -> None:
 
 def _lists() -> dict:
     if not _loaded:
-        _loaded.update({k: v for k, v in _read().items() if k in ("uk", "nl", "fetched")})
+        data = _read()
+        _loaded.update({k: v for k, v in data.items() if k == "fetched"})
+        for key in ("uk", "nl"):
+            if key in data:
+                # "Roofoods t/a Deliveroo": postings use the trading name, so both names count.
+                _loaded[key] = sorted({n for name in data[key] for n in TRADING_AS.split(name) if n})
+                _loaded[f"{key}_joined"] = {n.replace(" ", "") for n in _loaded[key]}
     return _loaded
 
 
@@ -108,7 +115,12 @@ def on_register(company: str, register: str) -> bool | None:
     i = bisect.bisect_left(names, c)
     if i < len(names) and names[i] == c:
         return True
-    return len(c) >= 4 and i < len(names) and names[i].startswith(c + " ")
+    if len(c) >= 4 and i < len(names) and names[i].startswith(c + " "):
+        return True
+    # A job board's slug runs words together and adds to them ("Sohohouseco" is "Soho House"): spaces aside,
+    # a posting name that starts with a registered name of 6+ letters counts.
+    joined, flat = _lists().get(f"{register}_joined") or set(), c.replace(" ", "")
+    return any(flat[:k] in joined for k in range(6, len(flat) + 1))
 
 
 def check(company: str, location: str) -> dict | None:

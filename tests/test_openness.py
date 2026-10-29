@@ -19,6 +19,13 @@ D = "Build product features in Python and React. "
     (D + "This is a 6 month contract role.", "Remote", True, "closed"),
     (D + "We offer visa sponsorship is available and relocation support.", "Berlin, Germany", False, "open"),
     (D + "We are unable to sponsor visas.", "Berlin, Germany", False, "closed"),
+    (D + "The company does not offer visa sponsorship.", "Berlin, Germany", False, "closed"),
+    (D + "We will not sponsor work visas for this role.", "Berlin, Germany", False, "closed"),
+    (D + "Please note that sponsorship is not available.", "Berlin, Germany", False, "closed"),
+    (D + "We're not able to provide visa sponsorship.", "Berlin, Germany", False, "closed"),
+    (D + "Unfortunately, no visa sponsorship for this position.", "Berlin, Germany", False, "closed"),
+    (D + "You must have the full right to work in Germany.", "Berlin, Germany", False, "closed"),
+    (D + "Candidates who do not require sponsorship are welcome too; we sponsor visas.", "Berlin, Germany", False, "open"),
     (D, "Berlin, Germany", False, "unclear"),
     (D, "Remote, Germany", True, "closed"),
 ])

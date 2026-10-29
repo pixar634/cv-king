@@ -598,9 +598,14 @@ def from_people(value: str, days: int) -> tuple[str, list[dict]]:
 
 # ---------- ranking ----------
 
-NO_SPONSOR = re.compile(r"(no|not able to|unable to|cannot|can't|do not|don't)\s+(offer\s+|provide\s+)?(visa\s+)?sponsor|"
-                        r"must (already )?have (the )?right to work|citizens? only|without (the need for )?sponsorship|"
+NO_SPONSOR = re.compile(r"\b(no|not able to|unable to|cannot|can not|can't|do not|don't|does not|doesn't|will not|won't|"
+                        r"are not able to|aren't able to|not in a position to)\s+(currently\s+)?(be\s+able\s+to\s+)?"
+                        r"(offer\s+|provide\s+|support\s+)?(any\s+)?(visa\s+|work\s+permit\s+)?sponsor|"
+                        r"sponsorship (is |will )?not (be )?(available|offered|provided|possible|supported)|"
+                        r"\bnot (be )?(able to )?(offer|provid|support)\w* (any )?(visa )?sponsorship|"
+                        r"must (already )?have (the |full |the full )?right to work|citizens? only|without (the need for )?sponsorship|"
                         r"permanent residents? only", re.I)
+NOT_UK_SPONSOR = "Not on the UK register of licensed sponsors, so it can't sponsor a Skilled Worker visa"
 SPONSOR = re.compile(r"visa sponsorship (is )?(available|offered|provided)|we (can |will )?sponsor|relocation (support|package|assistance)", re.I)
 INDIA = re.compile(r"bengaluru|bangalore|india|hyderabad|pune|mumbai|delhi|gurgaon|gurugram|noida|chennai|kolkata", re.I)
 REMOTE = re.compile(r"\bremote\b|work from home|anywhere|distributed", re.I)
@@ -641,7 +646,7 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 25
+RANK_VERSION = 26
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "regions", "places", "pay_floor_home_lpa", "pay_floor_remote_lpa", "pay_floor_abroad_eur", "pay_tiers")
 
@@ -892,8 +897,10 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
         if o["state"] == "unclear":
             o = {"state": "open", "why": "on a sponsor register"}
     elif reg_hit and reg_hit["register"] == "uk":
-        reasons.append("unlikely: not a licensed UK sponsor")
-        order -= 15
+        # A Skilled Worker visa needs a licensed sponsor: hidden unless the posting itself says it sponsors.
+        if not SPONSOR.search(desc):
+            return job | {"match": 0, "reasons": [NOT_UK_SPONSOR], "excluded": True, "open": "closed"}
+        reasons.append("not yet a licensed UK sponsor, though the posting offers sponsorship")
     elif reg_hit:
         reasons.append("not an IND recognised sponsor (the EU Blue Card still works)")
     # Open first; one that doesn't say is labelled and sits lower (opening it reads the full posting again).
@@ -921,10 +928,6 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
                     match=score if not unscored else 0, pay=pv, open_state=o["state"],
                     warm=(warm := _company(job.get("company")) in prefs.get("_warm", ())),
                     inbound=job.get("method") == "recruiter mail")
-    if st["stretch"]:
-        fit = fit | {"points": fit["points"] - 2, "why": fit["why"] + [st["stretch"][0][:60]]}
-        from .fitlabel import POSSIBLE, STRONG
-        fit["label"] = "Strong" if fit["points"] >= STRONG else "Possible" if fit["points"] >= POSSIBLE else "Long shot"
     order += fit["points"] * 6
     if job.get("method") == "recruiter mail":
         reasons.insert(0, "a recruiter wrote to you")
