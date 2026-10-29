@@ -110,6 +110,7 @@
         <button class="btn btn--block" id="scanIndeed" title="Searches Indeed for each of your career tracks in your city, through Indeed's Claude connector, with full job descriptions. Runs one track after another (Indeed limits calls per minute), so allow a few minutes.">Scan Indeed</button>
         <button class="btn btn--block" id="scanJobspy" title="Searches LinkedIn, Indeed, Google Jobs and Naukri with the JobSpy library, using the job titles of your career tracks and your city from your profile. These sites' terms don't allow scraping and they sometimes block it, so it can come back thin. Slow: a few minutes.">Scan with JobSpy</button>
         <div id="scanLine" hidden></div>
+        <div id="scanSkipped" hidden></div>
         <label class="field"><span class="eyebrow">Posted within</span>
           <select id="days" class="control--sm">
             <option value="1">Last 24 hours</option><option value="3">Last 3 days</option><option value="7">Last 7 days</option>

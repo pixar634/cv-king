@@ -1239,8 +1239,10 @@ def favourite_add(body: dict = Body(...)):
 def scan_start(body: dict = Body(...)):
     prefs = _prefs(load_profile())
     days = int(body.get("days") or prefs["days"])
+    force = bool(body.get("force"))   # "Scan them anyway": read the sources skipped as recent or out of your regions
     if body.get("jobspy"):
-        return {"job": start_job("scan", lambda d, p, progress: discover.scan_jobspy(d, p, progress), days, prefs)}
+        return {"job": start_job("scan", lambda d, p, progress: discover.scan_jobspy(d, p, progress, force=force),
+                                 days, prefs)}
     ids = body.get("source_ids")
     if body.get("indeed"):
         ids = [s["id"] for s in discover.ensure_indeed_sources(prefs)]
@@ -1248,7 +1250,7 @@ def scan_start(body: dict = Body(...)):
         ids = [s["id"] for s in discover.load_sources() if s.get("favourite")]
         if not ids:
             raise HTTPException(400, "Add a favourite company in Settings first.")
-    return {"job": start_job("scan", lambda ids, d, p, progress: discover.scan(ids, d, p, progress=progress),
+    return {"job": start_job("scan", lambda ids, d, p, progress: discover.scan(ids, d, p, progress=progress, force=force),
                              ids, days, prefs)}
 
 
