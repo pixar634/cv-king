@@ -8,7 +8,7 @@ with the reason, and "Tailor anyway" (say, with a referral) goes through.
 import re
 
 from . import strategy
-from .discover import NO_SPONSOR, NOT_UK_SPONSOR, SPONSOR, US_ONLY, region
+from .discover import NO_SPONSOR, NOT_UK_SPONSOR, REMOTE_WORDS, SPONSOR, US_ONLY, region
 from .fit import level_check, strong_skills
 from .profile import experience_months, notice_days, release_note, wants_immediate
 
@@ -60,13 +60,19 @@ def openness(text: str, title: str = "", location: str = "", remote=None, market
         return {"state": "open", "why": "at home"}
     home = home_market()
     both = f"{location}\n{text}"
-    if market == "remote" or where == "remote" or (remote and where not in ("abroad", "us")):
+    # Remote from anywhere (Australia, Europe, a US startup) counts when the posting hires where you live.
+    if market == "remote" or where == "remote" or remote or REMOTE_WORDS.search(location or ""):
         closed = RESIDENTS_ONLY.search(both)
         said = closed.group(0) if closed else location if US_ONLY.search(location or "") else ""
         if OPEN_TO_HOME.search(both) or _home_named(text):
             return {"state": "open", "why": "remote, open to where you live"}
+        if SPONSOR.search(text):
+            return {"state": "open", "why": "sponsors visas or helps relocate"}
         if said:
             return {"state": "closed", "why": f"Remote, but not open to where you live (\"{said.strip()}\")"}
+        if where in ("abroad", "us", "other"):
+            return {"state": "closed", "why": f"Remote within another country (\"{location.strip()[:40]}\"): those teams "
+                                              "hire people who already live there"}
         return {"state": "unclear", "why": "remote, doesn't say if it hires where you live"}
     if market not in ("", home) or where in ("abroad", "us", "other"):
         if m := NO_SPONSOR.search(text):
@@ -75,8 +81,6 @@ def openness(text: str, title: str = "", location: str = "", remote=None, market
             return {"state": "open", "why": "sponsors visas or helps relocate"}
         if m := RESIDENTS_ONLY.search(both):
             return {"state": "closed", "why": f"A job abroad for people who already live there (\"{m.group(0).strip()}\")"}
-        if remote or re.search(r"\bremote\b", location or "", re.I):
-            return {"state": "closed", "why": "Remote within another country: those teams hire people who already live there"}
         return {"state": "unclear", "why": "abroad, doesn't say if it sponsors a visa"}
     return {"state": "unclear", "why": "location unclear"}
 
@@ -156,7 +160,7 @@ def check(jd_text: str, title: str = "", location: str = "", market: str = "", r
     o = openness(text, title, location, remote, market)
     if o["state"] == "closed":
         stops.append(o["why"])
-    elif o["state"] != "open" or o["why"] != "at home":
+    elif o["why"] != "at home" and not (remote or market == "remote" or REMOTE_WORDS.search(location or "")):
         from .sponsors import check as sponsor_check
         hit = sponsor_check(company, location)
         if hit and hit["register"] == "uk" and not hit["listed"] and not SPONSOR.search(text):

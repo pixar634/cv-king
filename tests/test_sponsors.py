@@ -58,3 +58,10 @@ def test_missing_lists_say_nothing(tmp_path, monkeypatch):
     monkeypatch.setattr(sponsors, "CACHE", tmp_path / "none.json")
     sponsors._loaded.clear()
     assert sponsors.check("Monzo", "London") is None
+
+
+def test_a_remote_job_needs_no_sponsor():
+    prefs = discover.with_profile({"regions": ["remote"], "candidate_years": 7, "include_senior": True})
+    job = {"title": "Software Engineer", "company": "Revolut", "location": "Remote, United Kingdom",
+           "description": "Build product features in Python and React. We hire worldwide. " * 10}
+    assert not discover.rank(job, {"Python", "React"}, prefs)["excluded"]

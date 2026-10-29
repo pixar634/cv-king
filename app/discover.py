@@ -605,9 +605,11 @@ NO_SPONSOR = re.compile(r"\b(no|not able to|unable to|cannot|can not|can't|do no
                         r"\bnot (be )?(able to )?(offer|provid|support)\w* (any )?(visa )?sponsorship|"
                         r"must (already )?have (the |full |the full )?right to work|citizens? only|without (the need for )?sponsorship|"
                         r"permanent residents? only", re.I)
-NOT_UK_SPONSOR = "Not on the UK register of licensed sponsors, so it can't sponsor a Skilled Worker visa"
+ABROAD_SILENT = "abroad, doesn't say it sponsors a visa, and not one of the places you'd move to"
+NOT_UK_SPONSOR ="Not on the UK register of licensed sponsors, so it can't sponsor a Skilled Worker visa"
 SPONSOR = re.compile(r"visa sponsorship (is )?(available|offered|provided)|we (can |will )?sponsor|relocation (support|package|assistance)", re.I)
-INDIA = re.compile(r"bengaluru|bangalore|india|hyderabad|pune|mumbai|delhi|gurgaon|gurugram|noida|chennai|kolkata", re.I)
+REMOTE_WORDS = re.compile(r"\bremote\b|work from home|\bwfh\b", re.I)   # a location that says the job is remote
+INDIA = re.compile(r"\b(bengaluru|bangalore|india|hyderabad|pune|mumbai|delhi|gurgaon|gurugram|noida|chennai|kolkata)\b", re.I)
 REMOTE = re.compile(r"\bremote\b|work from home|anywhere|distributed", re.I)
 ABROAD_OK = re.compile(r"united kingdom|\buk\b|england|scotland|london|manchester|edinburgh|cambridge|dublin|ireland|"
                        r"amsterdam|netherlands|rotterdam|berlin|munich|hamburg|germany|paris|france|madrid|barcelona|spain|"
@@ -646,7 +648,7 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 27
+RANK_VERSION = 28
 MID, SENIOR = 2, 3     # strategy.LEVEL_WORDS ranks: "SDE II", "Senior"
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "regions", "places", "pay_floor_home_lpa", "pay_floor_remote_lpa", "pay_floor_abroad_eur", "pay_tiers")
@@ -799,15 +801,16 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     reg = region(job)
     wanted = set(regions(prefs))
     city = strategy.city_pattern()
-    bucket = {"home": "city" if city and city.search(job.get("location") or "") else "country",
-              "abroad": "world", "remote": "remote", "unknown": "unknown"}.get(reg, "excluded")
-    # Places you'd move to narrow "Rest of the world" to themselves; with that region off, they're off too.
+    loc = job.get("location") or ""
+    # Remote is one region wherever the company sits ("Remote, Australia"); whether it hires where you live is
+    # read from the posting below. Onsite abroad is any country but the US, where sponsorship is a lottery.
+    if reg != "home" and (reg == "remote" or job.get("remote") or REMOTE_WORDS.search(loc)):
+        bucket = "remote"
+    else:
+        bucket = {"home": "city" if city and city.search(loc) else "country", "abroad": "world", "other": "world",
+                  "unknown": "unknown"}.get(reg, "excluded")
     places = places_pattern(prefs)
-    if places and reg != "home":
-        if places.search(job.get("location") or ""):
-            bucket = "world"
-        elif bucket == "world":
-            bucket = "excluded"
+    in_place = bool(places and reg != "home" and places.search(loc))
     # No location on the listing: the posting's own text says where. Until it's read, the job stays listed.
     if bucket == "unknown" and len(desc) >= NO_TEXT:
         head = desc[:3000]
@@ -904,11 +907,11 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
         reasons.append(strategy.home()["country"] or "home")
     elif remote and prefs.get("remote", True):
         reasons.append("remote")
-    elif SPONSOR.search(desc) or reg == "abroad":
+    elif SPONSOR.search(desc) or bucket == "world":
         reasons.append("sponsors visas" if SPONSOR.search(desc) else "abroad, check visa")
-    # The UK and Dutch sponsor registers settle most "doesn't say" cases for jobs there.
+    # The UK and Dutch sponsor registers settle most "doesn't say" cases for jobs there. A remote job needs no visa.
     from .sponsors import check as sponsor_check
-    reg_hit = sponsor_check(job.get("company") or "", job.get("location") or "") if reg != "home" else None
+    reg_hit = sponsor_check(job.get("company") or "", job.get("location") or "") if bucket == "world" else None
     if reg_hit and reg_hit["listed"]:
         reasons.append("licensed UK sponsor" if reg_hit["register"] == "uk" else "IND recognised sponsor")
         order += 6
@@ -921,6 +924,12 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
         reasons.append("not yet a licensed UK sponsor, though the posting offers sponsorship")
     elif reg_hit:
         reasons.append("not an IND recognised sponsor (the EU Blue Card still works)")
+    # Abroad and silent about a visa: rarely a callback, so worth it only in the places you'd move to.
+    if bucket == "world" and o["state"] == "unclear" and not in_place and len(desc) >= NO_TEXT:
+        return job | {"match": 0, "reasons": [ABROAD_SILENT], "excluded": True, "open": "unclear"}
+    if in_place:
+        order += 6
+        reasons.append("a place you'd move to")
     # Open first; one that doesn't say is labelled and sits lower (opening it reads the full posting again).
     if o["state"] == "unclear":
         order -= 8
