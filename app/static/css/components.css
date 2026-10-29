@@ -513,3 +513,50 @@
   .flow-q__text { font-size: 19px; }
 }
 @media (prefers-reduced-motion: reduce) { .flow-log__line:last-child .flow-log__msg::after { animation: none; } }
+
+/* ======================================================================
+   Printer: a CV feeding out of a NeoPOP printer, for "working on it" moments. Pure CSS; the sheet grows out of
+   the slot name first, lime name, purple headings, grey lines, then the next sheet.
+   ====================================================================== */
+.printer { display: grid; justify-items: center; gap: var(--s-3); padding: var(--s-6) var(--s-4) var(--s-5); }
+.printer__scene { position: relative; width: 200px; height: 196px; perspective: 700px; }
+.printer__body {
+  position: absolute; left: 8px; right: 8px; top: 16px; height: 68px; z-index: 2;
+  background: linear-gradient(180deg, #2c2c2c 0%, #1d1d1d 60%, #171717 100%);
+  transform: rotateX(16deg); transform-origin: 50% 0;
+  box-shadow: var(--edge) var(--edge) 0 var(--neo-paccha-700), 0 22px 30px rgba(0, 0, 0, .55);
+}
+.printer__body::before {   /* the lid, seen from above */
+  content: ""; position: absolute; left: 6px; right: 6px; top: -14px; height: 14px;
+  background: linear-gradient(180deg, #3a3a3a, #2a2a2a); transform: perspective(200px) rotateX(38deg); transform-origin: 50% 100%;
+}
+.printer__slot { position: absolute; left: 30px; right: 30px; bottom: 12px; height: 7px; border-radius: 4px; background: #040404;
+  box-shadow: inset 0 2px 3px #000, 0 1px 0 #333; }
+.printer__light { position: absolute; right: 14px; top: 12px; width: 8px; height: 8px; background: var(--accent);
+  box-shadow: 0 0 10px var(--accent); animation: printer-blink 1.1s steps(2, jump-none) infinite; }
+.printer__vent { position: absolute; left: 14px; top: 13px; width: 30px; height: 7px;
+  background: repeating-linear-gradient(90deg, #0d0d0d 0 3px, transparent 3px 6px); opacity: .8; }
+.printer__paper {
+  position: absolute; left: 44px; right: 44px; top: 84px; height: 104px; z-index: 1; padding: 10px 10px 0;
+  display: flex; flex-direction: column; gap: 6px; background: #f3f2ec; box-shadow: 0 8px 16px rgba(0, 0, 0, .4);
+  animation: printer-feed 2.8s cubic-bezier(.45, .05, .25, 1) infinite;
+}
+.printer__paper i { display: block; height: 4px; width: 100%; background: #c9c8c0; border-radius: 1px; }
+.printer__paper .pp-name { height: 8px; width: 62%; background: var(--accent); box-shadow: 2px 2px 0 var(--neo-paccha-700); }
+.printer__paper .pp-sub { width: 42%; background: #a9a8a0; }
+.printer__paper .pp-h { width: 46%; height: 5px; margin-top: 3px; background: var(--poli-purple-500); }
+.printer__paper .pp-short { width: 68%; }
+.printer__tray { position: absolute; left: 24px; right: 24px; bottom: 0; height: 9px; background: #1d1d1d;
+  box-shadow: var(--edge) var(--edge) 0 var(--neo-paccha-700); }
+.printer__text { font-size: 13px; font-weight: 600; color: var(--text-2); text-align: center; }
+.printer__text .num { color: var(--accent); margin-left: 6px; }
+.printer__bar { width: 220px; height: 4px; background: var(--surface-3); overflow: hidden; }
+.printer__bar > span { display: block; height: 100%; background: var(--accent); transition: width .5s ease; }
+@keyframes printer-feed {   /* the page grows out of the slot like a receipt: the name first, then line by line */
+  0%   { transform: translateY(0);    clip-path: inset(0 0 100% 0); opacity: 1; }
+  65%  { transform: translateY(0);    clip-path: inset(0);          opacity: 1; }
+  82%  { transform: translateY(6px);  clip-path: inset(0);          opacity: 1; }
+  100% { transform: translateY(14px); clip-path: inset(0);          opacity: 0; }
+}
+@keyframes printer-blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .printer__paper, .printer__light { animation: none; } }

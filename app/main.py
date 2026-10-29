@@ -1274,6 +1274,12 @@ def found(days: int = 14):
     return discover.saved(days, _prefs(load_profile()))
 
 
+@app.get("/api/found/progress")
+def found_progress():
+    """The background re-rank that brings saved jobs up to date (see discover.saved)."""
+    return discover.rescore_progress()
+
+
 @app.get("/api/scans")
 def scan_history():
     return discover.scans()

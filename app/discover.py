@@ -1406,31 +1406,101 @@ def watch(url: str, company: str = "", page: dict | None = None) -> dict:
 STALE_DAYS = 21
 
 
+def _listed(j: dict, cutoff: str, stale: str, dismissed: set) -> bool:
+    # A posting with no date counts from the day it was first seen, so "Posted within" applies to it too.
+    when = j["posted"] or (j.get("first_seen") or "")[:10]
+    return not (j["id"] in dismissed or (when and when < cutoff) or (when and when < stale and not j.get("favourite")))
+
+
 def saved(days: int, prefs: dict) -> list[dict]:
-    """Jobs from earlier scans, re-ranked and re-filtered, without touching the network."""
+    """Jobs from earlier scans, re-ranked and re-filtered, without touching the network.
+
+    The ranks are cached per posting under a signature that includes today's date, so on the first visit of a day
+    every saved posting is out of date: thousands of them, minutes of work. Rather than make the page wait, a posting
+    with an older rank is listed with it at once and one background run (rescore_progress) brings them all up to date;
+    the page reloads the list when it ends. A posting never ranked at all is ranked here and now."""
     state = _load_jobs()
     evidence = strong_skills(load_profile())
     prefs = with_profile(prefs)
     sig = rank_signature(prefs, evidence)
     cutoff = (dt.date.today() - dt.timedelta(days=days)).isoformat()
+    stale = (dt.date.today() - dt.timedelta(days=STALE_DAYS)).isoformat()
     dismissed = set(state.get("dismissed", []))
     learned = taste.model(state)
-    out, changed = [], False
-    stale = (dt.date.today() - dt.timedelta(days=STALE_DAYS)).isoformat()
+    out, fresh, behind = [], {}, 0
     for jid, j in state["jobs"].items():
-        # A posting with no date counts from the day it was first seen, so "Posted within" applies to it too.
-        when = j["posted"] or (j.get("first_seen") or "")[:10]
-        if jid in dismissed or (when and when < cutoff) or (when and when < stale and not j.get("favourite")):
+        if not _listed(j, cutoff, stale, dismissed):
             continue
-        r = rank(j, evidence, prefs, sig)
-        if r.get("_r") is not j.get("_r"):
-            state["jobs"][jid]["_r"], changed = r["_r"], True
+        cached = j.get("_r")
+        if cached and cached.get("sig") != sig and not j.get("_trimmed"):
+            r, behind = j | {k: v for k, v in cached.items() if k != "sig"}, behind + 1     # yesterday's rank, for now
+        else:
+            r = rank(j, evidence, prefs, sig)
+            if r.get("_r") is not cached:
+                fresh[jid] = r["_r"]
         if not r["excluded"] and (r := taste.apply(r, learned)):
             out.append({k: v for k, v in r.items() if k not in ("description", "_r")})
-    if changed:
-        with _lock:
-            _save_jobs(state)
+    if fresh:
+        _store_ranks(fresh)
+    if behind:
+        _start_rescore(prefs, evidence, sig)
     return _dedupe_sort(out)
+
+
+# One background re-rank per profile at a time, shared by every request (the page asks for two lists at once).
+_rescoring: dict[str, dict] = {}
+
+
+def rescore_progress() -> dict:
+    """Where the background re-rank has got to, for the page: {running, done, total}."""
+    from .profiles import current
+    p = _rescoring.get(current()) or {}
+    return {"running": bool(p.get("running")), "done": p.get("done", 0), "total": p.get("total", 0)}
+
+
+def _store_ranks(ranks: dict[str, dict]) -> None:
+    """Merge ranks into the saved jobs, re-read under the lock so a scan writing at the same time isn't undone."""
+    with _lock:
+        state = _load_jobs()
+        for jid, r in ranks.items():
+            if jid in state["jobs"]:
+                state["jobs"][jid]["_r"] = r
+        _save_jobs(state)
+
+
+def _start_rescore(prefs: dict, evidence: set[str], sig: str) -> None:
+    from .profiles import current
+    pid = current()
+    p = _rescoring.get(pid)
+    if p and p.get("running") and p.get("sig") == sig:
+        return
+    stale = (dt.date.today() - dt.timedelta(days=STALE_DAYS)).isoformat()
+    state = _load_jobs()
+    dismissed = set(state.get("dismissed", []))
+    todo = [jid for jid, j in state["jobs"].items()
+            if _listed(j, "", stale, dismissed) and (j.get("_r") or {}).get("sig") != sig and not j.get("_trimmed")]
+    if not todo:
+        return
+    p = _rescoring[pid] = {"running": True, "sig": sig, "done": 0, "total": len(todo)}
+
+    def run():
+        batch: dict[str, dict] = {}
+        try:
+            for i, jid in enumerate(todo, 1):
+                j = state["jobs"].get(jid)
+                if j is not None:
+                    batch[jid] = rank(j, evidence, prefs, sig)["_r"]
+                p["done"] = i
+                if len(batch) >= 500:            # saved as it goes: a restart picks up where this left off
+                    _store_ranks(batch)
+                    batch = {}
+            if batch:
+                _store_ranks(batch)
+        finally:
+            p["running"] = False
+
+    ctx = contextvars.copy_context()
+    threading.Thread(target=ctx.run, args=(run,), daemon=True, name="discover-rescore").start()
 
 
 def scan_one(src: dict, days: int, prefs: dict | None = None) -> dict:

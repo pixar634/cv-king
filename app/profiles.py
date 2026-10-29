@@ -6,6 +6,7 @@ comes from a cookie; background work carries the profile it started under (a con
 its thread), so switching profiles mid-run never mixes two people's files.
 """
 import contextvars
+import copy
 import datetime as dt
 import json
 import re
@@ -24,9 +25,18 @@ _active: contextvars.ContextVar[str | None] = contextvars.ContextVar("profile", 
 _lock = threading.Lock()
 
 
+_index_cache: tuple | None = None   # (mtime_ns, size, parsed index)
+
+
 def _read_index() -> dict:
+    """The profile index, from memory while the file is unchanged. Scoring Discover asks for the current profile
+    dozens of times per job; reading the file each time made re-scoring 8,000 saved jobs take two minutes."""
+    global _index_cache
     if INDEX.exists():
-        return json.loads(INDEX.read_text("utf-8"))
+        st = INDEX.stat()
+        if not (_index_cache and _index_cache[:2] == (st.st_mtime_ns, st.st_size)):
+            _index_cache = (st.st_mtime_ns, st.st_size, json.loads(INDEX.read_text("utf-8")))
+        return copy.deepcopy(_index_cache[2])      # callers edit what they get and write it back
     rows = []
     if (DATA / "base_cv.json").exists():
         try:
@@ -38,8 +48,10 @@ def _read_index() -> dict:
 
 
 def _write_index(idx: dict) -> None:
+    global _index_cache
     PROFILES.mkdir(parents=True, exist_ok=True)
     INDEX.write_text(json.dumps(idx, indent=2, ensure_ascii=False), "utf-8")
+    _index_cache = None                            # the next read takes the new file
 
 
 def all_profiles() -> list[dict]:
