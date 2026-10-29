@@ -52,3 +52,14 @@
 /* ---- "Your search so far" and the stage heading ---- */
 #v-pipeline .insights { padding: 0 var(--s-5); border-radius: 20px; background: var(--nm-base); box-shadow: var(--nm-raise); }
 #v-pipeline .split__head { border-bottom: 0; }
+
+/* ---- opening a section ("People you know", contacts, "Your search so far") eases the card taller, so the cards
+   below glide down instead of jumping. Pure CSS: ::details-content and interpolate-size (Chrome 131+); older
+   browsers just open instantly, as before. ---- */
+#v-pipeline { interpolate-size: allow-keywords; }
+#v-pipeline details::details-content {
+  block-size: 0; overflow: hidden; opacity: 0;
+  transition: block-size .38s cubic-bezier(.2, .8, .2, 1), opacity .3s ease, content-visibility .38s allow-discrete;
+}
+#v-pipeline details[open]::details-content { block-size: auto; opacity: 1; }
+@media (prefers-reduced-motion: reduce) { #v-pipeline details::details-content { transition: none; } }
