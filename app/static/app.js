@@ -997,8 +997,47 @@ function areaFilter(jobs) {
 
 let FOUND = [];
 const companyKey = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+// The printer (components.css): a CV feeding out of a printer, for waits. update() moves the count and the bar
+// without redrawing, so the sheet keeps printing smoothly.
+function printerHtml(text, done = 0, total = 0) {
+  return `<div class="printer" role="status" aria-live="polite">
+    <div class="printer__scene" aria-hidden="true">
+      <div class="printer__paper"><i class="pp-name"></i><i class="pp-sub"></i><i class="pp-h"></i><i></i><i></i><i class="pp-short"></i><i class="pp-h"></i><i></i><i class="pp-short"></i></div>
+      <div class="printer__body"><span class="printer__vent"></span><span class="printer__light"></span><span class="printer__slot"></span></div>
+      <div class="printer__tray"></div>
+    </div>
+    <div class="printer__text">${esc(text)}<span class="num">${total ? `${done.toLocaleString()} of ${total.toLocaleString()}` : ""}</span></div>
+    <div class="printer__bar" ${total ? "" : "hidden"}><span style="width:${total ? Math.round((done / total) * 100) : 0}%"></span></div>
+  </div>`;
+}
+function updatePrinter(el, done, total) {
+  $(".printer__text .num", el).textContent = total ? `${done.toLocaleString()} of ${total.toLocaleString()}` : "";
+  $(".printer__bar", el).hidden = !total;
+  $(".printer__bar > span", el).style.width = `${total ? Math.round((done / total) * 100) : 0}%`;
+}
+
+// Saved jobs are listed at once with their last ranks; on the first visit of a day the server brings them up to
+// date in the background. While it does, the printer sits above the list; when it ends, the list reloads.
+let RESCORE_POLL = 0;
+async function watchRescore() {
+  clearTimeout(RESCORE_POLL);
+  if (!$("#v-discover").classList.contains("on")) return;
+  const p = await api("/api/found/progress").catch(() => null);
+  const note = $("#rescoreNote");
+  if (!p || !p.running) {
+    if (note) note.remove();
+    if (watchRescore.was) { watchRescore.was = false; loadFound(); }
+    return;
+  }
+  watchRescore.was = true;
+  if (note) updatePrinter(note, p.done, p.total);
+  else $("#foundList").insertAdjacentHTML("afterbegin", `<div id="rescoreNote">${printerHtml("Updating your matches with today's scores", p.done, p.total)}</div>`);
+  RESCORE_POLL = setTimeout(watchRescore, 1500);
+}
+
 async function loadFound() {
   if (!$("#areaBar").innerHTML) renderAreaBar();
+  if (!$("#foundList").children.length) $("#foundList").innerHTML = printerHtml("Reading your saved jobs");
   // Favourites look back over the longest window the app keeps (30 days), whatever Posted within says.
   const [all, sources, scanLog, month, taste] = await Promise.all([api(`/api/found?days=${$("#days").value}`), api("/api/sources"), api("/api/scans"), api("/api/found?days=30"), api("/api/taste")]);
   const lastScan = scanLog.length ? scanLog[scanLog.length - 1] : null;
@@ -1096,6 +1135,7 @@ async function loadFound() {
   }
   renderDock();
   renderTaste(taste);
+  watchRescore();
 }
 
 // ---- "Not for me": the card folds into a question (why?), and Discover learns from the answer ----
