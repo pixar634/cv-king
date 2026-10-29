@@ -53,7 +53,7 @@ def test_a_posting_that_wont_load_is_not_tried_again_at_once(monkeypatch):
     store()
     discover.saved(14, PREFS)
     settle()
-    assert discover._load_jobs()["jobs"]["w1"]["_read_tried"] == dt.date.today().isoformat()
+    assert discover._load_jobs()["jobs"]["w1"]["_read_tried"].startswith(dt.date.today().isoformat())
     discover.saved(14, PREFS)
     assert not discover.rescore_progress()["running"]
 
@@ -68,3 +68,10 @@ def test_reading_a_posting_keeps_what_a_scan_saved_meanwhile(monkeypatch):
     store()
     discover.job_detail("w1")
     assert set(discover._load_jobs()["jobs"]) == {"w1", "new"}
+
+
+def test_a_failed_read_is_tried_again_after_a_few_hours():
+    now = dt.datetime.now()
+    job = {"description": "", "_read_tried": (now - dt.timedelta(hours=1)).isoformat(timespec="seconds")}
+    assert not discover.unread(job)
+    assert discover.unread(job | {"_read_tried": (now - dt.timedelta(hours=7)).isoformat(timespec="seconds")})

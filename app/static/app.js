@@ -870,7 +870,7 @@ async function pollBatch(once) {
 
 // ================= discover =================
 function wireDiscover() {
-  $("#days").value = String(S.prefs.days || 14);
+  $("#days").value = String(S.prefs.days || 5);   // after about five days the shortlist is mostly filled
   // The match filter is saved with the profile: tailoring checks it too. An older browser-only choice moves over once.
   const local = store.get("cv.minMatch", null);
   if (local !== null) { store.set("cv.minMatch", null); if (local !== S.prefs.min_match) savePrefs({ min_match: local }); }
