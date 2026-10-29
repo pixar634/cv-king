@@ -1,0 +1,79 @@
+/* The Pipeline in dark neumorphism: JobMagnet's NeoPOP palette on soft raised and pressed surfaces, lit from the
+   top left. Scoped to #v-pipeline; every other screen keeps the flat NeoPOP look. Depth needs a mid-dark surface
+   (shadows vanish on pure black), so this view sits on #141414 instead of the app's #0d0d0d. */
+#v-pipeline {
+  --nm-base: #141414;
+  --nm-raise: 6px 6px 14px #060606, -5px -5px 12px #212121;
+  --nm-raise-hover: 9px 9px 20px #050505, -6px -6px 15px #252525;
+  --nm-raise-sm: 3px 3px 7px #060606, -2px -2px 6px #212121;
+  --nm-press: inset 4px 4px 9px #070707, inset -3px -3px 8px #202020;
+  --nm-press-sm: inset 2px 2px 5px #070707, inset -2px -2px 5px #202020;
+  background: var(--nm-base);
+  min-height: calc(100vh - var(--topbar));
+}
+
+/* ---- cards: raised tiles that lift a little under the pointer ---- */
+#v-pipeline .card { background: var(--nm-base); border: 0; border-radius: 20px; box-shadow: var(--nm-raise); }
+#v-pipeline .card--interactive { transition: box-shadow .25s ease, transform .25s ease; }
+#v-pipeline .card--interactive:hover { box-shadow: var(--nm-raise-hover); transform: translateY(-1px); }
+#v-pipeline .app-card { padding: var(--s-5); }
+#v-pipeline .card-grid { gap: var(--s-6); }
+/* the follow-up column of a wide card: a pressed-in panel instead of a dividing line */
+#v-pipeline .app-card__side { border-left: 0; padding: var(--s-4); border-radius: 14px; box-shadow: var(--nm-press-sm); }
+#v-pipeline .logo { border-radius: 12px; background: var(--nm-base); box-shadow: var(--nm-press-sm); padding: 4px; }
+#v-pipeline .logo img { border-radius: 8px; }
+#v-pipeline .board__none { border: 0; border-radius: 16px; box-shadow: var(--nm-press); }
+
+/* ---- stages: raised pills; the one you're on pressed in, with the lime edge ---- */
+#v-pipeline .side-nav { border-top: 0; gap: 10px; }
+#v-pipeline .side-nav > button { border: 0; border-radius: 12px; background: var(--nm-base); box-shadow: var(--nm-raise-sm);
+  transition: box-shadow .2s ease, color .2s ease; }
+#v-pipeline .side-nav > button:hover { background: var(--nm-base); color: var(--text); }
+#v-pipeline .side-nav > button.on { background: var(--nm-base); box-shadow: var(--nm-press), inset 3px 0 0 var(--accent); }
+
+/* ---- the search box and the status menus: pressed-in wells, a lime ring when in use ---- */
+#v-pipeline :is(input[type=search], select) { border: 0; border-radius: 10px; background-color: var(--nm-base); box-shadow: var(--nm-press-sm); }
+#v-pipeline :is(input[type=search], select):focus { box-shadow: var(--nm-press-sm), 0 0 0 1.5px var(--accent); }
+#v-pipeline .pipe-search { height: 48px; padding: 0 18px; border-radius: 14px; box-shadow: var(--nm-press); font-size: 14px; }
+
+/* ---- buttons: raised, pressing in when clicked; ghost ones rise on hover. Text links ("Profile") stay links ---- */
+#v-pipeline .btn:not(.btn--primary):not(.btn--accent):not(.btn--link) { border: 0; border-radius: 10px; background: var(--nm-base); box-shadow: var(--nm-raise-sm);
+  transition: box-shadow .15s ease, color .2s ease; }
+#v-pipeline .btn:not(.btn--primary):not(.btn--accent):not(.btn--link):hover { color: var(--accent); }
+#v-pipeline .btn:not(.btn--primary):not(.btn--accent):not(.btn--link):active { box-shadow: var(--nm-press-sm); }
+#v-pipeline .btn--ghost { box-shadow: none !important; }
+#v-pipeline .btn--ghost:hover { box-shadow: var(--nm-raise-sm) !important; color: var(--text) !important; }
+
+/* ---- chips and tags: soft pressed pills, colours unchanged ---- */
+#v-pipeline .chip { border: 0; border-radius: 8px; box-shadow: var(--nm-press-sm); }
+#v-pipeline .chip--pill { border-radius: 999px; }
+#v-pipeline .tag { border-radius: 6px; }
+
+/* ---- "Your search so far" and the stage heading ---- */
+#v-pipeline .insights { padding: 0 var(--s-5); border-radius: 20px; background: var(--nm-base); box-shadow: var(--nm-raise); }
+#v-pipeline .split__head { border-bottom: 0; }
+
+/* ---- opening a section ("People you know", contacts, "Your search so far") eases the card taller, so the cards
+   below glide down instead of jumping. Pure CSS: ::details-content and interpolate-size (Chrome 131+); older
+   browsers just open instantly, as before. ---- */
+#v-pipeline { interpolate-size: allow-keywords; }
+/* Closing moves like a soft-close drawer (0.8 s); the content fades and blurs with the slide. */
+#v-pipeline details::details-content {
+  block-size: 0; overflow: hidden; opacity: 0; filter: blur(6px);
+  /* a soft-close drawer: a quick start, a fast steady slide most of the way, then the damper catches it and the
+     last stretch eases home */
+  transition: block-size .8s linear(0, .15 8%, .82 40%, .93 55%, .985 75%, 1), opacity .5s ease-in, filter .5s ease-in,
+              content-visibility .8s allow-discrete;
+}
+/* Opening: fast, then a soft stop (0.5 s); the content sharpens out of a blur as it fades in */
+#v-pipeline details[open]::details-content {
+  block-size: auto; opacity: 1; filter: blur(0);
+  transition: block-size .5s cubic-bezier(.22, 1, .36, 1), opacity .35s ease-out, filter .4s ease-out,
+              content-visibility .5s allow-discrete;
+}
+@media (prefers-reduced-motion: reduce) { #v-pipeline details::details-content { transition: none; } }
+
+/* ---- room between the stage list and the board: the raised shadows need it, and the list's scroll area would
+   otherwise clip them at its edges ---- */
+#v-pipeline .split { gap: var(--s-12); }
+#v-pipeline .split__nav { padding: 8px 14px 14px 8px; margin: -8px -14px 0 -8px; }
