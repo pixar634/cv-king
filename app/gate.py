@@ -8,7 +8,7 @@ with the reason, and "Tailor anyway" (say, with a referral) goes through.
 import re
 
 from . import strategy
-from .discover import NO_SPONSOR, SPONSOR, US_ONLY, region
+from .discover import NO_SPONSOR, NOT_UK_SPONSOR, SPONSOR, US_ONLY, region
 from .fit import level_check, strong_skills
 from .profile import experience_months, notice_days, release_note, wants_immediate
 
@@ -93,7 +93,7 @@ ALTERNATIVE = re.compile(r"\b(or|any of|one of|one or more of|either|such as|e\.
 
 def stack(text: str, title: str, strong: set[str], prefs: dict) -> dict:
     """The languages and stack frameworks a posting names that aren't on your CV.
-    {"missing": [{"name", "must"}], "skipped": [...], "stop": [...], "stretch": [...]}. A posting built on languages
+    {"missing": [{"name", "must"}], "skipped": [...], "stop": [...]}. A posting built on languages
     you don't have (or have said you skip) is a different job, whatever its keyword score."""
     from .discover import needs_skill
     from .keywords import jd_keywords, taxonomy
@@ -122,14 +122,16 @@ def stack(text: str, title: str, strong: set[str], prefs: dict) -> dict:
     skipped = [s for s in prefs.get("exclude_skills") or [] if needs_skill(job, s)]
     have = [n for n in named if n in strong]
     musts = [m["name"] for m in missing if m["must"]]
-    stop, stretch = [], []
+    stop = []
+    # A must-have language you don't have fails the screen even where the posting also names one of yours;
+    # only offered as an alternative to yours ("Java or Python") is it met.
     if skipped:
         stop.append(f"Needs {', '.join(skipped)}, which you've chosen to skip (Settings, Skip jobs that need)")
     elif musts and not have:
         stop.append(f"Built on {', '.join(musts)}, which isn't on your CV")
     elif musts:
-        stretch.append(f"Also asks for {', '.join(musts)} as a must-have (not on your CV)")
-    return {"missing": missing, "skipped": skipped, "stop": stop, "stretch": stretch}
+        stop.append(f"Also needs {', '.join(musts)} as a must-have, which isn't on your CV")
+    return {"missing": missing, "skipped": skipped, "stop": stop}
 
 
 def check(jd_text: str, title: str = "", location: str = "", market: str = "", remote=None,
@@ -150,7 +152,6 @@ def check(jd_text: str, title: str = "", location: str = "", market: str = "", r
 
     st = stack(text, title, strong_skills(profile), prefs)
     stops += st["stop"]
-    stretches += st["stretch"]
 
     o = openness(text, title, location, remote, market)
     if o["state"] == "closed":
@@ -159,8 +160,7 @@ def check(jd_text: str, title: str = "", location: str = "", market: str = "", r
         from .sponsors import check as sponsor_check
         hit = sponsor_check(company, location)
         if hit and hit["register"] == "uk" and not hit["listed"] and not SPONSOR.search(text):
-            stretches.append("Not on the UK register of licensed sponsors, so it can't sponsor a Skilled Worker visa "
-                             "unless it gets a licence")
+            stops.append(NOT_UK_SPONSOR)
 
     tid = track or strategy.track_for(title)
     t = strategy.tracks().get(tid) or {}
