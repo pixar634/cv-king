@@ -33,10 +33,13 @@ def test_indeed_country_for_a_place():
     assert discover.indeed_country("Atlantis") == ""
 
 
-def test_jobspy_also_searches_each_place(monkeypatch):
+def test_jobspy_also_searches_each_place_with_rest_of_the_world_on(monkeypatch):
     calls = []
     monkeypatch.setattr(discover, "from_jobspy", lambda q, loc, country, days: calls.append((loc, country)) or [])
-    discover.scan_jobspy(7, prefs(places=["Amsterdam, Netherlands", "Luxembourg"]))
+    places = ["Amsterdam, Netherlands", "Luxembourg"]
+    discover.scan_jobspy(7, prefs(regions=["city"], places=places))
+    assert not any(c in calls for c in (("Amsterdam", "netherlands"), ("Luxembourg", "luxembourg")))
+    discover.scan_jobspy(7, prefs(regions=["city", "world"], places=places), force=True)
     assert ("Amsterdam", "netherlands") in calls and ("Luxembourg", "luxembourg") in calls
 
 

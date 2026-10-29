@@ -789,6 +789,18 @@ def rank(job: dict, evidence: set[str], prefs: dict, sig: str | None = None) -> 
     return out | {"_r": keep | {"sig": sig}}
 
 
+def region_chip(job: dict) -> str:
+    """The region chip a job's location falls under: city | country | remote | world | unknown, or excluded (US onsite).
+    Remote is one region wherever the company sits ("Remote, Australia"); whether it hires where you live is read
+    from the posting. Onsite abroad is any country but the US, where sponsorship is a lottery."""
+    reg, loc = region(job), job.get("location") or ""
+    if reg != "home" and (reg == "remote" or job.get("remote") or REMOTE_WORDS.search(loc)):
+        return "remote"
+    city = strategy.city_pattern()
+    return {"home": "city" if city and city.search(loc) else "country", "abroad": "world", "other": "world",
+            "unknown": "unknown"}.get(reg, "excluded")
+
+
 def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     title, desc = job["title"], job.get("description", "")
     reasons, score = [], 0
@@ -802,13 +814,7 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     wanted = set(regions(prefs))
     city = strategy.city_pattern()
     loc = job.get("location") or ""
-    # Remote is one region wherever the company sits ("Remote, Australia"); whether it hires where you live is
-    # read from the posting below. Onsite abroad is any country but the US, where sponsorship is a lottery.
-    if reg != "home" and (reg == "remote" or job.get("remote") or REMOTE_WORDS.search(loc)):
-        bucket = "remote"
-    else:
-        bucket = {"home": "city" if city and city.search(loc) else "country", "abroad": "world", "other": "world",
-                  "unknown": "unknown"}.get(reg, "excluded")
+    bucket = region_chip(job)
     places = places_pattern(prefs)
     in_place = bool(places and reg != "home" and places.search(loc))
     # No location on the listing: the posting's own text says where. Until it's read, the job stays listed.
@@ -1586,7 +1592,64 @@ MODEL_SEARCH_DAYS = 7
 MODEL_SEARCHES_PER_SCAN = 3
 
 
-def scan(source_ids: list[str] | None, days: int, prefs: dict, budget_s: int = 60, progress=lambda m: None) -> dict:
+FREE_COOLDOWN_H = 3     # a careers page or board read for free rarely has anything new within a few hours
+MODEL_COOLDOWN_H = 24   # one the model reads (Indeed, a web search, a page without job data) costs tailoring usage
+QUIET_AFTER = 5         # a company's recent postings, none of them in your regions: it sits out until that changes
+# Boards that only list one kind of job, by the region chip it falls under.
+BOARD_REGION = {"remotive": "remote", "jobicy": "remote", "himalayas": "remote", "remoteok": "remote", "wwr": "remote",
+                "hn": "remote", "arbeitnow": "world", "workinfinland": "world"}
+SKIP_WHY = {"recent": "scanned in the last few hours", "region": "list only regions you've turned off",
+            "quiet": "had no jobs in your regions in the last 30 days"}
+
+
+def _recent_chips() -> dict[str, list[str]]:
+    """Each source's postings from the last 30 days, as the region chip each falls under."""
+    since = (dt.date.today() - dt.timedelta(days=30)).isoformat()
+    out: dict[str, list[str]] = {}
+    for j in _load_jobs()["jobs"].values():
+        if (j.get("first_seen") or "")[:10] >= since and j.get("source"):
+            out.setdefault(j["source"], []).append(region_chip(j))
+    return out
+
+
+def plan_scan(sources: list[dict], prefs: dict, explicit: bool = False, force: bool = False) -> tuple[list[dict], list[dict]]:
+    """Which sources are worth reading now. Skipped, with the reason: one read in the last few hours (a day when the
+    model reads it), a board for a region you've turned off, and, on a full scan, a company whose recent postings
+    were all outside your regions. force reads them all."""
+    if force:
+        return sources, []
+    wanted, now = set(regions(prefs)), dt.datetime.now()
+    chips = _recent_chips() if not explicit else {}
+    keep, passed = [], []
+    for s in sources:
+        model = s["kind"] in ("websearch", "people", "indeed") or s.get("method") == "page read by model"
+        try:
+            hours = (now - dt.datetime.fromisoformat(s["last_scan"])).total_seconds() / 3600 if s.get("last_scan") else None
+        except ValueError:
+            hours = None
+        seen = chips.get(s["label"], [])
+        if hours is not None and hours < (MODEL_COOLDOWN_H if model else FREE_COOLDOWN_H):
+            why = "recent"
+        elif s["kind"] == "board" and BOARD_REGION.get(s["value"], "") not in ("", *wanted):
+            why = "region"
+        elif (s["kind"] == "url" and not s.get("favourite") and len(seen) >= QUIET_AFTER
+              and not any(c in wanted or c == "unknown" for c in seen)):
+            why = "quiet"
+        else:
+            keep.append(s)
+            continue
+        passed.append({"label": s["label"], "why": why})
+    return keep, passed
+
+
+def skip_summary(passed: list[dict]) -> str:
+    counts = {w: sum(p["why"] == w for p in passed) for w in SKIP_WHY}
+    parts = [f"{n} {SKIP_WHY[w]}" for w, n in counts.items() if n]
+    return f"Skipped {len(passed)} source{'s' if len(passed) != 1 else ''}: {'; '.join(parts)}"
+
+
+def scan(source_ids: list[str] | None, days: int, prefs: dict, budget_s: int = 60, progress=lambda m: None,
+         force: bool = False) -> dict:
     from .sponsors import refresh_soon
     refresh_soon()   # the public sponsor registers, at most monthly, in the background
     # Indeed searches run only when asked for by id (Discover's Scan Indeed button), not on every scan.
@@ -1605,6 +1668,14 @@ def scan(source_ids: list[str] | None, days: int, prefs: dict, budget_s: int = 6
         if skipped:
             progress(f"{skipped} web search{'es' if skipped != 1 else ''} skipped: run at most weekly, "
                      f"{MODEL_SEARCHES_PER_SCAN} per scan, to save usage for tailoring")
+    sources, passed = plan_scan(sources, prefs, explicit=bool(source_ids), force=force)
+    if passed:
+        progress(skip_summary(passed))
+    if not sources:
+        return {"jobs": [], "results": [], "skipped": passed, "skipped_note": skip_summary(passed),
+                "cutoff": (dt.date.today() - dt.timedelta(days=days)).isoformat()}
+    url_sources = [s for s in sources if s["kind"] in ("url", "board")]
+    web_sources = [s for s in sources if s["kind"] in ("websearch", "people", "indeed")]
     n_indeed = sum(1 for x in sources if x["kind"] == "indeed")
     if n_indeed == len(sources):
         progress(f"Searching Indeed for {n_indeed} career track{'s' if n_indeed != 1 else ''}, one after another")
@@ -1643,7 +1714,8 @@ def scan(source_ids: list[str] | None, days: int, prefs: dict, budget_s: int = 6
                 progress(f"{s['label']}: {len(res['jobs'])} jobs" + (f" ({res['error'][:80]})" if res.get("error") else ""))
             if time.time() > deadline:
                 break
-    return _store(results, days, prefs, evidence, progress)
+    return _store(results, days, prefs, evidence, progress) | {"skipped": passed,
+                                                               "skipped_note": skip_summary(passed) if passed else ""}
 
 
 def _dedupe_sort(jobs: list[dict]) -> list[dict]:
@@ -1924,14 +1996,22 @@ def indeed_country(place: str) -> str:
         return ""
 
 
-def scan_jobspy(days: int, prefs: dict, progress=lambda m: None) -> dict:
+def scan_jobspy(days: int, prefs: dict, progress=lambda m: None, force: bool = False) -> dict:
     home = strategy.home()
     queries = jobspy_queries(prefs)
     if not queries:
         raise EngineError("Your profile has no career tracks or headline to search for yet. Set them up first.")
-    # Home with every query; each place you'd move to with the two queries at your own level, to keep scans short.
+    # The sites it scrapes block repeat visits: once in a few hours, like any free source.
+    last = _load_jobs().get("jobspy_at") or ""
+    if not force and last >= (dt.datetime.now() - dt.timedelta(hours=FREE_COOLDOWN_H)).isoformat(timespec="seconds"):
+        passed = [{"label": "JobSpy", "why": "recent"}]
+        progress(skip_summary(passed))
+        return {"jobs": [], "results": [], "skipped": passed, "skipped_note": skip_summary(passed),
+                "cutoff": (dt.date.today() - dt.timedelta(days=days)).isoformat()}
+    # Home with every query; each place you'd move to with the two queries at your own level, to keep scans short,
+    # and only while Rest of the world is on.
     searches = [(q, home["city"] or home["country"], home["country"]) for q in queries]
-    for place in prefs.get("places") or []:
+    for place in (prefs.get("places") or []) if "world" in regions(prefs) else []:
         searches += [(q, place.split(",")[0].strip(), indeed_country(place)) for q in queries[:2]]
     evidence = strong_skills(load_profile())
     results = []
@@ -1946,7 +2026,12 @@ def scan_jobspy(days: int, prefs: dict, progress=lambda m: None) -> dict:
         res["seconds"] = round(time.time() - t, 1)
         progress(f"{q}: {len(res['jobs'])} jobs" + (f" ({res['error'][:100]})" if res.get("error") else ""))
         results.append(res)
-    return _store(results, days, prefs, evidence, progress)
+    out = _store(results, days, prefs, evidence, progress)
+    with _lock:
+        state = _load_jobs()
+        state["jobspy_at"] = dt.datetime.now().isoformat(timespec="seconds")
+        _save_jobs(state)
+    return out | {"skipped": [], "skipped_note": ""}
 
 
 # ---------- jobs gathered by Claude in Chrome, pasted in ----------

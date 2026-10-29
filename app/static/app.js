@@ -941,18 +941,26 @@ function openImport(prompt) {
   box.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
-// mode: "all" (every source but Indeed), "favourites", "indeed" (one Indeed search per career track) or "jobspy"
-async function scanNow(mode) {
-  const line = $("#scanLine"), btns = [$("#scanAll"), $("#scanFav"), $("#scanIndeed"), $("#scanJobspy")];
+// mode: "all" (every source but Indeed), "favourites", "indeed" (one Indeed search per career track) or "jobspy".
+// Sources read in the last few hours or outside your regions are skipped; force reads them anyway.
+async function scanNow(mode, force = false) {
+  const line = $("#scanLine"), skip = $("#scanSkipped"), btns = [$("#scanAll"), $("#scanFav"), $("#scanIndeed"), $("#scanJobspy")];
   line.hidden = false;
+  skip.hidden = true;
   line.innerHTML = `<div class="progress"></div><div class="progress__text">${{ favourites: "Scanning your favourite companies", indeed: "Searching Indeed for each of your career tracks, about a minute", jobspy: "Searching LinkedIn, Indeed, Google and Naukri for your career tracks, a few minutes" }[mode] || "Scanning your sources, favourites first"}</div>`;
   btns.forEach((b) => (b.disabled = true));
   try {
-    const { job } = await api("/api/scan", { body: { days: +$("#days").value, favourites: mode === "favourites", indeed: mode === "indeed", jobspy: mode === "jobspy" } });
+    const { job } = await api("/api/scan", { body: { days: +$("#days").value, favourites: mode === "favourites", indeed: mode === "indeed", jobspy: mode === "jobspy", force } });
     const res = await pollJob(job, (l) => ($(".progress__text", line).textContent = l.msg));
     await loadFound();
     const failed = (res.results || []).filter((r) => r.error), read = (res.results || []).reduce((n, r) => n + (r.count || 0), 0);
-    if (failed.length && failed.length === (res.results || []).length) toast(`Nothing came back. ${failed[0].error}`, 7000);
+    if (res.skipped_note) {
+      skip.hidden = false;
+      skip.innerHTML = `<p class="type-meta">${esc(res.skipped_note)}.</p><button class="btn btn--sm" id="scanForce">Scan them anyway</button>`;
+      $("#scanForce").onclick = () => scanNow(mode, true);
+    }
+    if (!(res.results || []).length) toast("Nothing new to read yet: every source was skipped.", 5000);
+    else if (failed.length && failed.length === res.results.length) toast(`Nothing came back. ${failed[0].error}`, 7000);
     else toast(`${read} postings read, ${res.jobs.length} fresh for you${failed.length ? `. ${failed.length} source${failed.length > 1 ? "s" : ""} failed: see Settings, Sources` : ""}`, 5000);
   } catch (e) { toast(e.message, 4000); }
   finally { btns.forEach((b) => (b.disabled = false)); line.hidden = true; }
