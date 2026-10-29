@@ -88,6 +88,8 @@ async function boot() {
   wireDrawer();
   wireNetworkControls();
   $("#mailCheck").onclick = checkMail;
+  $("#pipeSearch").oninput = () => renderPipeline();
+  $("#pipeSearch").onkeydown = (e) => { if (e.key === "Escape") { e.target.value = ""; renderPipeline(); } };
   wireEngineSwitch();
   $("#careerGen").onclick = generateCareer;
   renderChips();
@@ -1247,6 +1249,12 @@ function renderPipeline() {
     ["interviews", "Interviews", by(["Recruiter call", "Interviewing", "Offer"]), "Calls and interviews land here."],
     ["closed", "Closed", by(closedSts), "Rejected, withdrawn and unanswered applications fold away here."],
   ];
+  // The search box narrows every stage, counts included: a plain match on company, role, job site, ID or location.
+  const q = $("#pipeSearch").value.trim().toLowerCase();
+  if (q) {
+    const hit = (x) => [x.company, x.role, host(x.job_url || ""), x.job_id, x.location].some((v) => String(v || "").toLowerCase().includes(q));
+    for (const s of stages) { s[2] = s[2].filter(hit); s[3] = `No applications here match “${esc(q)}”.`; }
+  }
   const cur = stages.find((x) => x[0] === store.get("cv.stage", "all")) || stages[0];
   const applied = rows.filter((r) => r.status !== "Generated").length;
   const writing = inflight.filter((b) => b.status !== "error").length;
