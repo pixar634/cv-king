@@ -1017,21 +1017,23 @@ function updatePrinter(el, done, total) {
 }
 
 // Saved jobs are listed at once with their last ranks; on the first visit of a day the server brings them up to
-// date in the background. While it does, the printer sits above the list; when it ends, the list reloads.
+// date in the background, then reads the full postings of jobs listed without one. While it does, the printer sits
+// above the list; when it ends, the list reloads.
 let RESCORE_POLL = 0;
 async function watchRescore() {
   clearTimeout(RESCORE_POLL);
   if (!$("#v-discover").classList.contains("on")) return;
   const p = await api("/api/found/progress").catch(() => null);
-  const note = $("#rescoreNote");
+  let note = $("#rescoreNote");
   if (!p || !p.running) {
     if (note) note.remove();
     if (watchRescore.was) { watchRescore.was = false; loadFound(); }
     return;
   }
   watchRescore.was = true;
+  if (note && note.dataset.label !== p.label) { note.remove(); note = null; }
   if (note) updatePrinter(note, p.done, p.total);
-  else $("#foundList").insertAdjacentHTML("afterbegin", `<div id="rescoreNote">${printerHtml("Updating your matches with today's scores", p.done, p.total)}</div>`);
+  else $("#foundList").insertAdjacentHTML("afterbegin", `<div id="rescoreNote" data-label="${esc(p.label)}">${printerHtml(p.label, p.done, p.total)}</div>`);
   RESCORE_POLL = setTimeout(watchRescore, 1500);
 }
 

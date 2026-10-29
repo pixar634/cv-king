@@ -43,4 +43,7 @@ def sandbox(tmp_path, monkeypatch):
     # A background sync would run after the test, outside the sandbox: tests call db.sync() themselves.
     from app import db
     monkeypatch.setattr(db, "sync_soon", lambda *a, **k: None)
+    # Reading postings in the background goes to the network: test_read_postings turns it back on with a fake reader.
+    from app import discover
+    monkeypatch.setattr(discover, "_start_reading", lambda ids: None)
     return tmp_path

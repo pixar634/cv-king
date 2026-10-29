@@ -33,7 +33,7 @@ def test_stale_ranks_list_at_once_and_update_in_the_background():
         if not discover.rescore_progress()["running"]:
             break
         time.sleep(0.05)
-    assert discover.rescore_progress() == {"running": False, "done": 3, "total": 3}
+    assert discover.rescore_progress() | {"label": ""} == {"running": False, "done": 3, "total": 3, "label": ""}
     sig = next(iter(discover._load_jobs()["jobs"].values()))["_r"]["sig"]
     assert sig != "yesterday"
     assert all(j["match"] > 1 for j in discover.saved(14, PREFS))   # today's ranks, and no new background run
