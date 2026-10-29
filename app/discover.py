@@ -1430,7 +1430,7 @@ def saved(days: int, prefs: dict) -> list[dict]:
     stale = (dt.date.today() - dt.timedelta(days=STALE_DAYS)).isoformat()
     dismissed = set(state.get("dismissed", []))
     learned = taste.model(state)
-    out, fresh, behind = [], {}, 0
+    out, fresh, behind, to_read = [], {}, 0, []
     for jid, j in state["jobs"].items():
         if not _listed(j, cutoff, stale, dismissed):
             continue
@@ -1443,10 +1443,13 @@ def saved(days: int, prefs: dict) -> list[dict]:
                 fresh[jid] = r["_r"]
         if not r["excluded"] and (r := taste.apply(r, learned)):
             out.append({k: v for k, v in r.items() if k not in ("description", "_r")})
+            if unread(j):
+                to_read.append(jid)
     if fresh:
         _store_ranks(fresh)
     if behind:
         _start_rescore(prefs, evidence, sig)
+    _start_reading(to_read)
     return _dedupe_sort(out)
 
 
@@ -1455,10 +1458,13 @@ _rescoring: dict[str, dict] = {}
 
 
 def rescore_progress() -> dict:
-    """Where the background re-rank has got to, for the page: {running, done, total}."""
+    """Where the background re-rank, or else the reading of full postings, has got to, for the page:
+    {running, done, total, label}."""
     from .profiles import current
-    p = _rescoring.get(current()) or {}
-    return {"running": bool(p.get("running")), "done": p.get("done", 0), "total": p.get("total", 0)}
+    p, label = _rescoring.get(current()) or {}, "Updating your matches with today's scores"
+    if not p.get("running") and (_reading.get(current()) or {}).get("running"):
+        p, label = _reading[current()], "Reading the full postings of jobs listed without one"
+    return {"running": bool(p.get("running")), "done": p.get("done", 0), "total": p.get("total", 0), "label": label}
 
 
 def _store_ranks(ranks: dict[str, dict]) -> None:
@@ -1676,26 +1682,14 @@ SNIPPET = 1200   # characters: a description shorter than this is scored as an e
 def job_detail(job_id: str, prefs: dict | None = None) -> dict:
     """Full JD for the tailoring form. Most ATS APIs already returned it; otherwise read the page.
     prefs: the profile's Discover settings, to rank the job again once its full text is in."""
-    state = _load_jobs()
-    j = state["jobs"].get(job_id)
+    j = _load_jobs()["jobs"].get(job_id)
     if not j:
         raise KeyError(job_id)
     # A job read from a recruiter's email has its text already; its link is a Gmail message, never fetched.
     if (j.get("_trimmed") or len(j.get("description", "")) < SNIPPET) and j.get("method") != "recruiter mail":
         short = len(j.get("description", ""))
-        if j.get("detail_api"):
-            d = _json(j["detail_api"])
-            secs = (d.get("jobAd") or {}).get("sections") or {}
-            j["description"] = strip_html("\n\n".join(f"{v.get('title', '')}\n{v.get('text', '')}" for v in secs.values() if isinstance(v, dict)))
-        elif not refused_reason(j["url"]) and robots_allows(j["url"]):
-            page = render_page(j["url"], wait_ms=6000)
-            ld = _jsonld_jobs(page["jsonld"], j["url"])
-            if ld and len(ld[0]["description"]) > 200:
-                j["description"] = ld[0]["description"]
-                j["posted"] = j["posted"] or ld[0]["posted"]
-                j["company"] = j["company"] or ld[0]["company"]
-            else:
-                j["description"] = page["text"][:20000]
+        j["_read_tried"] = dt.date.today().isoformat()
+        _read_posting(j)
         if len(j.get("description", "")) > short:
             # Scored on a snippet: rank it again on the full posting, so the card shows what Tailor will.
             # Without the settings, dropping the stored rank makes the next Discover load rank it afresh.
@@ -1705,10 +1699,82 @@ def job_detail(job_id: str, prefs: dict | None = None) -> dict:
                 ranked = rank(j, evidence, prefs, rank_signature(prefs, evidence))
                 j = j | {k: ranked[k] for k in ("match", "estimate", "unscored", "reasons", "order", "excluded", "areas", "skills", "_r")
                          if k in ranked}
+        # Re-read under the lock: reading a page takes seconds, and a scan may have saved in the meantime.
         with _lock:
+            state = _load_jobs()
             state["jobs"][job_id] = j
             _save_jobs(state)
     return j
+
+
+def _read_posting(j: dict) -> None:
+    """Fill in a job's full description: from its ATS's own JSON where there is one, else from the page."""
+    url = j["url"]
+    p = urlparse(url)
+    host = p.hostname or ""
+    if j.get("detail_api"):
+        d = _json(j["detail_api"])
+        secs = (d.get("jobAd") or {}).get("sections") or {}
+        j["description"] = strip_html("\n\n".join(f"{v.get('title', '')}\n{v.get('text', '')}" for v in secs.values() if isinstance(v, dict)))
+    elif host.endswith(".myworkdayjobs.com"):
+        # The same JSON the Workday page loads: /<site>/job/... is /wday/cxs/<tenant>/<site>/job/...
+        path = [x for x in p.path.split("/") if x and not re.fullmatch(r"[a-z]{2}(-[A-Z]{2})?", x)]
+        info = _json(f"https://{host}/wday/cxs/{host.split('.')[0]}/{'/'.join(path)}").get("jobPostingInfo") or {}
+        j["description"] = strip_html(info.get("jobDescription") or "")
+    elif host.endswith(".oraclecloud.com") and (m := re.search(r"/sites/([^/]+)/job/(\d+)", p.path)):
+        full = (_json(f"https://{host}/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails?expand=all&onlyData=true"
+                      f"&finder=ById;Id=%22{m.group(2)}%22,siteNumber={m.group(1)}", timeout=30).get("items") or [{}])[0]
+        j["description"] = strip_html("\n\n".join(htmllib.unescape(full.get(k) or "") for k in (
+            "ExternalDescriptionStr", "ExternalResponsibilitiesStr", "ExternalQualificationsStr")))
+    elif not refused_reason(url) and robots_allows(url):
+        page = render_page(url, wait_ms=6000)
+        ld = _jsonld_jobs(page["jsonld"], url)
+        if ld and len(ld[0]["description"]) > 200:
+            j["description"] = ld[0]["description"]
+            j["posted"] = j["posted"] or ld[0]["posted"]
+            j["company"] = j["company"] or ld[0]["company"]
+        else:
+            j["description"] = page["text"][:20000]
+
+
+NO_TEXT = 300         # characters: below this a listing has no description to check, only a title
+READ_RETRY_DAYS = 3   # a posting that wouldn't load is tried again after this, not on every visit
+_reading: dict[str, dict] = {}
+
+
+def unread(j: dict) -> bool:
+    """Listed with no full posting yet, so the checks that read it (languages, visa, level) haven't run."""
+    retry = (dt.date.today() - dt.timedelta(days=READ_RETRY_DAYS)).isoformat()
+    return (len(j.get("description", "")) < NO_TEXT and j.get("method") != "recruiter mail"
+            and (j.get("_read_tried") or "") < retry)
+
+
+def _start_reading(ids: list[str]) -> None:
+    """Read the full postings of listed jobs in the background, one at a time, and rank each again; the page shows
+    the progress and reloads the list at the end, so a job that fails a check on its full text drops out."""
+    from .profiles import current
+    pid = current()
+    if not ids or (_reading.get(pid) or {}).get("running"):
+        return
+    p = _reading[pid] = {"running": True, "done": 0, "total": len(ids)}
+
+    def run():
+        try:
+            for i, jid in enumerate(ids, 1):
+                try:
+                    job_detail(jid)
+                except Exception:  # one posting that won't load must not stop the rest; it's tried again later
+                    with _lock:
+                        state = _load_jobs()
+                        if jid in state["jobs"]:
+                            state["jobs"][jid]["_read_tried"] = dt.date.today().isoformat()
+                            _save_jobs(state)
+                p["done"] = i
+        finally:
+            p["running"] = False
+
+    ctx = contextvars.copy_context()
+    threading.Thread(target=ctx.run, args=(run,), daemon=True, name="discover-read").start()
 
 
 def _store(results: list[dict], days: int, prefs: dict, evidence: set[str], progress=lambda m: None) -> dict:
