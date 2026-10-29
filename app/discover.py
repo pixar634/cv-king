@@ -648,7 +648,7 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 28
+RANK_VERSION = 29
 MID, SENIOR = 2, 3     # strategy.LEVEL_WORDS ranks: "SDE II", "Senior"
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "regions", "places", "pay_floor_home_lpa", "pay_floor_remote_lpa", "pay_floor_abroad_eur", "pay_tiers")

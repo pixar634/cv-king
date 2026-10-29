@@ -78,3 +78,13 @@ def test_pipeline_reads_only_what_is_worked_out_and_works_out_the_rest(monkeypat
     monkeypatch.setattr(callback.threading, "Thread", lambda target, args, daemon=None: type("T", (), {"start": lambda self: (ran.append(1), target(*args))})())
     assert callback.work_out_soon(["a2"], load_profile(), prefs) is True and ran
     assert callback.cached("a2", prefs, {})["label"] == "Long shot"
+
+
+def test_c_counts_only_where_it_is_the_language():
+    from app.keywords import taxonomy
+    c = lambda text: taxonomy().find(text).get("C", 0)
+    assert c("Backend Dev - C/Linux/GDB") and c("proficiency in C programming") and c("C/C++") and c("Embedded C")
+    assert not any(c(t) for t in ("Series C round", "the C-suite", "grade C or above", "Objective-C", "C# and .NET", "C++"))
+    systems = ("Advanced hands-on proficiency in C programming on Linux. Build multi-threaded C daemons. "
+               "Python for tooling is a plus.\n") * 2
+    assert gate.stack(systems, "Principal Engineer (Backend - C/Linux/GDB)", STRONG, {})["stop"]

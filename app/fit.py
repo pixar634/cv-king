@@ -46,7 +46,7 @@ def requirements(text: str) -> dict:
 
 # Whole disciplines: a role whose title is built on one of these, without it on the CV, is a different job.
 DISCIPLINES = {"Machine learning", "TensorFlow", "PyTorch", "LLMs", "RAG", "Spark", "Data pipelines", "Flutter",
-               "React Native", "Swift", "Kotlin", "Go", "Rust", "C++", "Scala", "Ruby on Rails", "Ruby", "Java",
+               "React Native", "Swift", "Kotlin", "Go", "Rust", "C++", "C", "Scala", "Ruby on Rails", "Ruby", "Java",
                ".NET", "C#", "Spring Boot", "Kubernetes", "Terraform", "Elasticsearch", "Kafka"}
 GENERIC = {"Communication", "Problem solving", "Ownership", "Product thinking", "Clean code", "Mentoring",
            "Stakeholder management", "Scalability", "Technical documentation", "Agile", "Requirements gathering",

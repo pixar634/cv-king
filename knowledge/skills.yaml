@@ -17,6 +17,8 @@ categories:
     Go: ['re:(?<![A-Za-z0-9])Go(?![A-Za-z0-9+#])(?![-\s]+(?:to|live|ahead|beyond|for|with)\b)', Golang, golang]
     Rust: [Rust]
     C++: [c++, cpp]
+    # A bare "C" is a grade, a funding round or "C-suite": only programming contexts count.
+    C: ['re:(?<![A-Za-z0-9#+&.''-])C(?![A-Za-z0-9#+&''-])(?=\s*(?:/|,|and|or)\s*C\+\+|/(?:Linux|Unix|C\+\+)\b|\s+(?:programming|language|code|daemons?|developers?|development|engineers?|libraries|programs?)\b)|(?<=\bin )C(?![A-Za-z0-9#+&''-])|(?<=\bANSI )C\b|(?<=\b[Ee]mbedded )C(?![A-Za-z0-9#+&''-])|(?<![A-Za-z0-9])C(?:89|99|11|17|23)\b']
     C#: [c#, csharp]
     PHP: [php]
     Ruby: [ruby]

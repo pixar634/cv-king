@@ -86,7 +86,7 @@ def openness(text: str, title: str = "", location: str = "", remote=None, market
 
 
 # Languages and the frameworks that define a stack: a job built on one you don't have is a different job.
-LANGUAGES = {"Java", "Spring Boot", ".NET", "C#", "Go", "Rust", "Ruby", "Ruby on Rails", "Scala", "C++", "Kotlin",
+LANGUAGES = {"Java", "Spring Boot", ".NET", "C#", "Go", "Rust", "Ruby", "Ruby on Rails", "Scala", "C++", "C", "Kotlin",
              "Swift", "PHP", "Python", "TypeScript", "JavaScript", "Node.js"}
 # Wording that makes a skill a must-have even where the posting has no "Requirements" heading.
 DEMAND = re.compile(r"\b(strong|proven|solid|deep|expert|extensive|hands[\s-]?on|must|required|requirement|"
