@@ -1007,6 +1007,13 @@ function areaFilter(jobs) {
   return jobs.filter((j) => !blr(j) || (j.areas || []).some((a) => sel.has(a)) || (!strict && !(j.areas || []).length));
 }
 
+// Today (or offset days from it) as YYYY-MM-DD on the user's own calendar: toISOString() is UTC, a day behind in
+// India until 5:30 in the morning.
+const localDay = (offset = 0) => {
+  const d = new Date(Date.now() + offset * 86400000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
 let FOUND = [];
 const companyKey = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 // The printer (components.css): a CV feeding out of a printer, for waits. update() moves the count and the bar
@@ -1112,7 +1119,7 @@ async function loadFound() {
   for (const j of rest) (groups[(j.first_seen || "").slice(0, 10) || "earlier"] ||= []).push(j);
   const dayLabel = (d) => {
     if (d === "earlier") return "Found earlier";
-    const today = new Date().toISOString().slice(0, 10), y = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const today = localDay(), y = localDay(-1);
     const nice = new Date(d + "T00:00:00").toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
     return d === today ? `Found today, ${nice}` : d === y ? `Found yesterday, ${nice}` : `Found ${nice}`;
   };
@@ -1121,7 +1128,8 @@ async function loadFound() {
   $("#foundList").innerHTML = favHtml + (rest.length
     ? days.map((d, i) => {
         const sc = scansOn(d);
-        const meta = sc.length ? `${sc.length} scan${sc.length > 1 ? "s" : ""}, last at ${sc[sc.length - 1].at.slice(11, 16)}, ${sc.reduce((n, s) => n + s.new, 0)} new` : "";
+        // The scan count only: what each scan found then has since been filtered again; the job count is the live one.
+        const meta = sc.length ? `${sc.length} scan${sc.length > 1 ? "s" : ""}, last at ${sc[sc.length - 1].at.slice(11, 16)}` : "";
         const list = groups[d];
         const dated = list.filter((j) => j.posted), unknown = list.filter((j) => !j.posted);
         return `<details class="disclosure disclosure--lg day" ${i === 0 && (!pinned.length || S.openLatest) ? "open" : ""}><summary><span>${dayLabel(d)}</span><span class="disclosure__sub num">${list.length} job${list.length === 1 ? "" : "s"}</span><span class="disclosure__aside">${meta}</span></summary>
@@ -2627,7 +2635,7 @@ function renderLog() {
   const kinds = CAREER.kinds;
   if (!$("#logKind").options.length) {
     $("#logKind").innerHTML = Object.entries(kinds).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
-    $("#logDate").value = new Date().toISOString().slice(0, 10);
+    $("#logDate").value = localDay();
     const cvOk = () => { const ok = ["skill", "cert"].includes($("#logKind").value); $("#logCvLine").hidden = !ok; if (!ok) $("#logCv").checked = false; };
     $("#logKind").onchange = cvOk; cvOk();
     $("#logAdd").onclick = async () => {
