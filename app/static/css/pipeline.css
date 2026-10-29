@@ -57,18 +57,18 @@
    below glide down instead of jumping. Pure CSS: ::details-content and interpolate-size (Chrome 131+); older
    browsers just open instantly, as before. ---- */
 #v-pipeline { interpolate-size: allow-keywords; }
-/* Closing: a gentle ease-in-out, the content fading with the shrink rather than ahead of it. (The opening curve run
-   backwards drops most of the height in the first frames and reads as a snap.) It blurs as it fades. */
+/* Both ways the height moves fast, then slows to a soft stop (ease-out, 0.5 s). Closing, the content fades and
+   blurs with the shrink, not ahead of it, so it doesn't read as a snap. */
 #v-pipeline details::details-content {
   block-size: 0; overflow: hidden; opacity: 0; filter: blur(6px);
-  transition: block-size .45s cubic-bezier(.45, 0, .25, 1), opacity .4s ease-in, filter .4s ease-in,
-              content-visibility .45s allow-discrete;
+  transition: block-size .5s cubic-bezier(.22, 1, .36, 1), opacity .4s ease-out, filter .4s ease-out,
+              content-visibility .5s allow-discrete;
 }
-/* Opening: quick to start, settling softly; the content sharpens out of a blur as it fades in */
+/* Opening: the content sharpens out of a blur as it fades in */
 #v-pipeline details[open]::details-content {
   block-size: auto; opacity: 1; filter: blur(0);
-  transition: block-size .38s cubic-bezier(.2, .8, .2, 1), opacity .3s ease, filter .35s ease-out,
-              content-visibility .38s allow-discrete;
+  transition: block-size .5s cubic-bezier(.22, 1, .36, 1), opacity .35s ease-out, filter .4s ease-out,
+              content-visibility .5s allow-discrete;
 }
 @media (prefers-reduced-motion: reduce) { #v-pipeline details::details-content { transition: none; } }
 
