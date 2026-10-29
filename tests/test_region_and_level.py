@@ -8,8 +8,10 @@ EVIDENCE = {"Python", "React", "FastAPI"}
 
 
 def rank(prefs, title="Lead Software Engineer", location="Bengaluru, India", desc=DESC):
+    """The job as Discover lists it: ranked, then filtered by the region chips."""
     job = {"title": title, "company": "Acme", "location": location, "description": desc}
-    return discover.rank(job, EVIDENCE, discover.with_profile({"candidate_years": 8} | prefs))
+    p = discover.with_profile({"candidate_years": 8} | prefs)
+    return discover.apply_regions(discover.rank(job, EVIDENCE, p), set(discover.regions(p)))
 
 
 def test_places_show_only_with_rest_of_the_world_on():
@@ -76,3 +78,12 @@ def test_another_kind_of_engineering_is_hidden_unless_a_track_covers_it():
     s["tracks"]["ic_lead"]["also_match"] += ["security engineer"]
     strategy.save(s)
     assert not rank(prefs, title="Senior Corporate Security Engineer")["excluded"]   # your own track: kept
+
+
+def test_switching_a_region_chip_ranks_nothing_again():
+    city, remote = discover.with_profile({"regions": ["city"]}), discover.with_profile({"regions": ["city", "remote"]})
+    assert discover.rank_signature(city, EVIDENCE) == discover.rank_signature(remote, EVIDENCE)
+    job = {"title": "Lead Software Engineer", "company": "Acme", "location": "Remote", "description": DESC + " Worldwide."}
+    ranked = discover.rank(job, EVIDENCE, city)
+    assert not ranked["excluded"] and ranked["chip"] == "remote"
+    assert discover.apply_regions(ranked, {"city"})["excluded"] and not discover.apply_regions(ranked, {"remote"})["excluded"]

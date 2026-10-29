@@ -648,10 +648,10 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 30
+RANK_VERSION = 31
 MID, SENIOR = 2, 3     # strategy.LEVEL_WORDS ranks: "SDE II", "Senior"
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
-             "offices", "regions", "places", "pay_floor_home_lpa", "pay_floor_remote_lpa", "pay_floor_abroad_eur", "pay_tiers")
+             "offices", "places", "pay_floor_home_lpa", "pay_floor_remote_lpa", "pay_floor_abroad_eur", "pay_tiers")
 
 
 # A country's other names and its main tech cities, with their other spellings: postings often name only the city.
@@ -788,7 +788,7 @@ def rank(job: dict, evidence: set[str], prefs: dict, sig: str | None = None) -> 
     if cached and (cached.get("sig") == sig or job.get("_trimmed")):
         return job | {k: v for k, v in cached.items() if k != "sig"}
     out = _rank(job, evidence, prefs)
-    keep = {k: out[k] for k in ("match", "order", "reasons", "excluded", "areas", "skills", "estimate", "unscored", "open",
+    keep = {k: out[k] for k in ("match", "order", "reasons", "excluded", "chip", "areas", "skills", "estimate", "unscored", "open",
                                      "pay", "fit", "fit_why", "terms", "warm", "applied_here")
             if k in out}
     return out | {"_r": keep | {"sig": sig}}
@@ -806,6 +806,17 @@ def region_chip(job: dict) -> str:
             "unknown": "unknown"}.get(reg, "excluded")
 
 
+def apply_regions(job: dict, wanted: set[str]) -> dict:
+    """The job as the list shows it under your region chips: hidden (excluded, with the reason) when its region is
+    off. A posting not read yet stays listed; one whose text names no place shows only with Remote or Rest of the
+    world on."""
+    chip = job.get("chip")
+    if job.get("excluded") or chip in (None, "unread") or chip in wanted or (chip == "unknown" and wanted & {"remote", "world"}):
+        return job
+    where = (job.get("location") or "")[:40]
+    return job | {"excluded": True, "reasons": [f"outside your regions ({where})" if where else "doesn't say where it is"]}
+
+
 def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     title, desc = job["title"], job.get("description", "")
     reasons, score = [], 0
@@ -820,21 +831,19 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     if (m := OTHER_FIELD.search(title)) and not strategy.matching_tracks(title, tracks):
         return job | {"match": 0, "reasons": [f"another kind of engineering ({m.group(0)})"], "excluded": True}
     reg = region(job)
-    wanted = set(regions(prefs))
     city = strategy.city_pattern()
     loc = job.get("location") or ""
     bucket = region_chip(job)
     places = places_pattern(prefs)
     in_place = bool(places and reg != "home" and places.search(loc))
-    # No location on the listing: the posting's own text says where. Until it's read, the job stays listed.
-    if bucket == "unknown" and len(desc) >= NO_TEXT:
+    # No location on the listing: the posting's own text says where; until it's read, it's "unread" and stays listed.
+    if bucket == "unknown":
         head = desc[:3000]
-        bucket = ("city" if city and city.search(head) else "country" if home_country_pattern().search(head)
-                  else "unknown" if wanted & {"remote", "world"} else "excluded")
-    if bucket == "excluded" or (bucket != "unknown" and bucket not in wanted):
-        where = (job.get("location") or "")[:40]
-        return job | {"match": 0, "reasons": [f"outside your regions ({where})" if where else "doesn't say where it is"],
-                      "excluded": True}
+        bucket = ("unread" if len(desc) < NO_TEXT else "city" if city and city.search(head)
+                  else "country" if home_country_pattern().search(head) else "unknown")
+    # The region chips only filter the list (apply_regions): switching one never ranks every job again.
+    if bucket == "excluded":
+        return job | {"match": 0, "reasons": [f"outside your regions ({loc[:40]})"], "excluded": True}
     for skill in prefs.get("exclude_skills") or []:
         if needs_skill(job, skill):
             return job | {"match": 0, "reasons": [f"needs {skill}"], "excluded": True}
@@ -975,7 +984,7 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
         reasons.insert(0, "a recruiter wrote to you")
     from .areas import tag
     return job | {"skills": skills, "match": max(0, min(100, score)), "estimate": estimate, "unscored": unscored, "order": order,
-                  "reasons": reasons, "excluded": False, "open": o["state"], "pay": pv["label"],
+                  "reasons": reasons, "excluded": False, "chip": bucket, "open": o["state"], "pay": pv["label"],
                   "fit": fit["label"], "fit_why": fit["why"], "terms": terms, "warm": warm,
                   "applied_here": prefs.get("_applied", {}).get(_company(job.get("company"))),
                   "areas": tag(job, prefs.get("offices", ""))}
@@ -1472,6 +1481,7 @@ def saved(days: int, prefs: dict) -> list[dict]:
     stale = (dt.date.today() - dt.timedelta(days=STALE_DAYS)).isoformat()
     dismissed = set(state.get("dismissed", []))
     learned = taste.model(state)
+    wanted = set(regions(prefs))
     out, fresh, behind, to_read = [], {}, 0, []
     for jid, j in state["jobs"].items():
         if not _listed(j, cutoff, stale, dismissed):
@@ -1483,7 +1493,7 @@ def saved(days: int, prefs: dict) -> list[dict]:
             r = rank(j, evidence, prefs, sig)
             if r.get("_r") is not cached:
                 fresh[jid] = r["_r"]
-        if not r["excluded"] and (r := taste.apply(r, learned)):
+        if not apply_regions(r, wanted)["excluded"] and (r := taste.apply(r, learned)):
             out.append({k: v for k, v in r.items() if k not in ("description", "_r")})
             if unread(j):
                 to_read.append(jid)
@@ -1805,7 +1815,7 @@ def job_detail(job_id: str, prefs: dict | None = None) -> dict:
             if prefs is not None:
                 prefs, evidence = with_profile(prefs), strong_skills(load_profile())
                 ranked = rank(j, evidence, prefs, rank_signature(prefs, evidence))
-                j = j | {k: ranked[k] for k in ("match", "estimate", "unscored", "reasons", "order", "excluded", "areas", "skills", "_r")
+                j = j | {k: ranked[k] for k in ("match", "estimate", "unscored", "reasons", "order", "excluded", "chip", "areas", "skills", "_r")
                          if k in ranked}
         # Re-read under the lock: reading a page takes seconds, and a scan may have saved in the meantime.
         with _lock:
@@ -1913,7 +1923,7 @@ def _store(results: list[dict], days: int, prefs: dict, evidence: set[str], prog
                 fresh.append(j)
         state["jobs"] = {k: v for k, v in state["jobs"].items()
                          if (v.get("posted") or v.get("first_seen", now)[:10]) >= keep_from}
-        kept_new = [j for j in fresh if j["id"] in new_ids and not j.get("excluded")]
+        kept_new = [j for j in fresh if j["id"] in new_ids and not apply_regions(j, set(regions(prefs)))["excluded"]]
         state.setdefault("scans", []).append({"at": now, "sources": len(results),
                                               "read": sum(len(r["jobs"]) for r in results), "new": len(kept_new)})
         state["scans"] = state["scans"][-30:]
@@ -1928,7 +1938,8 @@ def _store(results: list[dict], days: int, prefs: dict, evidence: set[str], prog
         save_sources(rows)
     dismissed = set(state.get("dismissed", []))
     learned = taste.model(state)
-    fresh = [taste.apply(j, learned) for j in fresh if j["id"] not in dismissed and not j.get("excluded")]
+    wanted = set(regions(prefs))
+    fresh = [taste.apply(j, learned) for j in fresh if j["id"] not in dismissed and not apply_regions(j, wanted)["excluded"]]
     fresh = _dedupe_sort([{k: v for k, v in j.items() if k not in ("description", "_r")} for j in fresh if j])
     from . import db
     db.sync_soon()   # the local database gets this scan's jobs too
