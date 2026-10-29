@@ -862,6 +862,7 @@ async function pollBatch(once) {
     $("#liveCount").hidden = !live; $("#liveCount").textContent = live;
     if (S.item) { const it = S.batch.find((b) => b.id === S.item); if (it) await onStudioItem(it); }
     if ($("#v-pipeline").classList.contains("on")) renderPipeline();
+    if ($("#v-discover").classList.contains("on")) markTailoring();
   } catch { /* server restarting; try again */ }
   if (once) return;
   const live = S.batch.some((b) => ["queued", "running"].includes(b.status));
@@ -1086,12 +1087,13 @@ async function loadFound() {
     const d = daysAgo(j.posted);
     const where = [j.company || j.source, j.location].filter(Boolean).map(esc).join(" · ");
     const remote = j.remote || /\bremote\b|work from home|\bwfh\b/i.test(j.location || "");
-    return `<div class="card card--interactive job-card ${S.selected.has(j.id) ? "sel" : ""}" data-id="${j.id}">
+    return `<div class="card card--interactive job-card ${S.selected.has(j.id) ? "sel" : ""}" data-id="${j.id}" data-url="${esc(j.url)}">
       <div class="job-card__top">
         <input type="checkbox" ${S.selected.has(j.id) ? "checked" : ""} aria-label="Select ${esc(j.title)}">
         <span class="logo logo--sm">${initial(j.company || j.source)}</span>
         <span class="tag ${d === null ? "tag--warn" : d <= 3 ? "tag--ok" : ""}">${d === null ? "Date unknown" : ago(j.posted)}</span>
         ${remote ? `<span class="tag tag--accent" title="A remote job: work from where you live">Remote</span>` : ""}
+        <span class="job-card__tl"></span>
         ${isNew(j) ? `<span class="tag tag--accent tag--solid">New</span>` : ""}
         ${j.pay === "meets" ? `<span class="tag tag--ok" title="States pay at or above your floor">Pay meets</span>` : j.pay === "likely" ? `<span class="tag" title="Pay range or company tier reaches your floor">Pay likely</span>` : ""}
         ${j.open === "unclear" ? `<span class="tag tag--warn" title="Doesn't say if it hires where you live, or if it sponsors a visa">Check eligibility</span>` : ""}
@@ -1159,7 +1161,29 @@ async function loadFound() {
   }
   renderDock();
   renderTaste(taste);
+  markTailoring();
   watchRescore();
+}
+
+// A Discover card shows what became of its CV once you press Tailor: queued, being written, written, or stopped
+// before writing (the reason is in the tag's title; Pipeline has the card with Tailor anyway).
+const TAILOR_TAGS = {
+  queued: ["tag--accent", "Queued"], running: ["tag--accent tag--solid", "Tailoring"], done: ["tag--ok", "CV written"],
+  dup: ["tag--warn", "Already have it"], stop: ["tag--bad", "Fails a screen"], stretch: ["tag--warn", "A stretch"],
+  below: ["tag--warn", "Below your filter"], error: ["tag--bad", "Tailoring failed"],
+};
+function markTailoring() {
+  const latest = {};
+  for (const b of [...(S.batch || [])].sort((a, c) => (a.created || "").localeCompare(c.created || "")))
+    if (b.entry?.job_url) latest[b.entry.job_url] = b;
+  $$("#foundList .job-card").forEach((el) => {
+    const slot = $(".job-card__tl", el), b = latest[el.dataset.url];
+    if (!slot) return;
+    const kind = !b ? "" : b.status !== "error" ? b.status : b.dup ? "dup" : b.gate === "stop" ? "stop"
+      : b.gate === "stretch" ? "stretch" : b.below_min ? "below" : "error";
+    const [cls, label] = TAILOR_TAGS[kind] || [];
+    slot.innerHTML = label ? `<span class="tag ${cls}" title="${esc(b.stage || "")}">${label}</span>` : "";
+  });
 }
 
 // ---- "Not for me": the card folds into a question (why?), and Discover learns from the answer ----

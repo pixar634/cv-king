@@ -165,6 +165,7 @@
 .job-card { display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); }
 .job-card__top { display: flex; align-items: center; gap: 10px; }
 .job-card__top .icon-btn { margin-left: auto; }
+.job-card__tl:empty { display: none; }
 .job-card__title { font-weight: 800; font-size: 15px; line-height: 1.35; color: var(--text); }
 .job-card__where { margin-top: 4px; font-size: 12.5px; line-height: 1.45; color: var(--text-2); }
 .job-card__match { display: flex; align-items: center; gap: 10px; }
