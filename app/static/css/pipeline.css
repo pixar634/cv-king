@@ -57,14 +57,14 @@
    below glide down instead of jumping. Pure CSS: ::details-content and interpolate-size (Chrome 131+); older
    browsers just open instantly, as before. ---- */
 #v-pipeline { interpolate-size: allow-keywords; }
-/* Both ways the height moves fast, then slows to a soft stop (ease-out, 0.5 s). Closing, the content fades and
-   blurs with the shrink, not ahead of it, so it doesn't read as a snap. */
+/* Closing: fast, then a long slow settle onto the closed height (0.7 s); the content fades and blurs late, with the
+   shrink, so you see it close in rather than vanish first. */
 #v-pipeline details::details-content {
   block-size: 0; overflow: hidden; opacity: 0; filter: blur(6px);
-  transition: block-size .5s cubic-bezier(.22, 1, .36, 1), opacity .4s ease-out, filter .4s ease-out,
-              content-visibility .5s allow-discrete;
+  transition: block-size .7s cubic-bezier(.16, 1, .3, 1), opacity .6s ease-in, filter .6s ease-in,
+              content-visibility .7s allow-discrete;
 }
-/* Opening: the content sharpens out of a blur as it fades in */
+/* Opening: fast, then a soft stop (0.5 s); the content sharpens out of a blur as it fades in */
 #v-pipeline details[open]::details-content {
   block-size: auto; opacity: 1; filter: blur(0);
   transition: block-size .5s cubic-bezier(.22, 1, .36, 1), opacity .35s ease-out, filter .4s ease-out,
