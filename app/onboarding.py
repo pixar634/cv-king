@@ -12,12 +12,11 @@ import base64
 import concurrent.futures as cf
 import contextvars
 import datetime as dt
-import io
 import json
 import re
-import zipfile
 
 from . import discover, profiles, strategy
+from .attachments import extract_text
 from .engines import ENGINES, EngineError, parse_json_reply
 from .profile import experience_months, load_profile, original_cv_path, save_profile
 
@@ -33,28 +32,7 @@ def read_cv(filename: str, data_b64: str) -> str:
         raise ValueError("The file didn't upload properly. Try again.") from e
     if len(raw) > MAX_BYTES:
         raise ValueError("That file is over 8 MB. A CV should be far smaller; export it again as a PDF.")
-    name = (filename or "").lower()
-    if name.endswith(".pdf") or raw[:5] == b"%PDF-":
-        from pypdf import PdfReader
-        try:
-            text = "\n".join((page.extract_text() or "") for page in PdfReader(io.BytesIO(raw)).pages)
-        except Exception as e:
-            raise ValueError("Couldn't read that PDF. If it's a scan, paste the CV text instead.") from e
-    elif name.endswith(".docx") or raw[:2] == b"PK":
-        try:
-            xml = zipfile.ZipFile(io.BytesIO(raw)).read("word/document.xml").decode("utf-8", "replace")
-        except Exception as e:
-            raise ValueError("Couldn't read that Word file. Save it as .docx or PDF, or paste the text.") from e
-        xml = re.sub(r"</w:p>", "\n", xml)
-        xml = re.sub(r"<w:tab/>", "\t", xml)
-        text = re.sub(r"<[^>]+>", "", xml)
-        text = re.sub(r"&amp;", "&", re.sub(r"&lt;", "<", re.sub(r"&gt;", ">", text)))
-    elif name.endswith((".doc", ".rtf", ".odt", ".pages")):
-        raise ValueError("Save the CV as PDF or .docx first (File > Save As), or paste its text.")
-    else:
-        text = raw.decode("utf-8", "replace")
-    text = re.sub(r"[ \t]+\n", "\n", text.replace("\r", ""))
-    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    text = extract_text(filename, raw, "CV")
     if len(text) < 300:
         raise ValueError("That CV has almost no readable text (a scanned image, perhaps). Paste its text instead.")
     return text
