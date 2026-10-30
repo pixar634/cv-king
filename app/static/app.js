@@ -57,6 +57,7 @@ const tone = (n) => (n >= 85 ? "tone-high" : n >= 65 ? "tone-mid" : "tone-low");
 const scoreNum = (n) => `<span class="score-num num ${tone(n)}">${n}<small>%</small></span>`;
 const logoTile = (id, has, name, size = "logo--sm") => `<span class="logo ${size}">${has ? `<img src="/apps/${esc(id)}/logo" alt="">` : initial(name)}</span>`;
 const ICON = {
+  copy: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h11v11H9zM5 15H4V4h11v1" fill="none" stroke="currentColor" stroke-width="2"/></svg>`,
   out: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6" fill="none" stroke="currentColor" stroke-width="2"/></svg>`,
   x: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2"/></svg>`,
   up: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2"/></svg>`,
@@ -1367,7 +1368,7 @@ function renderPipeline() {
       <div class="item">${logoTile(r.id, r.logo, r.company)}
         <span class="item__body"><span class="item__title">${esc(r.company)}</span><span class="item__meta" title="${esc(r.role)}">${esc(r.role)}</span></span>
         <span class="item__aside">${scoreNum(r.score_after)}</span></div>
-      <div class="app-card__meta">${r.applied_on ? `<span class="chip chip--ok chip--pill num" title="The day you marked this applied">Applied on: ${esc(dayLabel(r.applied_on))}</span>` : `<span class="num" title="Date this CV was made">Tailored ${esc(dayLabel(r.created.slice(0, 10)))}</span>`}<span class="app-card__host" title="${esc(r.job_url || "")}${r.job_id ? `, ID ${esc(r.job_id)}` : ""}">${esc(host(r.job_url || ""))}</span></div>
+      <div class="app-card__meta">${r.applied_on ? `<span class="chip chip--ok chip--pill num" title="The day you marked this applied">Applied on: ${esc(dayLabel(r.applied_on))}</span>` : `<span class="num" title="Date this CV was made">Tailored ${esc(dayLabel(r.created.slice(0, 10)))}</span>`}<span class="app-card__host" title="${esc(r.job_url || "")}">${esc(host(r.job_url || ""))}</span>${r.job_id ? `<button class="chip chip--pill num app-card__jobid" data-copyid="${esc(r.job_id)}" data-stop title="Copy the job ID, to send with a referral ask"><span>ID ${esc(r.job_id)}</span>${ICON.copy}</button>` : ""}</div>
       ${r.callback ? `<div class="app-card__chance" title="${esc((r.callback.why || []).join(" · "))}"><span class="tag ${r.callback.label === "Strong" ? "tag--ok" : r.callback.label === "Long shot" ? "tag--warn" : ""}">${esc(r.callback.label)}</span><span class="num">${esc(r.callback.band)}</span><span class="type-meta app-card__why">${esc((r.callback.why || [])[0] || "")}</span></div>` : r.callback_pending ? `<div class="app-card__chance"><span class="type-meta">Working out the chance of a callback…</span></div>` : ""}
       ${(r.callback?.missing || []).filter((s) => s.must).length ? `<div class="chip-row">${r.callback.missing.filter((s) => s.must).map((s) => `<span class="chip chip--bad"><span>No ${esc(s.name)}</span></span>`).join("")}</div>` : ""}
       <div class="app-card__state">${statusSel(r)}</div>
@@ -1404,6 +1405,7 @@ function renderPipeline() {
   renderPipeline.sig = sig;
   $("#stageNav").innerHTML = navHtml; $("#stageHead").innerHTML = headHtml; $("#board").innerHTML = boardHtml;
   $$("[data-open]").forEach((el) => (el.onclick = (e) => { if (!e.target.closest("select, [data-stop], details")) openApp(el.dataset.open); }));
+  $$("[data-copyid]").forEach((b) => (b.onclick = () => copy(b.dataset.copyid)));
   $$("[data-findc]").forEach((b) => (b.onclick = () => findContacts(b.dataset.findc)));
   $$("[data-refer]").forEach((b) => (b.onclick = () => askReferral(b.dataset.refer, b.dataset.url, b.dataset.kind)));
   $$("[data-mailstatus]").forEach((b) => (b.onclick = async () => {
