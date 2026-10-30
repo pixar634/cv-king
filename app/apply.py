@@ -13,7 +13,8 @@ import re
 
 from .config import data_dir, output_dir
 from .engines import ENGINES, light_engine, parse_json_reply
-from .profile import availability_for, brief_view, experience_years_label, load_profile, notice_days, release_note
+from .profile import (availability_for, brief_view, experience_months, experience_years_label, load_profile,
+                      notice_days, release_note)
 from .tailor import home_market, load_report
 from .untrusted import fence
 
@@ -27,6 +28,17 @@ CHECKED = re.compile(r"\bfirst\s*name|given\s*name|\b(last|family)\s*name|surnam
 # Questions whose true answer depends on where the job is: saved per market and never used for another one.
 SCOPED = re.compile(r"sponsor|visa|work\s*permit|authori[sz]|right\s*to\s*work|eligib|salary|\bctc\b|compensation|"
                     r"\bpay\b|remuneration|notice|start\s*date|joining|relocat", re.I)
+# "Are you authorised to work in India?", "Do you have the right to work...", "Are you eligible to work...".
+AUTHORISED = re.compile(r"authori[sz]ed\s+to\s+work|authori[sz]ation\s+to\s+work|work\s+authori[sz]ation|"
+                        r"right\s+to\s+work|eligible\s+to\s+work|legally\s+(allowed|permitted|able|entitled)\s+to\s+work",
+                        re.I)
+# A country other than home named in a question: its work-rights answer is never assumed.
+ABROAD = re.compile(r"united\s+states|\bu\.?s\.?a?\b|america|united\s+kingdom|\bu\.?k\.?\b|britain|england|canada|"
+                    r"germany|france|netherlands|ireland|europe|\beu\b|australia|singapore|japan|\buae\b|dubai|"
+                    r"switzerland|sweden|spain|poland|israel", re.I)
+# Total years of experience asked as ranges ("5-8 years", "10+"); never "relevant" years, which the profile can't say.
+YEARS_ASKED = re.compile(r"years?\s*of\s*(professional\s*|work\s*|total\s*|overall\s*)?experience|"
+                         r"(total|overall)\s*(work\s*)?experience", re.I)
 # "Will you now or in the future require sponsorship?", not "Can you work without sponsorship?".
 NEEDS_SPONSOR = re.compile(r"\b(require|need)\w*\b.*\bsponsor", re.I)
 NOTICE = re.compile(r"notice\s*period|how\s*soon\s*can|when\s*can\s*you\s*(start|join)|earliest\s*(start|joining)|"
@@ -87,11 +99,24 @@ def _currency(text) -> str | None:
     return hits[0] if len(hits) == 1 else None
 
 
+def _home_citizen(profile: dict, home: str) -> bool:
+    """Is the candidate a national of their home market's country (an Indian in India)?"""
+    nat = (profile["basics"].get("nationality") or "").strip().lower()
+    return bool(nat) and len(home) >= 4 and nat.startswith(home[:4].lower())
+
+
 def _by_code(label: str, market: str, home: str, profile: dict, jd: str = "") -> list:
     """Answers code works out from where the job is and the profile, best first; [] when it can't."""
     if NEEDS_SPONSOR.search(label) and not re.search(r"without|not\s+require", label, re.I):
         # Working at home, or remote from home, needs no visa; a job abroad does.
         return ["No"] if market in (home, "remote") else ["Yes"]
+    if AUTHORISED.search(label):
+        # A national may work in their own country: "Yes" for a job at home (or a question naming home), and only
+        # when the question names no other country. Anywhere else the true answer needs the candidate.
+        names_home = home.lower() in label.lower()
+        if (market == home or names_home) and not ABROAD.search(label) and _home_citizen(profile, home):
+            return ["Yes"]
+        return []
     days = notice_days(profile)
     if days is None or not NOTICE.search(label):
         return []
@@ -167,6 +192,24 @@ def _code_option(field: dict, code: str, location: str):
     hits = [o for o in options if re.search(rf"\+\s?{code}(?!\d)", o)]
     words = [w for w in re.findall(r"[a-z]{4,}", (location or "").lower())]
     return next((o for o in hits if any(w in o.lower() for w in words)), hits[0] if hits else None)
+
+
+def _years_option(options: list[str], years: int):
+    """The option whose range holds the candidate's years: "8-10 years", "8+", "More than 5", "Less than 2"."""
+    for o in options:
+        nums = [int(n) for n in re.findall(r"\d+", o)]
+        low = o.lower()
+        if len(nums) >= 2 and nums[0] <= years <= nums[1]:
+            return o
+        if len(nums) == 1:
+            n = nums[0]
+            if ("+" in o or re.search(r"more\s+than|above|over|at\s+least|or\s+more", low)) and years >= n:
+                return o
+            if re.search(r"less\s+than|under|below|up\s+to", low) and years < n:
+                return o
+            if not re.search(r"\+|more|above|over|less|under|below|up\s+to|least", low) and years == n:
+                return o
+    return None
 
 
 def _pick(value, options: list[str]):
@@ -273,6 +316,8 @@ def answer(app_id: str, fields: list[dict], url: str = "", progress=lambda m: No
                 answers[fid] = _fits(f, fact)
             continue   # anything else already filled is kept as it is
         value = next((v for v in (_fits(f, c) for c in _by_code(label, market, home, profile, jd)) if v is not None), None)
+        if value is None and kind in CHOICE and YEARS_ASKED.search(label) and not re.search(r"relevant", label, re.I):
+            value = _years_option(f.get("options") or [], experience_months(profile) // 12)
         known = next((r["a"] for r in mine if _norm(r["q"]) == _norm(label)), None)
         if known is not None and _currency(label) and _currency(known) not in (None, _currency(label)):
             known = None   # a rupee figure is not an answer to a dollar question

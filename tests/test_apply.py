@@ -208,3 +208,47 @@ def test_where_are_you_currently_located_is_answered_from_the_profile(app_id, en
     fields = [{"id": f"0:{i}", "kind": "text", "label": label} for i, label in enumerate(labels)]
     got = apply.answer(app_id, fields)
     assert got["answers"] == {f"0:{i}": where for i in range(len(labels))} and not e.briefs
+
+
+@pytest.fixture
+def indian(sandbox):
+    path = sandbox / "data" / "base_cv.json"
+    profile = json.loads(path.read_text("utf-8"))
+    profile["basics"]["nationality"] = "Indian"
+    path.write_text(json.dumps(profile), "utf-8")
+
+
+def test_a_national_is_authorised_to_work_at_home_and_only_there(app_id, engine, indian):
+    e = engine({})
+    fields = [{"id": "0:a", "kind": "radio", "label": "Are you authorised to work in India?", "options": ["Yes", "No"]},
+              {"id": "0:b", "kind": "select", "label": "Do you have the legal right to work in the country of this job?",
+               "options": ["Yes, I do", "No"]},
+              {"id": "0:c", "kind": "radio", "label": "Are you authorized to work in the United States?",
+               "options": ["Yes", "No"]}]
+    got = apply.answer(app_id, fields)
+    assert got["answers"]["0:a"] == "Yes" and got["answers"]["0:b"] == "Yes, I do"
+    assert "0:c" not in got["answers"] and len(e.briefs) == 1     # the US question goes to the model, never "Yes" by code
+
+
+def test_work_rights_need_a_stated_nationality(app_id, engine):
+    engine({})
+    fields = [{"id": "0:a", "kind": "radio", "label": "Are you authorised to work in India?", "options": ["Yes", "No"]}]
+    assert "0:a" not in apply.answer(app_id, fields)["answers"]
+
+
+def test_years_of_experience_picks_the_range_holding_them(app_id, engine, sandbox):
+    engine({})
+    years = apply.experience_months(apply.load_profile()) // 12
+    ranges = ["0-2 years", f"{max(years - 1, 0)}-{years + 1} years", f"{years + 5}+ years"]
+    fields = [{"id": "0:y", "kind": "select", "label": "Total years of experience", "options": ranges},
+              {"id": "0:r", "kind": "select", "label": "Years of relevant experience", "options": ranges}]
+    got = apply.answer(app_id, fields)
+    assert got["answers"].get("0:y") == ranges[1] and "0:r" not in got["answers"]
+
+
+def test_years_option_reads_the_usual_wordings():
+    opts = ["Less than 2", "2 - 5", "6 to 9", "More than 9"]
+    assert apply._years_option(opts, 1) == "Less than 2"
+    assert apply._years_option(opts, 3) == "2 - 5"
+    assert apply._years_option(opts, 10) == "More than 9"
+    assert apply._years_option(["10+ years"], 12) == "10+ years"
