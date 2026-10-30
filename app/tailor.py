@@ -489,6 +489,13 @@ def pdf_name(profile: dict, company: str, role: str) -> str:
     return f"{part(company, 30)}_{part(role, 50)}_{part(profile['basics']['name'], 40)}.pdf"
 
 
+def upload_name(profile: dict, kind: str = "CV") -> str:
+    """Name_CV.pdf for attaching to a form: some sites refuse a long file name (one allows 50 characters, and
+    its pop-up stops the form), and it's what a recruiter expects to see."""
+    name = re.sub(r"[^A-Za-z0-9]+", "_", profile["basics"].get("name") or "").strip("_")[:30].strip("_")
+    return f"{name}_{kind}.pdf" if name else f"{kind}.pdf"
+
+
 def _allowed_numbers(header_line: str, years: str) -> set[str]:
     return _num_tokens(header_line) | _num_tokens(GDPR_TEXT) | _num_tokens(years) | {years.rstrip("+")}
 
