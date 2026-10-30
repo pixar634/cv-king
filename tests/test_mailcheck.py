@@ -50,3 +50,18 @@ def test_the_run_can_read_but_never_send_or_draft():
     assert "mcp__claude_ai_Gmail__create_draft" in engines.GMAIL_BLOCKED
     assert {"mcp__claude_ai_Gmail__send_message", "mcp__claude_ai_Gmail__search_threads"} <= set(engines.GMAIL_BLOCKED)
     assert not set(mailcheck.TOOLS) & {"mcp__claude_ai_Gmail__send_message", "mcp__claude_ai_Gmail__create_draft"}
+
+
+def test_an_application_sent_elsewhere_keeps_its_mail_without_a_folder(monkeypatch):
+    # Logged as sent on LinkedIn: no CV folder. The check used to stop on it with "No such file or directory".
+    (output_dir() / "applications.json").write_text(json.dumps(ROWS[:2]), "utf-8")
+    (output_dir() / "a2").mkdir(parents=True, exist_ok=True)
+
+    class Eng:
+        def run(self, brief, timeout=0, tools=None):
+            return json.dumps(REPLY)
+    monkeypatch.setattr(mailcheck, "get_engine", lambda e: Eng())
+    got = mailcheck.check()
+    assert got["matched"] == 2 and not (output_dir() / "a1").exists()
+    assert [m["kind"] for m in mailcheck.load("a1")["mails"]] == ["received", "callback"]
+    assert (output_dir() / "a2" / mailcheck.FILE).exists()
