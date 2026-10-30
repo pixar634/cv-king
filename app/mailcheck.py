@@ -97,7 +97,7 @@ def check(engine_id: str = "claude:sonnet", progress=lambda m: None) -> dict:
         seen = {(x["kind"], x["date"], x["subject"]) for x in load(app_id)["mails"]}
         kept = load(app_id)["mails"] + [x for x in mails if (x["kind"], x["date"], x["subject"]) not in seen]
         kept.sort(key=lambda x: x["date"])
-        (output_dir() / app_id / FILE).write_text(json.dumps({"checked": stamp, "mails": kept}, indent=1, ensure_ascii=False), "utf-8")
+        _mail_file(app_id).write_text(json.dumps({"checked": stamp, "mails": kept}, indent=1, ensure_ascii=False), "utf-8")
     extra = lambda key: [_clean(x) | {"company": str(x.get("company") or "")[:80], "role": str(x.get("role") or "")[:120]}
                          for x in raw.get(key) or [] if isinstance(x, dict) and _date(x.get("date"))]
     summary = {"checked": stamp, "matched": len(found), "untracked": extra("untracked"), "inbound": extra("inbound")}
@@ -171,8 +171,19 @@ def inbound(engine_id: str = "claude:sonnet", prefs: dict | None = None, days: i
             "jobs": [{k: j.get(k) for k in ("id", "title", "company", "fit", "via")} for j in shown if j["id"] in ids]}
 
 
+def _mail_file(app_id: str):
+    """mail.json in the application's folder; an application logged as sent elsewhere has no folder, so its mail
+    goes in output/_mail/<id>.json instead."""
+    folder = output_dir() / app_id
+    if folder.is_dir():
+        return folder / FILE
+    shared = output_dir() / "_mail"
+    shared.mkdir(parents=True, exist_ok=True)
+    return shared / f"{app_id}.json"
+
+
 def load(app_id: str) -> dict:
-    f = output_dir() / app_id / FILE
+    f = _mail_file(app_id)
     try:
         return json.loads(f.read_text("utf-8"))
     except (OSError, ValueError):
