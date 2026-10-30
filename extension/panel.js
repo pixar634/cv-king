@@ -630,7 +630,9 @@ async function fillForm() {
     const fields = scans.flatMap((s) => s.fields.map((f) => ({ ...f, id: `${s.frame}:${f.id}` })));
     if (!fields.length) throw new Error("I couldn't find form fields on this page. If the form sits in a box from another site, open the form on its own page.");
     const submitAt = scans.filter((s) => s.submit).sort((a, b) => b.fields.length - a.fields.length)[0];
-    const todo = fields.filter((f) => f.kind === "file" || blank(typeof f.value === "string" ? f.value.trim() : f.value));
+    // Filled text boxes go too: the app checks the contact ones against your profile (the site's read of an
+    // uploaded CV can put your address in the phone box) and leaves the rest as they are.
+    const todo = fields.filter((f) => f.kind === "file" || typeof f.value === "string" || blank(f.value));
     say("Working out the answers");
     const { job } = await api(`/api/apps/${app.id}/fill`, { body: { fields: todo, url } });
     const res = await pollJob(job, (l) => say(l.msg));
