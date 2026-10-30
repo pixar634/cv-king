@@ -557,11 +557,12 @@ def app_changes_html(app_id: str):
 
 @app.get("/apps/{app_id}/pdf")
 def app_pdf(app_id: str, download: int = 0, upload: int = 0):
-    """The tailored CV. upload=1: named Name_CV.pdf, for attaching to an application form."""
+    """The tailored CV. upload=1: named Company_RoleInitials.pdf, for attaching to an application form."""
     folder = _app_dir(app_id)
-    name = tailor.load_report(app_id)["pdf"]
+    report = tailor.load_report(app_id)
+    name = report["pdf"]
     return FileResponse(folder / name, media_type="application/pdf",
-                        filename=tailor.upload_name(load_profile()) if upload else name,
+                        filename=tailor.upload_name(report.get("company", ""), report.get("role", "")) if upload else name,
                         content_disposition_type="attachment" if download else "inline",
                         headers={"Cache-Control": "no-store"})
 
@@ -1149,11 +1150,12 @@ def answers_forget(body: dict = Body(...)):
 
 @app.get("/api/apps/{app_id}/letter.pdf")
 def letter_pdf(app_id: str, upload: int = 0):
-    """The kept cover letter as a PDF, for the extension to attach to a form (upload=1: Name_Cover_Letter.pdf)."""
-    text = (tailor.load_report(app_id).get("cover_letter") or "").strip()
-    resp = letter_export(app_id, {"fmt": "pdf", "text": text})
+    """The kept cover letter as a PDF, for the extension to attach to a form (upload=1: Company_RoleInitials_CL.pdf)."""
+    report = tailor.load_report(app_id)
+    resp = letter_export(app_id, {"fmt": "pdf", "text": (report.get("cover_letter") or "").strip()})
     if upload:
-        resp.headers["Content-Disposition"] = f'attachment; filename="{tailor.upload_name(load_profile(), "Cover_Letter")}"'
+        name = tailor.upload_name(report.get("company", ""), report.get("role", ""), letter=True)
+        resp.headers["Content-Disposition"] = f'attachment; filename="{name}"'
     return resp
 
 
