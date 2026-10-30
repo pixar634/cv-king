@@ -610,7 +610,7 @@ const split = (fid) => { const i = fid.indexOf(":"); return [Number(fid.slice(0,
 const blank = (v) => v == null || v === "" || v === false || (Array.isArray(v) && !v.length);
 
 async function fileFor(appId, which) {
-  // Name_CV.pdf: some forms refuse a long file name, with a pop-up that stops the form.
+  // Company_RoleInitials.pdf: some forms refuse a long file name, with a pop-up that stops the form.
   const r = await api(which === "cv" ? `/apps/${appId}/pdf?upload=1` : `/api/apps/${appId}/letter.pdf?upload=1`, { raw: true });
   const name = /filename="?([^";]+)"?/.exec(r.headers.get("Content-Disposition") || "")?.[1] || (which === "cv" ? "CV.pdf" : "Cover_Letter.pdf");
   const buf = new Uint8Array(await r.arrayBuffer());

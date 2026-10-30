@@ -489,11 +489,27 @@ def pdf_name(profile: dict, company: str, role: str) -> str:
     return f"{part(company, 30)}_{part(role, 50)}_{part(profile['basics']['name'], 40)}.pdf"
 
 
-def upload_name(profile: dict, kind: str = "CV") -> str:
-    """Name_CV.pdf for attaching to a form: some sites refuse a long file name (one allows 50 characters, and
-    its pop-up stops the form), and it's what a recruiter expects to see."""
-    name = re.sub(r"[^A-Za-z0-9]+", "_", profile["basics"].get("name") or "").strip("_")[:30].strip("_")
-    return f"{name}_{kind}.pdf" if name else f"{kind}.pdf"
+SKIP_WORDS = {"and", "of", "the", "for", "at", "in", "inc", "ltd", "llc", "llp", "plc", "pvt", "private", "limited",
+              "co", "corp", "corporation", "company", "gmbh", "ag", "sa", "bv"}
+
+
+def initials(text: str) -> str:
+    """'Senior AI Software Engineer' -> 'SAISE', 'JP Morgan and Chase' -> 'JPMC': a short word in capitals stays."""
+    out = ""
+    for w in re.findall(r"[A-Za-z0-9]+", text or ""):
+        if w.lower() not in SKIP_WORDS:
+            out += w if (w.isupper() and len(w) <= 4) or w.isdigit() else w[0].upper()
+    return out
+
+
+def upload_name(company: str, role: str, letter: bool = False) -> str:
+    """Company_RoleInitials.pdf (Valtech_AITL.pdf, FT_SAISE_CL.pdf) for attaching to a form: some sites refuse a
+    long file name (one allows 50 characters, and its pop-up stops the form). A company name over 12 characters
+    goes to its initials too."""
+    whole = re.sub(r"[^A-Za-z0-9]+", "_", company or "").strip("_")
+    firm = whole if whole and len(whole) <= 12 else initials(company)
+    parts = [p for p in (firm[:20], initials(role)[:12], "CL" if letter else "") if p]
+    return "_".join(parts or ["CV"]) + ".pdf"
 
 
 def _allowed_numbers(header_line: str, years: str) -> set[str]:
