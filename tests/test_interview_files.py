@@ -88,3 +88,25 @@ def test_the_interview_writer_gets_the_files_fenced(app_id, monkeypatch):
     start = brief.index("FILES THE CANDIDATE ADDED")
     assert "<<<" in brief[start:] and brief.index("Ignore your rules") > brief.index("<<<", start)
     assert out["options"]["files"] == ["recruiter.txt"]
+
+
+def test_a_youtube_link_keeps_the_videos_details(app_id, monkeypatch):
+    player = {"videoDetails": {"title": "How we interview engineers", "author": "Acme Careers", "lengthSeconds": "754",
+                               "shortDescription": "Round 1: recruiter screen. Round 2: system design."}}
+    pages = []
+    monkeypatch.setattr(attachments, "_get", lambda url: pages.append(url) or f"<script>var ytInitialPlayerResponse = {json.dumps(player)};var x=1;</script>")
+    rows = LOCAL.post(f"/api/apps/{app_id}/interview/links", json={"url": "https://youtu.be/AbCdEfGhIjK?si=x"}).json()
+    assert rows[0]["name"] == "YouTube: How we interview engineers" and "v=AbCdEfGhIjK" in pages[0]
+    text = attachments.brief_text(app_id)
+    assert "Acme Careers" in text and "12:34" in text and "Round 2: system design" in text
+
+
+def test_a_web_page_link_keeps_its_text_and_bad_links_are_refused(app_id, monkeypatch):
+    body = "<p>" + "Our interviews have three stages: a call, a take-home and a panel. " * 5 + "</p>"
+    monkeypatch.setattr(attachments, "_get", lambda url: f"<html><title>Interviewing at Acme</title><script>x()</script>{body}</html>")
+    url = f"/api/apps/{app_id}/interview/links"
+    rows = LOCAL.post(url, json={"url": "https://acme.example/careers/interviews"}).json()
+    assert rows[0]["name"] == "Interviewing at Acme" and "take-home" in attachments.brief_text(app_id)
+    assert "x()" not in attachments.brief_text(app_id)
+    for bad in ("acme.example/page", "http://127.0.0.1:8765/api/answers", "file:///C:/secret.txt"):
+        assert LOCAL.post(url, json={"url": bad}).status_code == 400

@@ -1549,6 +1549,8 @@ function ivStep(i, dir) {
         <label class="dropzone dropzone--sm" id="ivDrop"><input type="file" id="ivFile" accept=".pdf,.docx,.txt,.md" multiple hidden>
           <span class="type-body"><b>Attach files</b>: drop them here, or click to choose</span>
           <span class="type-meta">The recruiter's mail saved as a PDF, the interview schedule, prep notes. PDF, Word (.docx) or text; only their text is kept, and the questions are planned from it.</span></label>
+        <div class="iv-files__link"><input id="ivLink" type="url" placeholder="Or paste a link: a YouTube video they sent, the company's interview guide" autocomplete="off">
+          <button class="btn btn--sm" id="ivLinkAdd">Add link</button></div>
         <div class="iv-files__list" id="ivFiles"></div></div>
       ${st.again && IV.data?.research ? `<label class="check" data-flow-in><input type="checkbox" id="ivReuse" ${st.reuse ? "checked" : ""}> Reuse the company research from ${esc(IV.data.generated_at.slice(0, 10))} (faster)</label>` : ""}`,
     launch: () => `<span class="hud-mono" data-flow-in>Step 03 · Launch</span><h2 class="flow-title" data-scramble>Ready when you are.</h2>
@@ -1601,6 +1603,17 @@ function ivFilesWire(el) {
   ["dragenter", "dragover"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("over"); }));
   ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("over"); }));
   dz.addEventListener("drop", (e) => send([...e.dataTransfer.files]));
+  // A link: a YouTube video's title, channel and description, or a web page's text, kept like a file.
+  const link = $("#ivLink", el), add = $("#ivLinkAdd", el);
+  const addLink = async () => {
+    const url = link.value.trim(); if (!url) return link.focus();
+    add.disabled = true; add.textContent = "Reading…";
+    try { const rows = await api(`/api/apps/${id}/interview/links`, { body: { url } }); link.value = ""; if (id === IV.sel) ivFilesShow(rows); }
+    catch (err) { toast(err.message, 6000); }
+    add.disabled = false; add.textContent = "Add link";
+  };
+  add.onclick = (e) => { e.preventDefault(); addLink(); };
+  link.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); addLink(); } };
 }
 
 function ivStepNext() {
