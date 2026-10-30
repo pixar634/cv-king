@@ -393,6 +393,10 @@ body.is-setup #nav, body.is-setup #engineSeg, body.is-setup #openSettings { disp
 .dropzone { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s-2); text-align: center;
   padding: var(--s-10) var(--s-6); border: 1px dashed var(--line-3); background: var(--surface); cursor: pointer; transition: border-color .15s, background .15s; }
 .dropzone:hover, .dropzone.over { border-color: var(--accent); background: var(--surface-2); }
+.dropzone--sm { padding: var(--s-5) var(--s-4); }
+.iv-files { display: grid; gap: var(--s-3); margin-top: var(--s-3); }
+.iv-files__list { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.iv-files__list:empty { display: none; }
 .menu__row { display: flex; align-items: center; }
 .menu__row > button:first-child { display: block; flex: 1; padding: 10px 12px; border: 0; border-left: 2px solid transparent; background: none;
   text-align: left; color: var(--text); font-weight: 700; font-size: 13px; }

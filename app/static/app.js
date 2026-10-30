@@ -1545,6 +1545,11 @@ function ivStep(i, dir) {
     focus: () => `<span class="hud-mono" data-flow-in>Step 02 · Intel</span><h2 class="flow-title" data-scramble>Anything we should know?</h2>
       <p class="type-body" data-flow-in>What the recruiter told you, the round you're worried about, the stack they mentioned. Leave it empty if nothing.</p>
       <textarea id="ivFocus" rows="4" data-flow-in placeholder="e.g. Round two is live coding in Python, then system design for payments.">${esc(st.focus)}</textarea>
+      <div class="iv-files" data-flow-in>
+        <label class="dropzone dropzone--sm" id="ivDrop"><input type="file" id="ivFile" accept=".pdf,.docx,.txt,.md" multiple hidden>
+          <span class="type-body"><b>Attach files</b>: drop them here, or click to choose</span>
+          <span class="type-meta">The recruiter's mail saved as a PDF, the interview schedule, prep notes. PDF, Word (.docx) or text; only their text is kept, and the questions are planned from it.</span></label>
+        <div class="iv-files__list" id="ivFiles"></div></div>
       ${st.again && IV.data?.research ? `<label class="check" data-flow-in><input type="checkbox" id="ivReuse" ${st.reuse ? "checked" : ""}> Reuse the company research from ${esc(IV.data.generated_at.slice(0, 10))} (faster)</label>` : ""}`,
     launch: () => `<span class="hud-mono" data-flow-in>Step 03 · Launch</span><h2 class="flow-title" data-scramble>Ready when you are.</h2>
       <div class="iv-stats" data-flow-in>
@@ -1562,11 +1567,40 @@ function ivStep(i, dir) {
   };
   const f = $("#ivFocus", el); if (f) { f.oninput = () => (st.focus = f.value); setTimeout(() => f.focus(), 400); }
   const rc = $("#ivReuse", el); if (rc) rc.onchange = () => (st.reuse = rc.checked);
+  if ($("#ivDrop", el)) ivFilesWire(el);
   const go = $("#ivLaunch", el); if (go) go.onclick = ivLaunch;
   $("#ivStepNo").textContent = `${pad2(i + 1)} / ${pad2(SETUP_STEPS.length)}`;
   $$("#ivSegs i").forEach((s, k) => { s.className = k < i ? "done" : k === i ? "cur" : ""; });
   $("#ivStepBack").disabled = i === 0;
   $("#ivStepNext").hidden = i === SETUP_STEPS.length - 1;
+}
+
+// Files for the writer (recruiter mails, schedules, notes): read to text by the app, shown here as removable chips.
+function ivFilesShow(rows) {
+  const box = $("#ivFiles"); if (!box) return;
+  box.innerHTML = rows.map((f) => `<button class="chip chip--x" data-rm="${esc(f.name)}" title="${esc(f.chars.toLocaleString())} characters read. Click to remove"><span>${esc(f.name)}</span></button>`).join("");
+  $$("[data-rm]", box).forEach((b) => (b.onclick = async (e) => {
+    e.preventDefault();
+    try { ivFilesShow(await api(`/api/apps/${IV.sel}/interview/files/remove`, { body: { name: b.dataset.rm } })); } catch (err) { toast(err.message, 5000); }
+  }));
+}
+
+function ivFilesWire(el) {
+  const dz = $("#ivDrop", el), id = IV.sel;
+  api(`/api/apps/${id}/interview/files`).then((rows) => id === IV.sel && ivFilesShow(rows)).catch(() => {});
+  const send = async (files) => {
+    for (const file of files) {
+      try {
+        const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(file); });
+        const rows = await api(`/api/apps/${id}/interview/files`, { body: { filename: file.name, data } });
+        if (id === IV.sel) ivFilesShow(rows);
+      } catch (err) { toast(`${file.name}: ${err.message}`, 6000); }
+    }
+  };
+  $("#ivFile", el).onchange = (e) => { send([...e.target.files]); e.target.value = ""; };
+  ["dragenter", "dragover"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("over"); }));
+  ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("over"); }));
+  dz.addEventListener("drop", (e) => send([...e.dataTransfer.files]));
 }
 
 function ivStepNext() {

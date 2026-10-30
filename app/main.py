@@ -723,6 +723,32 @@ def interview_get(app_id: str):
     return {"prep": interview.load(app_id), "job": job["id"] if job else None}
 
 
+@app.get("/api/apps/{app_id}/interview/files")
+def interview_files(app_id: str):
+    """Files added to an interview prep (only their text is kept): [{name, chars, added}]."""
+    from . import attachments
+    _app_dir(app_id)
+    return attachments.listing(app_id)
+
+
+@app.post("/api/apps/{app_id}/interview/files")
+def interview_file_add(app_id: str, body: dict = Body(...)):
+    """{filename, data (base64)}: a PDF, Word .docx or text file, read to text for the interview writer."""
+    from . import attachments
+    _app_dir(app_id)
+    try:
+        return attachments.add(app_id, body.get("filename", ""), body.get("data", ""))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/apps/{app_id}/interview/files/remove")
+def interview_file_remove(app_id: str, body: dict = Body(...)):
+    from . import attachments
+    _app_dir(app_id)
+    return attachments.remove(app_id, body.get("name", ""))
+
+
 @app.post("/api/apps/{app_id}/interview")
 def interview_start(app_id: str, body: dict = Body(default={})):
     from . import interview
