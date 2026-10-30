@@ -18,6 +18,10 @@ from .tailor import home_market, load_report
 from .untrusted import fence
 
 CHOICE = ("select", "radio", "combobox")
+# Contact facts the profile is the truth for. A value already in such a box (often the site's own read of the
+# uploaded CV, which can put the address in the phone box) is checked against the profile and replaced if it differs.
+CHECKED = re.compile(r"\bfirst\s*name|given\s*name|\b(last|family)\s*name|surname|^(full\s*)?name\b|legal\s*name|"
+                     r"e-?mail|phone|mobile|telephone|linkedin|github", re.I)
 # Questions whose true answer depends on where the job is: saved per market and never used for another one.
 SCOPED = re.compile(r"sponsor|visa|work\s*permit|authori[sz]|right\s*to\s*work|eligib|salary|\bctc\b|compensation|"
                     r"\bpay\b|remuneration|notice|start\s*date|joining|relocat", re.I)
@@ -128,6 +132,14 @@ def _contact(profile: dict, report: dict) -> list[tuple[str, str]]:
     ]
 
 
+def _same_fact(now: str, fact: str) -> bool:
+    """Does a box's value say the same as the profile? A phone may be written with or without the country code."""
+    a, b = _norm(now).replace(" ", ""), _norm(fact).replace(" ", "")
+    if re.fullmatch(r"\+?[\d\s().-]{7,}", fact.strip()):
+        return len(re.sub(r"\D", "", now)) >= 7 and a[-10:] == b[-10:]
+    return a == b
+
+
 def _pick(value, options: list[str]):
     """The option the answer names, exactly as the form spells it, or None."""
     if value in (None, "") or not options:
@@ -211,6 +223,13 @@ def answer(app_id: str, fields: list[dict], url: str = "", progress=lambda m: No
                 needs.append({"id": fid, "label": label, "why": "a file only you have"})
             first_file = False
             continue
+        now = f.get("value")
+        if isinstance(now, str) and now.strip():
+            fact = next((v for pat, v in contact if v and re.search(pat, label, re.I)), None) \
+                if kind not in CHOICE + ("checkgroup", "checkbox") and CHECKED.search(label) else None
+            if fact and not _same_fact(now, fact):
+                answers[fid] = _fits(f, fact)
+            continue   # anything else already filled is kept as it is
         value = next((v for v in (_fits(f, c) for c in _by_code(label, market, home, profile, jd)) if v is not None), None)
         known = next((r["a"] for r in mine if _norm(r["q"]) == _norm(label)), None)
         if known is not None and _currency(label) and _currency(known) not in (None, _currency(label)):

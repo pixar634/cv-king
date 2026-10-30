@@ -224,10 +224,44 @@
     return true;
   }
 
+  // What a text box or dropdown holds now; null for the kinds that aren't read back (choices are clicked, not typed).
+  function current(el) {
+    const type = (el.type || "").toLowerCase();
+    if (["radio", "checkbox", "file"].includes(type) || el.getAttribute("role") === "combobox" || el.getAttribute("aria-autocomplete") === "list") return null;
+    return el.tagName === "SELECT" ? (el.value ? clean(el.selectedOptions[0]?.textContent) : "") : el.value;
+  }
+  const bare = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  // A phone box may reformat the number ("+91 90000 00000" -> "090000 00000"): the last ten digits are what count.
+  function holds(id, v) {
+    const el = document.querySelector(`[${MARK}="${id}"]`);
+    const now = el && current(el);
+    if (now == null) return true;
+    const a = bare(now), b = bare(v);
+    return a === b || (/^\+?[\d\s().-]{7,}$/.test(String(v)) && a.slice(-10) === b.slice(-10));
+  }
+  const snapshot = () => [...document.querySelectorAll(`[${MARK}]`)].map((el) => (el.type === "checkbox" || el.type === "radio" ? el.checked : el.value)).join("\u0001");
+
+  // Sites that read an uploaded CV fill fields from it a moment later: wait until the form stops changing.
+  async function settle() {
+    const end = Date.now() + 10000;
+    await sleep(2000);
+    let last = snapshot(), still = 0;
+    while (still < 3 && Date.now() < end) { await sleep(500); const now = snapshot(); still = now === last ? still + 1 : 0; last = now; }
+  }
+
   async function fill({ answers = {}, files = {}, needs = [] }) {
-    const done = [], failed = [];
-    for (const [id, v] of Object.entries(answers)) (await fillOne(id, v).catch(() => false) ? done : failed).push(id);
+    const done = [], failed = [], set = [];
+    // The CV goes in first, so the site's own read of it (which can put the address in the phone box) can't
+    // overwrite the answers; they go in after it and are read back in case the site changed them again.
     for (const [id, f] of Object.entries(files)) (await attach(id, f).catch(() => false) ? done : failed).push(id);
+    if (Object.keys(files).length) await settle();
+    for (const [id, v] of Object.entries(answers)) (await fillOne(id, v).catch(() => false) ? set : failed).push(id);
+    if (set.length) await sleep(800);
+    for (const id of set) {
+      if (!holds(id, answers[id])) await fillOne(id, answers[id]).catch(() => false);
+      if (holds(id, answers[id])) done.push(id);
+      else { failed.push(id); const el = document.querySelector(`[${MARK}="${id}"]`); if (el) paint(el, false); }
+    }
     needs.forEach((n) => { const el = document.querySelector(`[${MARK}="${n.id}"]`); if (el) paint(el, false); });
     return { done, failed };
   }

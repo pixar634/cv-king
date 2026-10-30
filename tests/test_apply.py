@@ -159,3 +159,17 @@ def test_notice_and_title_come_from_the_profile(app_id, engine, sandbox):
     assert apply.answer(app_id, fields)["answers"] == {"0:n": "1 month", "0:d": "30 days after an offer",
                                                        "0:t": "Lead Software Engineer"}   # not the tailored headline
     assert not e.briefs
+
+
+def test_contact_box_filled_wrongly_from_the_cv_is_corrected(app_id, engine):
+    e = engine({})
+    # The site read the uploaded CV and put the address in the phone box; other boxes it filled are kept.
+    fields = [{"id": "0:p", "kind": "tel", "label": "Phone", "value": "12 MG Road, Bengaluru 560001"},
+              {"id": "0:m", "kind": "text", "label": "Mobile number", "value": "090000 00000"},
+              {"id": "0:e", "kind": "email", "label": "Email", "value": "old@example.com"},
+              {"id": "0:f", "kind": "text", "label": "First Name", "value": "Test"},
+              {"id": "0:c", "kind": "text", "label": "City", "value": "Bangalore"},
+              {"id": "0:s", "kind": "text", "label": "Expected salary", "value": "50 LPA"}]
+    got = apply.answer(app_id, fields)
+    assert got["answers"] == {"0:p": "+91 90000 00000", "0:e": "test@example.com"}
+    assert got["needs"] == [] and not e.briefs
