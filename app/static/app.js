@@ -918,7 +918,7 @@ function openImport(prompt) {
   box.hidden = false;
   box.innerHTML = `<div class="card import">
     ${prompt ? `<label class="field"><span class="eyebrow">The prompt (copy it into Claude in Chrome)</span><textarea id="impPrompt" rows="5" readonly>${esc(prompt)}</textarea></label>` : ""}
-    <label class="field"><span class="eyebrow">Paste Claude's reply here</span>
+    <label class="field"><span class="eyebrow">Paste Claude's reply here, one batch at a time</span>
       <textarea id="impText" rows="7" placeholder='{"jobs": [{"title": "...", "company": "...", "location": "...", "url": "...", "posted": "...", "description": "..."}]}'></textarea></label>
     <div class="import__acts"><button class="btn btn--accent" id="impGo">Add to Discover</button><button class="btn btn--ghost" id="impClose">Close</button></div>
     <div id="impMsg" class="type-meta"></div></div>`;
@@ -936,6 +936,7 @@ function openImport(prompt) {
       S.openLatest = true;
       await loadFound();
       if (r.shown) msg.innerHTML += ` They're listed under <b>Found today</b>, below your favourites.`;
+      if (/more to come/i.test(r.notes || "")) msg.innerHTML += ` <b>Say "next" to Claude, then paste its next batch here.</b>`;
     } catch (e) { msg.textContent = e.message; }
     finally { btn.disabled = false; }
   };

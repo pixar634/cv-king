@@ -2118,22 +2118,24 @@ Pay: skip postings that state pay below my floor ({'; '.join(floors)}); keep one
 Skip these kinds of role for now (I apply to them only through referrals): {', '.join(parked)}.""" if parked else ""}
 
 WHERE TO LOOK (my own signed-in sessions)
-LinkedIn Jobs (use the "Past week" or "Past month" filter that fits {days} days, and sort by most recent), Naukri, Indeed, Instahyre, Cutshort, Hirist, Wellfound and YC's Work at a Startup (startups, founding and forward deployed roles), Jobgether's "remote from {home['country'] or 'my country'}" listings, euremotejobs.com with its "Worldwide" filter, Relocate.me (jobs abroad that list visa and relocation help), and the careers pages of these employers: {', '.join(favs) or 'the main employers in my field'}. Work through the titles on each site. Aim for 40 to 60 distinct postings in total; stop earlier if the searches run dry. If a site asks you to log in, solve a captcha or says you are being rate limited, skip that site and say so in "notes".
+LinkedIn Jobs (use the "Past week" or "Past month" filter that fits {days} days, and sort by most recent), Naukri, Indeed, Instahyre, Cutshort, Hirist, Wellfound and YC's Work at a Startup (startups, founding and forward deployed roles), Jobgether's "remote from {home['country'] or 'my country'}" listings, euremotejobs.com with its "Worldwide" filter, Relocate.me (jobs abroad that list visa and relocation help), and the careers pages of these employers: {', '.join(favs) or 'the main employers in my field'}. Work through the titles on each site. Aim for 30 to 40 distinct postings in total; stop earlier if the searches run dry. If a site asks you to log in, solve a captcha or says you are being rate limited, skip that site and say so in "notes".
 
 FOR EACH POSTING
 Open it and read the whole description. Copy the details exactly as the page shows them. Never invent or guess a value; use "" when the page does not say.
 - "title": the job title as posted.
 - "company": the employer's name.
-- "location": the location line as posted (for example "Bengaluru, Karnataka, India (Hybrid)" or "Remote, India").
-- "url": the address of that one posting, from the browser's address bar. Remove tracking parameters after "?" when the posting still opens without them.
+- "location": the location line as posted (for example "{home['city'] or 'London'}, {home['country'] or 'United Kingdom'} (Hybrid)" or "Remote, {home['country'] or 'United Kingdom'}").
+- "job_id": the employer's job or requisition ID as printed on the posting (for example "R-123456" or "JR0045"), else "". Do not use the job board's own number from the address.
+- "url": the address of that one posting. For LinkedIn, always give it as https://www.linkedin.com/jobs/view/<number>/ using the job's number (the currentJobId in a search page's address); never give a /jobs/search/ address. For other sites, use the address bar and keep everything after "?" unless you have checked the posting still opens without it.
 - "posted": the posting date or the page's own wording ("2 days ago", "Oct 3, 2026").
 - "compensation": the pay if the posting states it, else "".
-- "description": the full description, word for word, up to 4000 characters. Do not summarise it. Include the requirements and responsibilities sections.
+- "description": the description word for word, up to 1500 characters. Do not summarise it. Put the requirements and responsibilities sections first, then whatever else fits.
 If the same job appears on two sites, list it once, using the employer's own careers-page link when you can find it.
 
 HOW TO ANSWER
-Reply with one JSON object and nothing else, no commentary and no code fences, in exactly this shape:
-{{"jobs": [{{"title": "", "company": "", "location": "", "url": "", "posted": "", "compensation": "", "description": ""}}], "notes": "sites you could not read, and anything I should know"}}"""
+Reply with one JSON object inside a single ```json code block, and nothing outside the block. Use straight double quotes ("), never curly ones. Use exactly this shape:
+{{"jobs": [{{"title": "", "company": "", "location": "", "job_id": "", "url": "", "posted": "", "compensation": "", "description": ""}}], "notes": "sites you could not read, and anything I should know"}}
+If you found more than 15 postings, send the first 15 in that block and end "notes" with "More to come: say next". When I say next, send the next 15 the same way, until none are left. Never stop partway through a block."""
 
 
 def chrome_start_url(prefs: dict, days: int) -> str:
@@ -2194,6 +2196,7 @@ def import_jobs(text: str, days: int, prefs: dict) -> dict:
                    description=str(r.get("description") or ""), method="browser (Claude in Chrome)", source="Claude in Chrome")
         # Keyed on what the posting is, not on its link: the same job pasted again isn't "new" again.
         job["id"] = hashlib.sha1(f"chrome|{job['title']}|{job['company']}|{job['location']}".lower().encode()).hexdigest()[:12]
+        job["job_id"] = str(r.get("job_id") or "").strip()[:40]
         comp = str(r.get("compensation") or "").strip()
         if comp and comp.upper() != "N/A":
             job["compensation"] = comp
