@@ -2200,7 +2200,9 @@ function ctSummary() {
 
 function ivCompany(d) {
   const r = d.research || {};
-  const src = (u, label = "Source") => `<a class="btn btn--link" href="${esc(u)}" target="_blank" rel="noopener">${label}</a>`;
+  // A link, or "From your files" for what the research took from the files and links you added.
+  const src = (u, label = "Source") => /^https?:\/\//.test(u || "") ? `<a class="btn btn--link" href="${esc(u)}" target="_blank" rel="noopener">${label}</a>`
+    : u ? `<span class="type-meta">From your files</span>` : "";
   const empty = !r.summary && !(r.products || []).length && !(r.process || []).length;
   const rows = (list, text, sub) => `<div class="list">${list.map((x) => `<div class="item"><span class="item__body"><span class="item__text">${esc(x[text])}</span>${x[sub] ? `<span class="item__meta item__meta--wrap">${esc(x[sub])}</span>` : ""}</span><span class="item__aside">${src(x.source)}</span></div>`).join("")}</div>`;
   return `

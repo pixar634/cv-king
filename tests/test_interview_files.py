@@ -110,3 +110,34 @@ def test_a_web_page_link_keeps_its_text_and_bad_links_are_refused(app_id, monkey
     assert "x()" not in attachments.brief_text(app_id)
     for bad in ("acme.example/page", "http://127.0.0.1:8765/api/answers", "file:///C:/secret.txt"):
         assert LOCAL.post(url, json={"url": bad}).status_code == 400
+
+
+def test_the_research_follows_up_the_files_and_is_redone_when_they_change(app_id, monkeypatch):
+    attachments.add(app_id, "recruiter.txt", _b64(b"Your panel: Priya (payments platform lead). Stage 2 is a take-home."))
+    runs = []
+
+    class Engine:
+        def run(self, brief, timeout=0, tools=None):
+            runs.append((brief, tools))
+            if tools:       # the research run
+                return json.dumps({"summary": "s", "process": [
+                    {"stage": "Take-home", "format": "48 hours", "source": "candidate's file"},
+                    {"stage": "Made up", "format": "x", "source": "not a link"}]})
+            return json.dumps({"needs_coding": False, "rounds": [{"name": "Screen", "questions": [
+                {"q": "Why Acme?", "level": "basic", "kind": "behavioural", "answer": ["a"], "why": "w"}]}]})
+    monkeypatch.setattr(interview, "_app", lambda a: ({"company": "Acme", "role": "Lead Engineer"}, {}, "We build ledgers."))
+    monkeypatch.setattr(interview, "get_engine", lambda e: Engine())
+    out = interview.generate(app_id, {"per_round": 4})
+    research_brief = runs[0][0]
+    assert "FILES THE CANDIDATE ADDED" in research_brief and "payments platform lead" in research_brief
+    assert research_brief.index("payments platform lead") > research_brief.index("<<<", research_brief.index("FILES THE CANDIDATE"))
+    assert [p["stage"] for p in out["research"]["process"]] == ["Take-home"]      # a source that's neither a link nor a file is dropped
+    assert out["research"]["from_files"] == ["recruiter.txt"]
+
+    runs.clear()
+    interview.generate(app_id, {"per_round": 4, "reuse_research": True})        # same files: the research is reused
+    assert not any(tools for _, tools in runs)
+    attachments.add(app_id, "schedule.txt", _b64(b"The final round is with the CTO about ledger consistency."))
+    runs.clear()
+    interview.generate(app_id, {"per_round": 4, "reuse_research": True})        # a new file: researched again
+    assert any(tools for _, tools in runs)
