@@ -10,8 +10,8 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import (apply, areas, batch, db, discover, extract, insights, letterfile, letters, memory, onboarding, profiles,
-               strategy, study, tailor, tracker)
+from . import (apply, areas, batch, callback, db, discover, extract, insights, letterfile, letters, memory, onboarding,
+               profiles, strategy, study, tailor, tracker)
 from .config import STATIC, output_dir
 from .engines import ENGINES, EngineError
 from .jd import parse_jd
@@ -67,7 +67,8 @@ async def pick_profile(request: Request, call_next):
     pid = request.cookies.get(profiles.COOKIE)
     token = profiles.activate(pid if pid and profiles.get(pid) else profiles.last_used() or None)
     try:
-        return await call_next(request)
+        with callback.serving():   # background guide work waits for it
+            return await call_next(request)
     finally:
         profiles.reset(token)
 
