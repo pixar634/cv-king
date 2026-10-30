@@ -173,3 +173,28 @@ def test_contact_box_filled_wrongly_from_the_cv_is_corrected(app_id, engine):
     got = apply.answer(app_id, fields)
     assert got["answers"] == {"0:p": "+91 90000 00000", "0:e": "test@example.com"}
     assert got["needs"] == [] and not e.briefs
+
+
+def test_phone_with_its_own_country_code_box_gets_the_number_alone(app_id, engine):
+    e = engine({})
+    fields = [{"id": "0:c", "kind": "select", "label": "Country code",
+               "options": ["+1 United States", "+44 United Kingdom", "+91 India"]},
+              {"id": "0:p", "kind": "tel", "label": "Phone"}]
+    got = apply.answer(app_id, fields)
+    assert got["answers"] == {"0:c": "+91 India", "0:p": "9000000000"} and not e.briefs
+
+
+def test_country_code_box_is_known_by_its_options_and_corrects_the_site(app_id, engine):
+    engine({})
+    # The site read the CV into the phone box with the code, and its own code box shows +1.
+    fields = [{"id": "0:c", "kind": "combobox", "label": "Phone", "value": "+1",
+               "options": ["+1", "+44", "+91", "+61"]},
+              {"id": "0:p", "kind": "tel", "label": "Mobile number", "value": "+91 90000 00000"}]
+    assert apply.answer(app_id, fields)["answers"] == {"0:c": "+91", "0:p": "9000000000"}
+
+
+def test_phone_without_a_code_box_keeps_the_country_code(app_id, engine):
+    engine({})
+    fields = [{"id": "0:p", "kind": "tel", "label": "Phone number"},
+              {"id": "0:n", "kind": "select", "label": "Country", "options": ["India", "United States", "Germany"]}]
+    assert apply.answer(app_id, fields)["answers"]["0:p"] == "+91 90000 00000"

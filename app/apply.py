@@ -20,6 +20,8 @@ from .untrusted import fence
 CHOICE = ("select", "radio", "combobox")
 # Contact facts the profile is the truth for. A value already in such a box (often the site's own read of the
 # uploaded CV, which can put the address in the phone box) is checked against the profile and replaced if it differs.
+CODE_FIELD = re.compile(r"country\s*code|dial(l?ing)?\s*code|calling\s*code|phone\s*(country\s*)?code|\bisd\b|"
+                        r"phone\s*prefix", re.I)
 CHECKED = re.compile(r"\bfirst\s*name|given\s*name|\b(last|family)\s*name|surname|^(full\s*)?name\b|legal\s*name|"
                      r"e-?mail|phone|mobile|telephone|linkedin|github", re.I)
 # Questions whose true answer depends on where the job is: saved per market and never used for another one.
@@ -140,6 +142,32 @@ def _same_fact(now: str, fact: str) -> bool:
     return a == b
 
 
+def _split_phone(phone: str) -> tuple[str, str]:
+    """"+91 90000 00000" -> ("91", "9000000000"); no country code -> ("", the digits)."""
+    digits = re.sub(r"\D", "", phone or "")
+    return (digits[:-10], digits[-10:]) if len(digits) > 10 else ("", digits)
+
+
+def _is_code_field(field: dict) -> bool:
+    """A box for the phone's country code: named so, or a choice whose options are dialling codes."""
+    if CODE_FIELD.search(field.get("label") or ""):
+        return True
+    options = field.get("options") or []
+    return field.get("kind") in CHOICE and len(options) >= 3 and \
+        sum(bool(re.search(r"\+\s?\d{1,4}\b", o)) for o in options) >= len(options) / 2
+
+
+def _code_option(field: dict, code: str, location: str):
+    """The country-code answer as the field takes it: the option with +<code> (the one naming your country when
+    several share it, like +1), or "+<code>" in a text box."""
+    options = field.get("options") or []
+    if field.get("kind") not in CHOICE:
+        return f"+{code}"
+    hits = [o for o in options if re.search(rf"\+\s?{code}(?!\d)", o)]
+    words = [w for w in re.findall(r"[a-z]{4,}", (location or "").lower())]
+    return next((o for o in hits if any(w in o.lower() for w in words)), hits[0] if hits else None)
+
+
 def _pick(value, options: list[str]):
     """The option the answer names, exactly as the form spells it, or None."""
     if value in (None, "") or not options:
@@ -210,6 +238,12 @@ def answer(app_id: str, fields: list[dict], url: str = "", progress=lambda m: No
     jd_file = output_dir() / app_id / "jd.txt"
     jd = jd_file.read_text("utf-8") if jd_file.exists() else ""
     answers, needs, files, ask = {}, [], {}, []
+    # A form with its own country-code box: the code goes there and the phone box gets the number without it,
+    # never "+91" twice.
+    code, national = _split_phone(profile["basics"].get("phone", ""))
+    coded = bool(code) and any(_is_code_field(f) for f in fields)
+    if coded:
+        contact = [(pat, national if pat.startswith("phone") else v) for pat, v in contact]
     progress("Matching the fields to your profile")
     first_file = True
     for f in fields:
@@ -224,10 +258,17 @@ def answer(app_id: str, fields: list[dict], url: str = "", progress=lambda m: No
             first_file = False
             continue
         now = f.get("value")
+        if coded and _is_code_field(f):
+            pick = _code_option(f, code, profile["basics"].get("location", ""))
+            if pick is not None:
+                if _norm(str(now or "")) != _norm(pick):
+                    answers[fid] = pick
+                continue
         if isinstance(now, str) and now.strip():
             fact = next((v for pat, v in contact if v and re.search(pat, label, re.I)), None) \
                 if kind not in CHOICE + ("checkgroup", "checkbox") and CHECKED.search(label) else None
-            if fact and not _same_fact(now, fact):
+            twice = coded and fact == national and re.sub(r"\D", "", now) != national
+            if fact and (twice or not _same_fact(now, fact)):
                 answers[fid] = _fits(f, fact)
             continue   # anything else already filled is kept as it is
         value = next((v for v in (_fits(f, c) for c in _by_code(label, market, home, profile, jd)) if v is not None), None)
