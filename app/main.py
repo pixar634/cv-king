@@ -820,6 +820,51 @@ def codetest_start(app_id: str, body: dict = Body(default={})):
     return {"job": jid}
 
 
+PRACTICAL_JOBS: dict[str, str] = {}   # app id -> the practical-assessment job (writing or reviewing) running for it
+
+
+def _practical_job(app_id: str) -> dict | None:
+    job = JOBS.get(PRACTICAL_JOBS.get(_key(app_id), ""))
+    return job if job and job["status"] == "running" else None
+
+
+@app.get("/api/apps/{app_id}/practical")
+def practical_get(app_id: str):
+    from . import interview
+    _app_dir(app_id)
+    job = _practical_job(app_id)
+    return {"practical": interview.load_practical(app_id), "job": job["id"] if job else None,
+            "job_kind": job["kind"] if job else None}
+
+
+@app.post("/api/apps/{app_id}/practical")
+def practical_start(app_id: str, body: dict = Body(default={})):
+    """Write a practical assessment for this job, or with {"sample": true} set the built-in one at once."""
+    from . import interview
+    _app_dir(app_id)
+    if _practical_job(app_id):
+        return {"job": PRACTICAL_JOBS[_key(app_id)]}
+    if body.get("sample"):
+        return {"practical": interview.practical_sample(app_id)}
+    engine = _prefs(load_profile())["defaults"].get("engine", "claude:opus")
+    jid = start_job("practical", lambda a, e, progress: interview.generate_practical(a, e, progress), app_id, engine)
+    PRACTICAL_JOBS[_key(app_id)] = jid
+    return {"job": jid}
+
+
+@app.post("/api/apps/{app_id}/practical/review")
+def practical_review(app_id: str, body: dict = Body(...)):
+    """{code, lang, levels: [{level, passed, total}], minutes_used}: grade it the way the company grades the take-home."""
+    from . import interview
+    _app_dir(app_id)
+    if _practical_job(app_id):
+        return {"job": PRACTICAL_JOBS[_key(app_id)]}
+    engine = _prefs(load_profile())["defaults"].get("engine", "claude:opus")
+    jid = start_job("practical-review", lambda a, b, e, progress: interview.review_practical(a, b, e, progress), app_id, body, engine)
+    PRACTICAL_JOBS[_key(app_id)] = jid
+    return {"job": jid}
+
+
 @app.get("/apps/{app_id}/interview.md")
 def interview_md(app_id: str):
     p = _app_dir(app_id) / "interview.md"

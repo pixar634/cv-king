@@ -50,7 +50,7 @@ the command-line tools you sign in to (or an API key you provide).
 | **Tailor** | Paste a job link or description. Get a tailored CV as a PDF in 1 to 3 minutes, with the keyword match before, after and at the ceiling your profile can truthfully reach. |
 | **Discover** | Fresh jobs from employers' job boards and web searches, ranked against your profile. Mark one **Not for me** and it learns what to push down. |
 | **Pipeline** | Every application on one board, from Tailoring to Applied to Offer. Export to Excel. |
-| **Interview** | Company research, three rounds of questions with model answers from your real experience, and an adaptive coding test for coding roles. |
+| **Interview** | Company research, three rounds of questions with model answers from your real experience, and for coding roles an adaptive coding test and a timed, multi-level practical assessment. |
 | **Cold mail** | A short email and its follow-up to a hiring manager or recruiter, saved to your Gmail drafts. Never sent for you. |
 | **Career** | Your history as a map and five or six researched routes for the next five years, with a goal, a salary log and a growth log. |
 | **Chrome extension** | Tailor from the job page you're on, then fill the application form for you to review and submit. |
@@ -368,6 +368,8 @@ prep or a cold email, find contacts, or **export everything to Excel**.
 - **Model answers from your real experience**, in the first person, honest about gaps.
 - **Adaptive practice**, one question at a time, harder as you get them right.
 - **An adaptive coding test** for coding roles: ten problems in Python or JavaScript, run in a sandbox in your browser.
+- **A practical assessment** in the shape of CodeSignal's take-homes: one project built up over four levels against
+  the clock, hidden tests at submit, then a review of your code on what reviewers grade. A built-in sample needs no AI.
 
 ### 6. Cold mail: get a reply, not a silence
 
