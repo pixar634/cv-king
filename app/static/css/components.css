@@ -486,6 +486,13 @@
 .ct-fail, .ct-fail b { color: var(--bad); }
 .ct-case div { color: var(--text-2); }
 
+/* Practical assessment: the same layout, a taller editor for a whole class, specs in monospace so examples line up. */
+.code-test__editor--tall .CodeMirror { height: 480px; }
+.code-test__statement--mono { font: 12.5px/1.65 ui-monospace, "Cascadia Code", Consolas, monospace; }
+.pa-clock--low { color: var(--bad); }
+.pa-review { display: flex; flex-direction: column; gap: 18px; }
+.pa-result .code { max-height: 360px; }
+
 /* CodeMirror, in the NeoPOP palette */
 .cm-s-pop.CodeMirror { background: var(--black); color: rgba(255, 255, 255, .88); }
 .cm-s-pop .CodeMirror-gutters { background: var(--black); border-right: 1px solid var(--line); }

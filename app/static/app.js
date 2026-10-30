@@ -1676,7 +1676,8 @@ function renderIv() {
   const a = ivApp();
   const total = d.rounds.reduce((n, x) => n + x.questions.length, 0);
   const got = Object.values(marks).filter((v) => v === "got").length;
-  const tabs = [["intel", "Company", ""], ...d.rounds.map((r, i) => [r.id, `${pad2(i + 1)} ${r.name}`, `${r.questions.length}`]), ...(d.needs_coding ? [["code", "Coding test", ""]] : [])];
+  const tabs = [["intel", "Company", ""], ...d.rounds.map((r, i) => [r.id, `${pad2(i + 1)} ${r.name}`, `${r.questions.length}`]),
+    ...(d.needs_coding ? [["practical", "Practical assessment", ""], ["code", "Coding test", ""]] : [])];
   if (!tabs.some((t) => t[0] === IV.tab)) IV.tab = d.rounds[0]?.id || "intel";
   $("#ivMain").innerHTML = `
     <header class="iv-head">${logoTile(a.id, a.logo, d.company, "logo--lg")}
@@ -1704,8 +1705,10 @@ function ivTab(id) {
 
 function renderIvPanel() {
   IV.deck = null;
+  CT.next = null;   // Enter belongs to the coding test's "next problem" only while it is on screen
   if (IV.tab === "intel") { $("#ivPanel").innerHTML = ivCompany(IV.data); return; }
   if (IV.tab === "code") return ctOpen();
+  if (IV.tab === "practical") return paOpen();
   ivDeck(IV.data.rounds.find((r) => r.id === IV.tab));
 }
 
@@ -1873,12 +1876,12 @@ function ivRoundDone() {
   const marks = store.get(ivMarksKey(IV.sel), {});
   const got = D.round.questions.filter((_, i) => marks[`${D.round.id}:${i}`] === "got").length;
   D.done = true;
-  const after = next ? next.name : d.needs_coding ? "Coding test" : "Interview complete";
+  const after = next ? next.name : d.needs_coding ? "Practical assessment" : "Interview complete";
   FX.flowSwap($("#ivStage"), `<div class="flow-round">
       <span class="hud-mono" data-flow-in>Round ${pad2(ri + 1)} complete · ${got} of ${D.round.questions.length} got it</span>
       <h2 class="flow-title flow-title--xl" data-scramble>${esc(after)}</h2>
-      <p class="type-body" data-flow-in>${next ? esc(next.format || "") : d.needs_coding ? "An adaptive, LeetCode-style test. Your code runs here, against hidden tests." : "Run the ones you marked to review again, or download the notes to read on the way."}</p>
-      <div data-flow-in><button class="btn btn--accent btn--lg" id="ivNextRound">${next ? `Start round ${pad2(ri + 2)}` : d.needs_coding ? "Open the coding test" : "Review what's left"} ${ICON.arrow}</button></div></div>`, 1);
+      <p class="type-body" data-flow-in>${next ? esc(next.format || "") : d.needs_coding ? "One project in four levels against the clock, the shape of a CodeSignal take-home. Your code runs here, against hidden tests." : "Run the ones you marked to review again, or download the notes to read on the way."}</p>
+      <div data-flow-in><button class="btn btn--accent btn--lg" id="ivNextRound">${next ? `Start round ${pad2(ri + 2)}` : d.needs_coding ? "Open the practical assessment" : "Review what's left"} ${ICON.arrow}</button></div></div>`, 1);
   $("#ivNextRound").onclick = ivNextRound;
   $("#ivQNo").textContent = "Round complete";
   $(".hud__controls").hidden = true;
@@ -1888,7 +1891,7 @@ function ivRoundDone() {
 function ivNextRound() {
   const d = IV.data, ri = d.rounds.indexOf(IV.deck.round), next = d.rounds[ri + 1];
   if (next) return ivTab(next.id);
-  if (d.needs_coding) return ivTab("code");
+  if (d.needs_coding) return ivTab("practical");
   IV.filter = "again"; ivTab(d.rounds[0].id);
 }
 
@@ -1979,11 +1982,11 @@ async function ctWait(job, title) {
 
 // ---- the sandbox ----
 function ctWorker(lang) {
-  if (!CT.workers[lang]) CT.workers[lang] = new Worker(`/static/runner.js?v=1&lang=${lang}`);
+  if (!CT.workers[lang]) CT.workers[lang] = new Worker(`/static/runner.js?v=2&lang=${lang}`);
   return CT.workers[lang];
 }
 
-function ctExec(lang, code, name, tests) {
+function ctExec(lang, code, name, tests, mode = "fn") {
   // The first Python run downloads and starts Pyodide; after that a run gets six seconds.
   const ms = lang === "python" && !CT.ready.python ? 90000 : 6000;
   return new Promise((resolve) => {
@@ -1997,7 +2000,7 @@ function ctExec(lang, code, name, tests) {
       clearTimeout(timer); w.removeEventListener("message", on); CT.ready[lang] = true; resolve(data);
     };
     w.addEventListener("message", on);
-    w.postMessage({ id, lang, code, name, tests: tests.map((t) => t.args) });
+    w.postMessage({ id, lang, code, name, mode, tests: tests.map((t) => (mode === "class" ? t.ops : t.args)) });
   });
 }
 
@@ -2196,6 +2199,328 @@ function ctSummary() {
       <div class="list" data-flow-in>${s.history.map((h) => { const p = CT.data.problems.find((x) => x.id === h.id); return `<div class="item"><span class="tag ${h.result === "solved" ? "tag--ok" : "tag--warn"}">${h.result}</span><span class="item__body"><span class="item__title">${esc(p?.title || h.id)}</span></span><span class="item__aside hud-mono">L${h.level}</span></div>`; }).join("")}</div>
       <div data-flow-in><button class="btn btn--accent btn--lg" id="ctRestart">Start a new test ${ICON.arrow}</button></div></div>`, 1);
   $("#ctRestart").onclick = () => { CT.st = ctFresh(); ctSave(); ctNext(); };
+}
+
+// ---------- the practical assessment: one project in levels, against the clock ----------
+// The shape of CodeSignal's practical take-homes. A level opens once its visible tests pass; later levels change
+// earlier behaviour, so every run checks every open level. Submit, or the clock running out, adds the hidden tests and
+// scores each level (levels never opened score nothing). Then a review grades the code the way the company grades the
+// take-home. As in the coding test, every test is first checked against the reference solution, and dropped if it fails.
+const PA = { data: null, st: null, cm: null, checked: {}, timer: null, busy: false };
+const paKey = (id) => `cv.practical.${id}`;
+const camelName = (n) => n.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
+// A JSON value written the way Python prints it: None, True, False.
+const pyRepr = (v) => v === null || v === undefined ? "None" : typeof v === "boolean" ? (v ? "True" : "False")
+  : Array.isArray(v) ? `[${v.map(pyRepr).join(", ")}]`
+  : typeof v === "object" ? `{${Object.entries(v).map(([k, x]) => `${JSON.stringify(k)}: ${pyRepr(x)}`).join(", ")}}` : JSON.stringify(v);
+const PA_CRITERIA = [["breakdown", "Breakdown"], ["readability", "Readability"], ["complexity", "Complexity"], ["explanation", "Explanation"]];
+
+function paFresh() {
+  return { at: PA.data?.generated_at || "", lang: PA.data?.language || IV.data?.coding_language || "python", started: 0, unlocked: 1, code: {}, last: null, submitted: null };
+}
+const paSave = () => store.set(paKey(IV.sel), PA.st);
+
+async function paOpen() {
+  const token = IV.token;
+  const r = await api(`/api/apps/${IV.sel}/practical`);
+  if (token !== IV.token || IV.tab !== "practical") return;
+  PA.data = r.practical;
+  const kept = store.get(paKey(IV.sel), null);
+  PA.st = kept && PA.data && kept.at === PA.data.generated_at ? kept : paFresh();
+  if (r.job) return paWait(r.job, r.job_kind === "practical-review" ? "Reviewing your code the way their reviewer would" : "Writing your practical assessment");
+  if (!PA.data) return paIntro();
+  if (PA.st.submitted) return paResult();
+  if (PA.st.started) return paWork();
+  paBrief();
+}
+
+function paBar() {
+  const s = PA.st, t = PA.data.task, n = t.levels.length;
+  return `<div class="hud__bar"><span>Practical · ${esc(t.title)} · Level ${pad2(Math.min(s.unlocked, n))} / ${pad2(n)}</span><span id="paClock">${t.minutes} min</span></div>
+    <div class="hud__segs" id="paSegs">${t.levels.map((lv) => `<i class="${lv.level < s.unlocked ? "done" : lv.level === s.unlocked ? "cur" : ""}"></i>`).join("")}</div>`;
+}
+
+function paIntro() {
+  ctHud(`<div class="hud__bar"><span>Practical assessment · ${esc(IV.data.company)}</span><span>One project · 4 levels</span></div><div class="hud__stage" id="paStage"></div>`);
+  FX.flowSwap($("#paStage"), `<div class="flow-round">
+      <span class="hud-mono" data-flow-in>Take-home practice</span>
+      <h2 class="flow-title" data-scramble>A practical assessment, built up level by level.</h2>
+      <p class="type-body" data-flow-in>The shape of CodeSignal's practical take-homes: one small project in four levels against a clock, each level adding to the same class, so later levels reuse your code without breaking it. Visible tests while you work, hidden tests at submit, scored level by level. Then a review grades what reviewers grade: how you broke it down, readability, complexity, and how you explain your approach.</p>
+      <p class="type-meta" data-flow-in>Files you added to this prep, like the recruiter's mail, set its length and focus.</p>
+      <div data-flow-in><button class="btn btn--accent btn--lg" id="paGen">Write one for this job ${ICON.arrow}</button>
+        <button class="btn btn--ghost" id="paSample" style="margin-left:8px">Try the sample now</button></div></div>`, 1);
+  $("#paGen").onclick = paGenerate;
+  $("#paSample").onclick = paSample;
+}
+
+async function paGenerate() {
+  try { const { job } = await api(`/api/apps/${IV.sel}/practical`, { body: {} }); paWait(job, "Writing your practical assessment"); }
+  catch (e) { toast(e.message, 5000); }
+}
+
+async function paSample() {
+  try {
+    const r = await api(`/api/apps/${IV.sel}/practical`, { body: { sample: true } });
+    PA.data = r.practical; PA.st = paFresh(); paSave(); paBrief();
+  } catch (e) { toast(e.message, 5000); }
+}
+
+async function paWait(job, title) {
+  const token = IV.token;
+  ctHud(`<div class="hud__bar"><span>Practical assessment · ${esc(IV.data.company)}</span><span id="ivClock">00:00</span></div>${missionLog(title)}`);
+  FX.flowIn($("#ivPanel .hud"));
+  const stop = await runClock(job, $("#ivClock"));
+  try { await pollJob(job, (l) => logLine(token, l.msg, l.t)); }
+  catch (e) { toast(e.message, 5000); }
+  stop();
+  if (token === IV.token && IV.tab === "practical") paOpen();
+}
+
+const paSum = (levels, k) => levels.reduce((n, x) => n + x[k], 0);
+
+function paBrief() {
+  const t = PA.data.task, s = PA.st, tries = PA.data.attempts || [];
+  ctHud(paBar() + `<div class="hud__stage" id="paStage"></div>`);
+  FX.flowSwap($("#paStage"), `<div class="flow-round">
+      <span class="hud-mono" data-flow-in>Practical assessment · ${t.levels.length} levels · ${t.minutes} minutes</span>
+      <h2 class="flow-title" data-scramble>${esc(t.title)}</h2>
+      ${t.intro ? `<p class="type-body" data-flow-in>${esc(t.intro)}</p>` : ""}
+      <ul class="bullets" data-flow-in>
+        <li>The clock starts when you press Start and doesn't stop. When it runs out, your code is submitted as it stands.</li>
+        <li>A level opens once the level before it passes its visible tests. Later levels change earlier behaviour, so every run checks every open level.</li>
+        <li>Submit runs the hidden tests too and scores each level. Partial credit counts.</li>
+        <li>You can't add tests, as on the real thing: comment your approach, each method's complexity and the edge cases you handled.</li></ul>
+      <div class="report__row" data-flow-in><div class="seg" id="paLang">${Object.entries(LANG).map(([k, l]) => `<button data-lang="${k}" class="${k === s.lang ? "on" : ""}">${l}</button>`).join("")}</div>
+        <button class="btn btn--accent btn--lg" id="paStart">Start the clock ${ICON.arrow}</button></div>
+      ${tries.length ? `<div data-flow-in><div class="hud-mono" style="margin-bottom:8px">Earlier attempts</div><div class="list">${tries.slice().reverse().map(paAttemptRow).join("")}</div></div>` : ""}
+      <div data-flow-in><button class="btn btn--link" id="paNew">Write a new assessment instead</button></div></div>`, 1);
+  $("#paLang").onclick = (e) => {
+    const b = e.target.closest("[data-lang]");
+    if (b) { s.lang = b.dataset.lang; paSave(); $$("#paLang [data-lang]").forEach((x) => x.classList.toggle("on", x === b)); }
+  };
+  $("#paStart").onclick = paStart;
+  $("#paNew").onclick = () => { if (confirm("Write a new assessment for this job? It takes 2 to 5 minutes.")) paGenerate(); };
+}
+
+function paAttemptRow(a) {
+  const marks = PA_CRITERIA.map(([k]) => a.review?.scores?.[k]).filter((x) => x);
+  const avg = marks.length ? (marks.reduce((n, x) => n + x, 0) / marks.length).toFixed(1) : "";
+  return `<div class="item"><span class="item__body"><span class="item__title">${paSum(a.levels, "passed")} of ${paSum(a.levels, "total")} tests · ${a.minutes_used} min · ${esc(LANG[a.lang] || a.lang)}</span>
+    <span class="item__meta item__meta--wrap">${esc(new Date(a.at).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))}${a.review?.verdict ? ` · ${esc(a.review.verdict)}` : ""}</span></span>
+    ${avg ? `<span class="item__aside hud-mono" title="Average of the review's four scores">${avg}/5</span>` : ""}</div>`;
+}
+
+// Every test's reference result, per language: the tests the reference solution fails are dropped.
+async function paChecked(lang) {
+  const key = `${PA.data.generated_at}:${lang}`;
+  if (PA.checked[key]) return PA.checked[key];
+  const t = PA.data.task, all = t.levels.flatMap((lv) => [...lv.visible, ...lv.hidden]);
+  const res = await ctExec(lang, t.solution[lang], t.class, all, "class");
+  if (!res.results) return null;
+  let i = 0;
+  const keep = (list) => list.filter((x) => { const r = res.results[i++]; return r?.ok && same(r.out, x.expected, "exact"); });
+  const levels = t.levels.map((lv) => ({ level: lv.level, visible: keep(lv.visible), hidden: keep(lv.hidden) }));
+  if (levels.some((lv) => !lv.visible.length)) return null;
+  PA.checked[key] = levels;
+  return levels;
+}
+
+async function paStart() {
+  const s = PA.st;
+  $("#paStart").disabled = true;
+  FX.flowSwap($("#paStage"), `<div class="flow-round"><span class="hud-mono" data-flow-in>Getting ready</span>
+      <h2 class="flow-title" data-scramble>${s.lang === "python" && !CT.ready.python ? "Booting the Python sandbox" : "Checking the tests"}</h2>
+      <p class="type-meta" data-flow-in>Every test runs against the reference solution first, so a wrong test can't fail you. The clock starts after this.</p></div>`, 1);
+  if (!(await paChecked(s.lang))) {
+    FX.flowSwap($("#paStage"), `<div class="flow-round"><span class="hud-mono" data-flow-in>Can't use this one</span>
+        <h2 class="flow-title" data-scramble>Its tests don't hold up.</h2>
+        <p class="type-body" data-flow-in>The reference solution fails a whole level of its own tests in ${esc(LANG[s.lang])}. Write a new assessment, or try the other language.</p>
+        <div data-flow-in><button class="btn btn--accent" id="paRewrite">Write a new one ${ICON.arrow}</button> <button class="btn btn--ghost" id="paBack">Back</button></div></div>`, 1);
+    $("#paRewrite").onclick = paGenerate;
+    $("#paBack").onclick = paBrief;
+    return;
+  }
+  Object.assign(s, { started: Date.now(), unlocked: 1, last: null, submitted: null });
+  paSave();
+  paWork();
+}
+
+function paWork() {
+  const s = PA.st, t = PA.data.task, lang = s.lang, n = t.levels.length;
+  const cur = t.levels[Math.min(s.unlocked, n) - 1];
+  ctHud(paBar() + `<div class="hud__stage" id="paStage"></div>`,
+    `<span class="hud-mono">${esc(LANG[lang])} · class ${esc(t.class)}</span><span class="sp"></span>
+     <button class="btn btn--sm" id="paRun" title="Ctrl+'">Run tests</button>
+     <button class="btn btn--sm btn--primary" id="paNext" ${s.unlocked >= n || !paPassed(s.unlocked) ? "disabled" : ""} title="Opens when this level's visible tests pass">Next level ${ICON.arrow}</button>
+     <button class="btn btn--accent" id="paSubmit" title="Ctrl+Enter">Submit</button>`);
+  const el = FX.flowSwap($("#paStage"), `<div class="code-test">
+      <section class="code-test__problem">
+        <span class="hud-mono">Level ${pad2(cur.level)} of ${pad2(n)}</span>
+        <div class="code-test__statement code-test__statement--mono">${esc(cur.spec)}</div>
+        ${t.levels.filter((lv) => lv.level < cur.level).reverse().map((lv) => `<details class="disclosure"><summary>Level ${pad2(lv.level)}</summary><div class="code-test__statement code-test__statement--mono">${esc(lv.spec)}</div></details>`).join("")}
+        ${t.intro ? `<details class="disclosure"><summary>The setting</summary><p class="type-body">${esc(t.intro)}</p></details>` : ""}
+      </section>
+      <section class="code-test__work">
+        <div class="code-test__editor code-test__editor--tall" id="paEditor"></div>
+        <div class="code-test__console" id="paOut"><span class="text-3">Run tests checks levels 1 to ${cur.level} against their visible tests. <span class="kbd">Ctrl</span> <span class="kbd">'</span> runs them, <span class="kbd">Ctrl</span> <span class="kbd">Enter</span> submits.</span></div>
+      </section></div>`, 1);
+  PA.cm = CodeMirror($("#paEditor", el), {
+    value: s.code[lang] ?? t.starter[lang], mode: lang === "python" ? "python" : "javascript", theme: "pop",
+    lineNumbers: true, indentUnit: lang === "python" ? 4 : 2, tabSize: 4, matchBrackets: true, autoCloseBrackets: true,
+    extraKeys: { "Ctrl-Enter": () => paSubmit(false), "Cmd-Enter": () => paSubmit(false), "Ctrl-'": () => paRun(),
+      Tab: (cm) => (cm.somethingSelected() ? cm.indentSelection("add") : cm.replaceSelection(" ".repeat(cm.getOption("indentUnit")))) },
+  });
+  let save;
+  PA.cm.on("change", () => { clearTimeout(save); save = setTimeout(() => { s.code[lang] = PA.cm.getValue(); paSave(); }, 400); });
+  setTimeout(() => { PA.cm.refresh(); PA.cm.focus({ preventScroll: true }); ivFocusHud(); }, 700);
+  if (s.last) paShowRun(s.last);
+  $("#paRun").onclick = paRun;
+  $("#paNext").onclick = paNextLevel;
+  $("#paSubmit").onclick = () => paSubmit(false);
+  paClock();
+}
+
+const paLeft = () => PA.data.task.minutes * 60 - Math.floor((Date.now() - PA.st.started) / 1000);
+const paPassed = (level) => { const lv = PA.st.last?.levels.find((x) => x.level === level); return !!lv && !PA.st.last.fatal && lv.passed === lv.total; };
+
+function paClock() {
+  clearInterval(PA.timer);
+  const tick = () => {
+    const el = $("#paClock");
+    if (!el || IV.tab !== "practical" || PA.st.submitted) return clearInterval(PA.timer);
+    const left = paLeft();
+    if (left <= 0) { clearInterval(PA.timer); el.textContent = "00:00"; return paSubmit(true); }
+    el.textContent = `${pad2(Math.floor(left / 60))}:${pad2(left % 60)} left`;
+    el.classList.toggle("pa-clock--low", left <= 300);
+  };
+  tick();
+  PA.timer = setInterval(tick, 1000);
+}
+
+// Results per level, and up to three failures each: the calls up to the first wrong result, what was expected, what came back.
+function paTally(levels, pick, res) {
+  let i = 0;
+  const out = { fatal: res.fatal || "", levels: [] };
+  for (const lv of levels) {
+    const list = pick(lv), row = { level: lv.level, passed: 0, total: list.length, fails: [] };
+    for (const t of list) {
+      const r = res.results?.[i++];
+      if (r?.ok && same(r.out, t.expected, "exact")) { row.passed += 1; continue; }
+      if (!r || row.fails.length >= 3) continue;
+      const wrong = r.out.findIndex((v, k) => !same(v, t.expected[k], "exact"));
+      const at = wrong >= 0 ? wrong : r.out.length;
+      row.fails.push({ name: t.name, calls: t.ops.slice(0, at + 1), want: t.expected[at], got: r.ok || wrong >= 0 ? r.out[at] : null,
+        error: r.ok || wrong >= 0 ? "" : r.error, stdout: r.stdout || "" });
+    }
+    out.levels.push(row);
+  }
+  return out;
+}
+
+function paShowRun(last) {
+  const box = $("#paOut"); if (!box) return;
+  if (last.fatal) { box.innerHTML = `<div class="ct-fail">${esc(last.fatal)}</div>`; FX.pulse(box); return; }
+  const py = PA.st.lang === "python";
+  const show = (v) => esc(py ? pyRepr(v) : JSON.stringify(v));
+  const call = ([m, args]) => `${esc(py ? m : camelName(m))}(${args.map(show).join(", ")})`;
+  box.innerHTML = last.levels.map((lv) => `<div class="${lv.passed === lv.total ? "ct-pass" : "ct-fail"}"><b>Level ${lv.level}: ${lv.passed} / ${lv.total} visible tests</b></div>
+    ${lv.fails.map((f) => `<div class="ct-case ct-fail"><b>✗ ${esc(f.name)}</b>
+      ${f.calls.length > 1 ? `<div class="text-3">${f.calls.slice(0, -1).map(call).join("<br>")}</div>` : ""}
+      <div>${call(f.calls[f.calls.length - 1])}</div><div>Expected: ${show(f.want)}</div>
+      <div>${f.error ? esc(f.error) : `Got: ${show(f.got)}`}</div>${f.stdout ? `<div class="text-3">stdout: ${esc(f.stdout)}</div>` : ""}</div>`).join("")}`).join("");
+}
+
+async function paRun() {
+  const s = PA.st, lang = s.lang;
+  if (!PA.cm || PA.busy || s.submitted) return;
+  const checked = await paChecked(lang);
+  if (!checked) return toast("The sandbox couldn't run the reference solution. Reload the page and try again.", 5000);
+  const levels = checked.filter((lv) => lv.level <= s.unlocked);
+  const tests = levels.flatMap((lv) => lv.visible);
+  PA.busy = true;
+  ["#paRun", "#paNext", "#paSubmit"].forEach((id) => { const b = $(id); if (b) b.disabled = true; });
+  $("#paOut").innerHTML = `<span class="spinner" style="width:12px;height:12px;display:inline-block;vertical-align:-1px"></span> Running ${tests.length} tests…`;
+  s.code[lang] = PA.cm.getValue();
+  const res = await ctExec(lang, s.code[lang], PA.data.task.class, tests, "class");
+  PA.busy = false;
+  s.last = paTally(levels, (lv) => lv.visible, res);
+  paSave();
+  paShowRun(s.last);
+  $("#paRun").disabled = $("#paSubmit").disabled = false;
+  $("#paNext").disabled = s.unlocked >= PA.data.task.levels.length || !paPassed(s.unlocked);
+  if (!$("#paNext").disabled) FX.pulse($("#paNext"));
+}
+
+async function paNextLevel() {
+  const s = PA.st;
+  await paRun();
+  if (!paPassed(s.unlocked) || s.unlocked >= PA.data.task.levels.length) return;
+  s.unlocked += 1; s.last = null; paSave();
+  toast(`Level ${s.unlocked} is open. Its changes can break earlier levels: keep running everything.`, 3500);
+  paWork();
+}
+
+async function paSubmit(auto) {
+  const s = PA.st, t = PA.data.task, lang = s.lang;
+  if (PA.busy || s.submitted) return;
+  if (!auto && !confirm("Submit now? The hidden tests run and this attempt ends.")) return;
+  clearInterval(PA.timer);
+  PA.busy = true;
+  const code = PA.cm ? PA.cm.getValue() : s.code[lang] ?? t.starter[lang];
+  s.code[lang] = code;
+  ctHud(paBar() + `<div class="hud__stage" id="paStage"></div>`);
+  FX.flowSwap($("#paStage"), `<div class="flow-round"><span class="hud-mono" data-flow-in>${auto ? "Time's up" : "Submitted"}</span>
+      <h2 class="flow-title" data-scramble>Running the hidden tests</h2></div>`, 1);
+  const levels = await paChecked(lang);
+  if (!levels) { PA.busy = false; toast("The sandbox couldn't run the reference solution. Reload the page; your code is saved.", 6000); return; }
+  const both = (lv) => [...lv.visible, ...lv.hidden];
+  const res = await ctExec(lang, code, t.class, levels.flatMap(both), "class");
+  PA.busy = false;
+  const tally = paTally(levels, both, res);
+  tally.levels.forEach((lv) => { if (lv.level > s.unlocked) lv.passed = 0; });
+  s.submitted = { at: Date.now(), auto, code, lang, fatal: tally.fatal, minutes_used: Math.min(t.minutes, Math.ceil((Date.now() - s.started) / 60000)),
+    levels: tally.levels.map(({ level, passed, total }) => ({ level, passed, total })) };
+  paSave();
+  paResult();
+}
+
+function paResult() {
+  const s = PA.st, t = PA.data.task, sub = s.submitted;
+  const review = (PA.data.attempts || []).filter((a) => a.code === sub.code).pop()?.review;
+  ctHud(paBar() + `<div class="hud__stage" id="paStage"></div>`);
+  FX.flowSwap($("#paStage"), `<div class="flow-round pa-result">
+      <span class="hud-mono" data-flow-in>${sub.auto ? "Time's up, submitted" : "Submitted"} · ${sub.minutes_used} of ${t.minutes} min · ${esc(LANG[sub.lang])}</span>
+      <h2 class="flow-title flow-title--xl" data-scramble>${paSum(sub.levels, "passed")} of ${paSum(sub.levels, "total")} tests pass</h2>
+      ${sub.fatal ? `<div class="ct-fail" data-flow-in>${esc(sub.fatal)}</div>` : ""}
+      <div class="iv-stats" data-flow-in>${sub.levels.map((lv) => `<div class="stat"><span class="eyebrow">Level ${lv.level}${lv.level > s.unlocked ? " · not opened" : ""}</span><span class="stat__value num">${lv.passed}<small>/${lv.total}</small></span></div>`).join("")}</div>
+      <div data-flow-in>${review ? paReviewHtml(review) : `<div class="report__row"><button class="btn btn--accent btn--lg" id="paGrade">Review my code ${ICON.arrow}</button>
+        <span class="type-meta">Scores how you broke it down, readability, complexity and how you explained it, and lists what they'll ask when you walk them through it. About a minute.</span></div>`}</div>
+      <details class="disclosure" data-flow-in><summary>Reference solution</summary>${t.complexity ? `<p class="type-meta">${esc(t.complexity)}</p>` : ""}<pre class="code">${esc(t.solution[sub.lang])}</pre></details>
+      <div data-flow-in><button class="btn" id="paAgain">Try this one again</button> <button class="btn btn--ghost" id="paNew2">Write a new assessment</button></div></div>`, 1);
+  const grade = $("#paGrade");
+  if (grade) grade.onclick = paReview;
+  $("#paAgain").onclick = () => { PA.st = paFresh(); paSave(); paBrief(); };
+  $("#paNew2").onclick = () => { if (confirm("Write a new assessment for this job? It takes 2 to 5 minutes.")) paGenerate(); };
+}
+
+async function paReview() {
+  const sub = PA.st.submitted;
+  try {
+    const { job } = await api(`/api/apps/${IV.sel}/practical/review`, { body: { code: sub.code, lang: sub.lang, levels: sub.levels, minutes_used: sub.minutes_used } });
+    paWait(job, "Reviewing your code the way their reviewer would");
+  } catch (e) { toast(e.message, 5000); }
+}
+
+function paReviewHtml(rv) {
+  const li = (xs) => xs.map((x) => `<li>${esc(x)}</li>`).join("");
+  const part = (title, body) => `<div><div class="hud-mono" style="margin-bottom:8px">${title}</div>${body}</div>`;
+  return `<div class="pa-review">
+    ${rv.verdict ? `<p class="type-body"><b class="text-2">Verdict:</b> ${esc(rv.verdict)}</p>` : ""}
+    <div class="iv-stats">${PA_CRITERIA.map(([k, l]) => `<div class="stat"><span class="eyebrow">${l}</span><span class="stat__value num">${rv.scores?.[k] ?? "–"}<small>/5</small></span></div>`).join("")}</div>
+    ${rv.fixes.length ? part("Fix first", `<ol class="bullets">${rv.fixes.map((f) => `<li><b>${esc(f.issue)}</b>${f.why ? ` ${esc(f.why)}` : ""}${f.how ? `<br><span class="text-3">${esc(f.how)}</span>` : ""}</li>`).join("")}</ol>`) : ""}
+    ${rv.strengths.length ? part("What works", `<ul class="bullets">${li(rv.strengths)}</ul>`) : ""}
+    ${rv.complexity_notes ? part("Complexity", `<p class="type-body">${esc(rv.complexity_notes)}</p>`) : ""}
+    ${rv.walkthrough.length ? part("They'll ask in the walk-through", `<ul class="bullets">${li(rv.walkthrough)}</ul>`) : ""}</div>`;
 }
 
 function ivCompany(d) {
