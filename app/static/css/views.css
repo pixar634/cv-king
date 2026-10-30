@@ -396,6 +396,8 @@ body.is-setup #nav, body.is-setup #engineSeg, body.is-setup #openSettings { disp
 .dropzone--sm { padding: var(--s-5) var(--s-4); }
 .iv-files { display: grid; gap: var(--s-3); margin-top: var(--s-3); }
 .iv-files__list { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.iv-files__link { display: flex; gap: var(--s-2); }
+.iv-files__link input { flex: 1; min-width: 0; }
 .iv-files__list:empty { display: none; }
 .menu__row { display: flex; align-items: center; }
 .menu__row > button:first-child { display: block; flex: 1; padding: 10px 12px; border: 0; border-left: 2px solid transparent; background: none;

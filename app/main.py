@@ -742,6 +742,17 @@ def interview_file_add(app_id: str, body: dict = Body(...)):
         raise HTTPException(400, str(e))
 
 
+@app.post("/api/apps/{app_id}/interview/links")
+def interview_link_add(app_id: str, body: dict = Body(...)):
+    """{url}: a YouTube video (its title, channel and description) or a web page (its text), kept like a file."""
+    from . import attachments
+    _app_dir(app_id)
+    try:
+        return attachments.add_link(app_id, body.get("url", ""))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.post("/api/apps/{app_id}/interview/files/remove")
 def interview_file_remove(app_id: str, body: dict = Body(...)):
     from . import attachments
