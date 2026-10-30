@@ -130,7 +130,8 @@ def _contact(profile: dict, report: dict) -> list[tuple[str, str]]:
         (r"current\s*(job\s*)?title|current\s*(role|position)|present\s*(job\s*)?title",
          current["title"] if current else b.get("headline", "")),
         (r"years\s*of\s*(professional\s*)?experience|total\s*experience", experience_years_label(profile)),
-        (r"^(current\s*)?(location|city)\b|where\s*are\s*you\s*(based|located)", b.get("location", "")),
+        (r"^(current\s*|present\s*)?(location|city)\b|where\s*(are|do)\s*you\s*(currently\s*|presently\s*)?"
+         r"(based|located|live|living|reside)|current\s*(location|city|place\s*of\s*residence)", b.get("location", "")),
     ]
 
 
