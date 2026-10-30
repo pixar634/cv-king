@@ -198,3 +198,13 @@ def test_phone_without_a_code_box_keeps_the_country_code(app_id, engine):
     fields = [{"id": "0:p", "kind": "tel", "label": "Phone number"},
               {"id": "0:n", "kind": "select", "label": "Country", "options": ["India", "United States", "Germany"]}]
     assert apply.answer(app_id, fields)["answers"]["0:p"] == "+91 90000 00000"
+
+
+def test_where_are_you_currently_located_is_answered_from_the_profile(app_id, engine, sandbox):
+    e = engine({})
+    profile = json.loads((sandbox / "data" / "base_cv.json").read_text("utf-8"))
+    where = profile["basics"].get("location")
+    labels = ["Where are you currently located?", "Where do you live?", "Your current city", "Current location *"]
+    fields = [{"id": f"0:{i}", "kind": "text", "label": label} for i, label in enumerate(labels)]
+    got = apply.answer(app_id, fields)
+    assert got["answers"] == {f"0:{i}": where for i in range(len(labels))} and not e.briefs
