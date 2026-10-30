@@ -73,16 +73,20 @@ class ClaudeCLI:
         cmd = [exe, "-p", INSTRUCTION, "--output-format", "json", "--model", self.model,
                "--tools", builtin, "--system-prompt", SYSTEM, "--no-session-persistence",
                "--permission-prompts", "none", "--effort", "medium" if tools else "high"]
+        run_env = None
         if connector:
             # Safe mode hides every connector, so a connector run goes without it and is fenced instead: only the
             # named tool is pre-approved (with prompts off, anything else is refused), and Gmail's sending,
             # deleting and reading tools are blocked outright as a second guard.
             cmd += ["--allowedTools", ",".join(connector), "--disallowedTools", ",".join(t for t in GMAIL_BLOCKED if t not in connector)]
+            # A headless run starts the model while claude.ai connectors are still connecting, so the tool isn't
+            # there yet and the model writes the call out as text; wait for them instead.
+            run_env = os.environ | {"MCP_CONNECTION_NONBLOCKING": "false"}
         else:
             cmd.append("--safe-mode")
             if tools:
                 cmd += ["--allowedTools", builtin]
-        proc = _run(cmd, brief, timeout)
+        proc = _run(cmd, brief, timeout, run_env)
         try:
             env = json.loads(proc.stdout)
         except json.JSONDecodeError:
