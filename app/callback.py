@@ -8,9 +8,11 @@ applications reach an interview, against about 40% of referred ones. The fit lab
 averages; the bands below are a judgement on top of them, not a measurement, and your own numbers replace them once
 Insights has ten applications with that label.
 """
+import contextlib
 import contextvars
 import json
 import threading
+import time
 
 from .config import output_dir
 
@@ -65,6 +67,29 @@ def for_app(app_id: str, profile: dict, prefs: dict, own: dict | None = None) ->
 
 
 _busy = threading.Lock()
+_serving = 0   # requests the app is answering right now (see serving)
+_serving_lock = threading.Lock()
+
+
+@contextlib.contextmanager
+def serving():
+    """Mark a request in progress. Working out a guide is pure Python and holds the GIL: run beside a request, it made
+    the Pipeline's first visit of the day (every guide out of date) wait 10 seconds for its cards instead of 1."""
+    global _serving
+    with _serving_lock:
+        _serving += 1
+    try:
+        yield
+    finally:
+        with _serving_lock:
+            _serving -= 1
+
+
+def _wait_for_requests(most: float = 2.0) -> None:
+    """Between two guides, let the requests in progress finish first (for a while: a long one doesn't stall it)."""
+    end = time.monotonic() + most
+    while _serving and time.monotonic() < end:
+        time.sleep(0.05)
 
 
 def cached(app_id: str, prefs: dict, own: dict) -> dict | None:
@@ -88,6 +113,7 @@ def work_out_soon(app_ids: list[str], profile: dict, prefs: dict) -> bool:
     def run():
         try:
             for app_id in app_ids:
+                _wait_for_requests()
                 try:
                     for_app(app_id, profile, prefs, {})
                 except Exception:  # an old folder without what the guide needs: skip it

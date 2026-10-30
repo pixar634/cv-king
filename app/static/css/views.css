@@ -196,7 +196,7 @@
 .pipe-search { width: 100%; }
 .split__head { display: flex; align-items: baseline; gap: var(--s-4); flex-wrap: wrap; padding-bottom: var(--s-4); border-bottom: 1px solid var(--line); }
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: var(--s-4); align-items: start; }
-.card-grid > .board__none { grid-column: 1 / -1; }
+.card-grid > .board__none, .card-grid > .printer { grid-column: 1 / -1; }
 .board__none { padding: var(--s-5) var(--s-3); border: 1px dashed var(--line-2); text-align: center; font-size: 12.5px; color: var(--text-3); }
 .app-card { display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); min-width: 0; }
 .app-card__main { display: flex; flex-direction: column; gap: var(--s-3); min-width: 0; flex: 1; }

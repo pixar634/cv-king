@@ -375,7 +375,7 @@ async function onStudioItem(item) {
 // ================= empty state =================
 async function renderEmpty() {
   if (S.job) return;
-  const rows = await api("/api/apps").catch(() => []);
+  const rows = await api("/api/apps").then((r) => (S.apps ||= r)).catch(() => []);   // the Pipeline shows these at once
   if (S.job) return;
   $("#emptyHero").innerHTML = `
     <div class="hero">
@@ -1247,14 +1247,22 @@ async function tailorSelected() {
 }
 
 // ================= pipeline =================
+// Cards first: the last list shows at once (the Tailor screen's Recent list reads it on load), or the printer until
+// the first one arrives. Mail, the queue and contacts load beside it and fill in when they land.
 async function loadPipeline() {
+  if (S.apps) renderPipeline();
+  else $("#board").innerHTML = printerHtml("Reading your applications");
+  const side = Promise.all([
+    api("/api/mail").catch(() => ({})).then(renderMailNews),
+    api("/api/batch").then((b) => { S.batch = b; }).catch(() => {}),
+    loadContacts(),
+  ]);
   S.apps = await api("/api/apps");
   // The chance of a callback is being worked out in the background for some cards: ask again shortly.
   clearTimeout(S.chanceTimer);
   if (S.apps.some((r) => r.callback_pending)) S.chanceTimer = setTimeout(() => { if ($("#v-pipeline").classList.contains("on")) loadPipeline(); }, 4000);
-  renderMailNews(await api("/api/mail").catch(() => ({})));
-  S.batch = await api("/api/batch");
-  await loadContacts();
+  renderPipeline();
+  await side;
   renderPipeline();
   loadInsights().catch(() => {});
 }
@@ -1327,8 +1335,9 @@ async function loadInsights() {
 }
 
 function renderPipeline() {
-  const rows = S.apps || [];
-  const inflight = S.batch.filter((b) => b.status !== "done");
+  if (!S.apps) return;   // not read yet: the printer stays, not "Nothing here yet"
+  const rows = S.apps;
+  const inflight = (S.batch || []).filter((b) => b.status !== "done");
   const by = (sts) => rows.filter((r) => sts.includes(r.status));
   const closedSts = ["Rejected", "No response", "Withdrawn"];
   const stages = [
