@@ -22,9 +22,12 @@ def core(title: str) -> str:
 
 
 def held(title: str, held_titles: list[str]) -> bool:
-    """You've held this kind of role: the job's title, without its level, is one of yours or contains one."""
-    c = core(title)
-    return bool(c) and any(h and (c == h or h in c or c in h) for h in (core(t) for t in held_titles))
+    """You've held this kind of role: the job's title, without its level, is one of yours or contains one, and it is
+    the same kind of role ("Manager of Software Engineering" contains "Software Engineer" but is a manager's job)."""
+    from .outcomes import kind
+    c, k = core(title), kind(title)
+    return bool(c) and any(h and (c == h or h in c or c in h) and kind(t) == k
+                           for t, h in ((t, core(t)) for t in held_titles))
 
 
 def days_old(job: dict) -> int | None:

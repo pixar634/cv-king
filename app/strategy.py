@@ -19,8 +19,8 @@ LEVELS = {0: "Intern / trainee", 1: "Junior / associate", 2: "Mid-level", 3: "Se
           5: "Staff / principal / senior manager", 6: "Head / director", 7: "VP / C-level"}
 LEVEL_WORDS = [
     (7, r"(?<!assistant )(?<!associate )\b(vp|svp|evp|vice[\s-]president|chief\s+\w+\s+officer|c[tpfoi]o)\b"),
-    (6, r"\b(head of|director)\b"),
-    (5, r"\b(staff|principal|distinguished|group (product|engineering) manager|senior manager|sr\.? manager)\b"),
+    (6, r"\b(head of|director|distinguished|fellow)\b|\b(senior|sr\.?)\s+(staff|principal)\b"),
+    (5, r"\b(staff|principal|group (product|engineering) manager|senior manager|sr\.? manager)\b"),
     (4, r"\b(lead|team lead|tech(nical)? lead|avp|(assistant|associate) vice[\s-]president)\b"),
     (3, r"\b(senior|sr\.?)\b|\b(sde|swe|engineer|developer|analyst)[\s-]*(iii|3)\b"),
     (2, r"\bmid[\s-]*level\b|\b(sde|swe|engineer|developer|analyst)[\s-]*(ii|2)\b"),
