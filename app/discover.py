@@ -1542,6 +1542,9 @@ def rescore_progress() -> dict:
     p, label = _rescoring.get(current()) or {}, "Updating your matches with today's scores"
     if not p.get("running") and (_reading.get(current()) or {}).get("running"):
         p, label = _reading[current()], "Reading the full postings of jobs listed without one"
+    from .review import progress_now
+    if not p.get("running") and (rv := progress_now())["running"]:
+        p, label = rv, "Reading the best jobs against your CV"
     return {"running": bool(p.get("running")), "done": p.get("done", 0), "total": p.get("total", 0), "label": label}
 
 
@@ -1620,6 +1623,15 @@ def scan_one(src: dict, days: int, prefs: dict | None = None) -> dict:
         return {"source": src["id"], "method": method, "jobs": jobs, "seconds": round(time.time() - t, 1)}
     except (EngineError, Exception) as e:  # one bad source must not sink the scan
         return {"source": src["id"], "error": f"{type(e).__name__}: {str(e)[:300]}", "jobs": [], "seconds": round(time.time() - t, 1)}
+
+
+def carry_over(job: dict, prev: dict | None, now: str) -> dict:
+    """A posting seen again keeps the day it was first found and its review (whose signature says whether the
+    posting changed since)."""
+    job["first_seen"] = prev["first_seen"] if prev else now
+    if prev and prev.get("review"):
+        job["review"] = prev["review"]
+    return job
 
 
 def _load_jobs() -> dict:
@@ -1940,7 +1952,7 @@ def _store(results: list[dict], days: int, prefs: dict, evidence: set[str], prog
                 if not prev:
                     new_ids.add(j["id"])
                 j = rank(j, evidence, prefs, sig)
-                j["first_seen"] = prev["first_seen"] if prev else now
+                j = carry_over(j, prev, now)
                 if j["excluded"]:
                     j = {k: v for k, v in j.items() if k != "description"} | {"_trimmed": True}
                 state["jobs"][j["id"]] = j
