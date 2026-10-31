@@ -61,3 +61,16 @@ def test_first_draft_and_letter_in_use_cannot_be_removed(app_id):
 def test_banned_phrases_are_flagged():
     phrase = letters.banned_phrases()[0]
     assert letters.phrase_flags(f"Hello. {phrase}. Thanks!")
+
+
+def test_spoken_flair_carries_the_humanizer_guide():
+    v = letters.voices()
+    assert v["spoken_flair"]["label"] == "Spoken flair" and v["spoken_flair"]["humanize"]
+    rules = letters.voice_rules("spoken_flair")
+    assert "## HUMANIZER" in rules and "Not X but Y" in rules and "Vendored from" not in rules
+    assert "## HUMANIZER" not in letters.voice_rules("plainspoken")
+
+
+def test_dashes_are_spotted():
+    assert letters.DASHES.search("I led it — twice") and letters.DASHES.search("I led it -- twice")
+    assert not letters.DASHES.search("A full-stack, well-tested service")

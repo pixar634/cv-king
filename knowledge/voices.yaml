@@ -42,6 +42,17 @@ proof_points:
     requirement with the matching proof from the profile (with its number where the profile has
     one), then a one-sentence close with availability. Skimmable in ten seconds. 120 to 170 words.
 
+spoken_flair:
+  label: Spoken flair
+  best_for: A named hiring manager, startups and teams that hire on how you come across
+  brief: >-
+    Write it the way the candidate would say it to the hiring manager across a table: first person,
+    contractions, plain words, and a natural rhythm where short sentences sit next to longer ones.
+    One honest aside or reaction is fine when the profile backs it. Still professional: no slang,
+    no jokes, no exclamation marks, no em or en dashes. 150 to 210 words. Before you return it,
+    edit your own draft with the HUMANIZER guide below (embedded mode: return only the final letter).
+  humanize: true
+
 # Phrases that make a letter read as a template or as AI-written. Prompt bans them; code flags them.
 banned_phrases:
   - I am writing to express my interest

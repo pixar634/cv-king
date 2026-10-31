@@ -316,7 +316,7 @@ highlighted line to see your original.
 <td width="50%"><b>ATS read-back.</b> The finished PDF is parsed the way an ATS parses it: text layer, contact details, headings, reading order, fonts, size.<br><br><img src="docs/images/tab-ats.png" alt="ATS tab"></td>
 </tr>
 <tr>
-<td><b>Cover letters in five voices.</b> Plainspoken, Storyteller, Formal, Warm and Proof points. Every version is kept; <b>Use this</b> picks the one that goes with the PDF. Export as PDF, DOCX or DOC.<br><br><img src="docs/images/tab-letter.png" alt="Letter tab"></td>
+<td><b>Cover letters in six voices.</b> Plainspoken, Storyteller, Formal, Warm, Proof points and Spoken flair, which edits its own draft with the <a href="https://github.com/blader/humanizer">humanizer</a> guide to signs of AI writing. Every version is kept; <b>Use this</b> picks the one that goes with the PDF. Export as PDF, DOCX or DOC.<br><br><img src="docs/images/tab-letter.png" alt="Letter tab"></td>
 <td><b>What a recruiter will notice</b>, including the biggest risk in your application, and a 300-character note to the recruiter, ready to paste.<br><br><img src="docs/images/tab-notes.png" alt="Notes tab"></td>
 </tr>
 </table>
