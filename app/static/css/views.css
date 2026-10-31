@@ -163,8 +163,10 @@
 .day--fav > summary { border-bottom-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 .day .card-grid + .group-title { margin-top: var(--s-6); }
 .job-card { display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); }
-.job-card__top { display: flex; align-items: center; gap: 10px; }
+.job-card__top { display: flex; align-items: flex-start; gap: 10px; }
 .job-card__top .icon-btn { margin-left: auto; }
+/* The tags wrap onto a second line rather than being cut: a card can carry date, pay, eligibility and a referral. */
+.job-card__tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 1; min-width: 0; padding-top: 2px; }
 .job-card__tl:empty { display: none; }
 .job-card__title { font-weight: 800; font-size: 15px; line-height: 1.35; color: var(--text); }
 .job-card__where { margin-top: 4px; font-size: 12.5px; line-height: 1.45; color: var(--text-2); }
@@ -173,7 +175,7 @@
 .job-card__match .num { font-weight: 800; font-size: 15px; color: var(--tone); }
 .job-card__why { font-size: 12px; line-height: 1.5; color: var(--text-3); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .job-card__top { min-width: 0; }
-.job-card__top .tag { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+.job-card__top .tag { flex: none; }
 .job-card__top > :is(input, .logo, .icon-btn) { flex: none; }
 .job-card__top .icon-btn + .icon-btn { margin-left: -6px; }
 .job-card--passed { gap: var(--s-2); border-style: dashed; cursor: default; }

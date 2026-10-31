@@ -1093,6 +1093,7 @@ async function loadFound() {
       <div class="job-card__top">
         <input type="checkbox" ${S.selected.has(j.id) ? "checked" : ""} aria-label="Select ${esc(j.title)}">
         <span class="logo logo--sm">${initial(j.company || j.source)}</span>
+        <div class="job-card__tags">
         <span class="tag ${d === null ? "tag--warn" : d <= 3 ? "tag--ok" : ""}">${d === null ? "Date unknown" : ago(j.posted)}</span>
         ${remote ? `<span class="tag tag--accent" title="A remote job: work from where you live">Remote</span>` : ""}
         <span class="job-card__tl"></span>
@@ -1103,6 +1104,7 @@ async function loadFound() {
         ${j.method === "recruiter mail" ? `<span class="tag tag--accent tag--solid" title="${esc(j.recruiter || "A recruiter")} wrote to you about this (${esc(j.via || "email")}). Reply the same day.">Recruiter wrote to you</span>` : ""}
         ${j.applied_here ? `<span class="tag tag--warn" title="You applied here before: ${esc(j.applied_here)}">Applied here before</span>` : ""}
         ${isFav(j) ? `<span class="tag tag--accent" title="One of your favourite companies" aria-label="Favourite">${ICON.star.replace("<svg", "<svg style=\"width:9px;height:9px\"")}</span>` : ""}
+        </div>
         <a class="icon-btn icon-btn--sm" href="${esc(j.url)}" target="_blank" rel="noopener" title="Open the posting" aria-label="Open the posting">${ICON.out}</a>
         <button class="icon-btn icon-btn--sm job-card__pass" title="Not for me: hide it, and Discover learns to push down jobs like it" aria-label="Not for me">${ICON.x}</button>
       </div>
