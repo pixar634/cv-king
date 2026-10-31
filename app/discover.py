@@ -29,6 +29,7 @@ from .jd import _as_text, strip_html
 from .untrusted import fence
 from .keywords import MIN_TERMS, taxonomy
 from .fit import strong_skills
+from .fitlabel import THIN_TERMS
 from .profile import load_profile, profile_text
 
 
@@ -648,7 +649,7 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 31
+RANK_VERSION = 32
 MID, SENIOR = 2, 3     # strategy.LEVEL_WORDS ranks: "SDE II", "Senior"
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "places", "pay_floor_home_lpa", "pay_floor_remote_lpa", "pay_floor_abroad_eur", "pay_tiers")
@@ -716,8 +717,10 @@ def regions(prefs: dict) -> list[str]:
 def with_profile(prefs: dict) -> dict:
     profile = load_profile()
     from .warm import companies
+    from .outcomes import by_kind
     return prefs | {"_ptext": profile_text(profile), "_held": [r.get("title", "") for r in profile["experience"]],
-                    "_floor": strategy.calibrated_rank(profile), "_warm": companies(), "_applied": _applied_at()}
+                    "_floor": strategy.calibrated_rank(profile), "_warm": companies(), "_applied": _applied_at(),
+                    "_history": by_kind()}
 
 
 def _applied_at() -> dict[str, str]:
@@ -737,7 +740,8 @@ def rank_signature(prefs: dict, evidence: set[str]) -> str:
     from .sponsors import _lists
     # The day counts too: a posting's age is part of its fit label.
     blob = json.dumps([RANK_VERSION, dt.date.today().isoformat(), _lists().get("fetched"), sorted(prefs.get("_warm", ())),
-                       prefs.get("_applied", {}), {k: prefs.get(k) for k in RANK_KEYS}, sorted(evidence),
+                       prefs.get("_applied", {}), prefs.get("_history", {}), {k: prefs.get(k) for k in RANK_KEYS},
+                       sorted(evidence),
                        hashlib.sha1(prefs.get("_ptext", "").encode()).hexdigest(),
                        sp.stat().st_mtime if sp.exists() else 0], sort_keys=True, default=str)
     return hashlib.sha1(blob.encode()).hexdigest()[:12]
@@ -830,6 +834,14 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     # unless one of your own tracks covers it.
     if (m := OTHER_FIELD.search(title)) and not strategy.matching_tracks(title, tracks):
         return job | {"match": 0, "reasons": [f"another kind of engineering ({m.group(0)})"], "excluded": True}
+    # A research or scientist role screens for research (papers, experiments, model training), which an engineer's
+    # keywords don't show: only for someone who has held such a title, or one of whose tracks is research itself
+    # (a track matching every "engineer" doesn't count).
+    from .outcomes import kind
+    track_words = [w for tid in tracks for key in ("titles", "match") for w in strategy.tracks().get(tid, {}).get(key, [])]
+    if (kind(title) == "research" and not any(kind(w) == "research" for w in track_words)
+            and not any(kind(t) == "research" for t in prefs.get("_held", []))):
+        return job | {"match": 0, "reasons": ["a research role (no research or scientist title on your CV)"], "excluded": True}
     reg = region(job)
     city = strategy.city_pattern()
     loc = job.get("location") or ""
@@ -902,6 +914,8 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
         required = [r for r in scored["rows"] if r["tier"] == "required" and r["term"] not in GENERIC]
         must = (sum(r["covered"] for r in required), len(required))
         reasons.append(f"you can cover {score}% of its keywords")
+        if terms < THIN_TERMS:
+            reasons.append(f"it names only {terms} specific skills, so the match is rough")
         # A short text is often a search snippet, not the posting: the full page can score quite differently.
         estimate = len(desc) < SNIPPET
     else:
@@ -909,7 +923,7 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
         reasons.append("no description to measure yet" if len(desc) < 300 else "names too few skills to measure")
         if not target:   # with nothing to measure, only a title that is one of your tracks earns a place
             return job | {"match": 0, "reasons": ["not scored, and the title isn't one of your tracks"], "excluded": True}
-    order = score - (0 if target else 10)
+    order = score - (0 if target else 10) - (10 if not unscored and terms < THIN_TERMS else 0)
     # Fresh first: an application in the first few days is read before the shortlist fills.
     from .fitlabel import days_old
     age = days_old(job)
@@ -973,12 +987,13 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
         reasons.append(pv["why"])
     # One label for the chance of a callback; it leads the order, the keyword match breaks ties within it.
     from .fitlabel import compute as fit_label
+    from .outcomes import penalty
     from .tracker import _company
     fit = fit_label(job, target=target, held_titles=prefs.get("_held", []), level=level["verdict"],
                     at_level=named is not None and floor <= named <= mine, must=must, terms=terms,
                     match=score if not unscored else 0, pay=pv, open_state=o["state"],
                     warm=(warm := _company(job.get("company")) in prefs.get("_warm", ())),
-                    inbound=job.get("method") == "recruiter mail")
+                    inbound=job.get("method") == "recruiter mail", history=penalty(title, prefs.get("_history", {})))
     order += fit["points"] * 6
     if job.get("method") == "recruiter mail":
         reasons.insert(0, "a recruiter wrote to you")
