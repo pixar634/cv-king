@@ -156,6 +156,7 @@ subscription or with an API key, and switch between them from the top bar.
 | Feature | Claude | Gemini |
 |---|:---:|:---:|
 | Reading your CV, tailoring, cover letters, interview questions, cold email text, career map | ✅ | ✅ |
+| Reading Discover's shortlisted jobs against your CV after a scan | ✅ | ✅ |
 | Web research while setting up your strategy and career map | ✅ | Runs without it |
 | Discover web searches, Indeed scans, people to watch, finding contacts, company research for interviews | ✅ | Uses Claude |
 | Saving cold emails to Gmail drafts | ✅ with a claude.ai sign-in | Uses Claude |
@@ -331,6 +332,11 @@ More in Tailor:
 
 Discover scans the job boards of your favourite employers and your saved web searches, keeps only fresh postings, and
 ranks them by how much of each job your profile can truthfully cover. Jobs at your level come first.
+
+**Read against your CV.** After each scan, the model reads the jobs that pass your filters against your CV and the
+kinds of role that have brought you no callback, and marks each **apply**, **stretch** or **skip** with the one
+requirement that decided it. Skips fold into a section at the bottom with their reasons; **Not a skip** overrules one.
+Each verdict is kept until the posting or your CV changes, so a daily scan costs a few dozen short reads.
 
 <p align="center"><img src="docs/images/discover.png" alt="Discover: job cards ranked by match, with filters on the left" width="100%"></p>
 
