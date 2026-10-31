@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import (apply, areas, batch, callback, db, discover, extract, insights, letterfile, letters, memory, onboarding,
-               profiles, strategy, study, tailor, tracker)
+               profiles, review, strategy, study, tailor, tracker)
 from .config import STATIC, output_dir
 from .engines import ENGINES, EngineError
 from .jd import parse_jd
@@ -80,6 +80,7 @@ def _default_prefs(profile: dict) -> dict:
             "include_senior": False, "exclude_skills": [], "max_years_asked": years + 2, "offices": "", "min_match": 40,
             "regions": ["remote", "city", "country"], "places": [], "fit_filter": "possible",
             "pay_floor_home_lpa": 0, "pay_floor_remote_lpa": 0, "pay_floor_abroad_eur": 0, "pay_tiers": "",
+            "review_after_scan": True,
             "defaults": {"market": "auto", "track": "auto", "variant": "flowcv", "max_pages": "auto", "engine": "claude:opus"}}
 
 
@@ -1331,7 +1332,7 @@ def scan_start(body: dict = Body(...)):
     days = int(body.get("days") or prefs["days"])
     force = bool(body.get("force"))   # "Scan them anyway": read the sources skipped as recent or out of your regions
     if body.get("jobspy"):
-        return {"job": start_job("scan", lambda d, p, progress: discover.scan_jobspy(d, p, progress, force=force),
+        return {"job": start_job("scan", _then_review(lambda d, p, progress: discover.scan_jobspy(d, p, progress, force=force)),
                                  days, prefs)}
     ids = body.get("source_ids")
     if body.get("indeed"):
@@ -1340,8 +1341,44 @@ def scan_start(body: dict = Body(...)):
         ids = [s["id"] for s in discover.load_sources() if s.get("favourite")]
         if not ids:
             raise HTTPException(400, "Add a favourite company in Settings first.")
-    return {"job": start_job("scan", lambda ids, d, p, progress: discover.scan(ids, d, p, progress=progress, force=force),
+    return {"job": start_job("scan", _then_review(lambda ids, d, p, progress: discover.scan(ids, d, p, progress=progress, force=force)),
                              ids, days, prefs)}
+
+
+def _then_review(scan):
+    """A scan, then the model's reading of the jobs it left against your CV (review.py), as one job: whoever waits
+    on the scan (the page, Jarvis) gets reviewed jobs. Skipped when switched off or no model is installed."""
+    def run(*args):
+        progress, out = args[-1], scan(*args)
+        prefs = _prefs(load_profile())
+        if not prefs.get("review_after_scan", True):
+            return out
+        from .engines import get_engine, light_engine
+        if not get_engine(light_engine()).available():
+            progress("No model installed, so the jobs weren't reviewed against your CV")
+            return out
+        try:
+            rev = review.run(prefs, progress)
+        except Exception as e:   # the scan's jobs are saved either way; a failed review leaves them unreviewed
+            progress(f"The review against your CV stopped: {str(e)[:120]}")
+            return out
+        return (out if isinstance(out, dict) else {"scan": out}) | {"review": rev}
+    return run
+
+
+@app.post("/api/review")
+def review_start():
+    """Read the listed jobs against your CV now (review.py); only those without a standing verdict."""
+    return {"job": start_job("review", lambda progress: review.run(_prefs(load_profile()), progress))}
+
+
+@app.post("/api/found/{job_id}/review")
+def review_overrule(job_id: str, body: dict = Body(...)):
+    try:
+        review.overrule(job_id, str(body.get("verdict") or ""))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
 
 
 @app.get("/api/discover/prompt")

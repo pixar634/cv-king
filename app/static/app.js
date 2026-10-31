@@ -1075,14 +1075,18 @@ async function loadFound() {
   $("#scanFav").hidden = !favs.length;
   // A job with no description has no match to filter on: it's listed apart, whatever the slider says.
   const unscored = areaFilter(all.filter((j) => j.unscored && !isFav(j)));
-  const jobs = areaFilter(all.filter((j) => !j.unscored && fits(j) && !isFav(j)));
+  // A job the review read against your CV and judged a skip is folded away with its reason, never deleted.
+  const isSkip = (j) => (j.review || {}).verdict === "skip";
+  const passing = areaFilter(all.filter((j) => !j.unscored && fits(j) && !isFav(j)));
+  const skipped = passing.filter(isSkip);
+  const jobs = passing.filter((j) => !isSkip(j));
   const below = areaFilter(all.filter((j) => !j.unscored && !fits(j) && !isFav(j))).length;   // favourites always show, pinned
   const pinned = areaFilter(month.filter(isFav));
   if ($("#sortBy").value === "newest") jobs.sort((a, b) => (b.posted || "").localeCompare(a.posted || "") || b.match - a.match);
   FOUND = jobs;
   const last = sources.map((s) => s.last_scan).filter(Boolean).sort().pop();
   $("#discoverLede").textContent = sources.length
-    ? `${jobs.length} fresh posting${jobs.length === 1 ? "" : "s"} from ${sources.length} sources. The label is the chance of a callback: a title you've held, your level, must-haves, freshness, pay and where it's posted.${last ? ` Last scanned ${last.slice(11, 16)}.` : ""}${below ? ` ${below} more ${want === "strong" ? "possible or long shots" : "long shots"} hidden.` : ""}`
+    ? `${jobs.length} fresh posting${jobs.length === 1 ? "" : "s"} from ${sources.length} sources. The label is the chance of a callback: a title you've held, your level, must-haves, freshness, pay and where it's posted.${last ? ` Last scanned ${last.slice(11, 16)}.` : ""}${below ? ` ${below} more ${want === "strong" ? "possible or long shots" : "long shots"} hidden.` : ""}${skipped.length ? ` ${skipped.length} skipped after reading them against your CV (at the bottom).` : ""}`
     : "Add a careers page or job board in Settings, then scan.";
   const isNew = (j) => lastScan && (j.first_seen || "") >= lastScan.at.slice(0, 16) && scanLog.length > 1;
   const card = (j) => {
@@ -1111,7 +1115,8 @@ async function loadFound() {
       <div><div class="job-card__title">${esc(j.title)}</div>
         <div class="job-card__where">${where}${(j.areas || []).length ? ` · <span class="zone">${esc(j.areas.join(" or "))}</span>` : ""}</div></div>
       <div class="job-card__match ${tone(j.match)}" title="${j.estimate ? "An estimate from a short description. Opening the job reads the full posting and scores it again." : "Keyword match your profile can reach for this job (the same measure as after tailoring)"}">
-        <span class="tag ${j.fit === "Strong" ? "tag--ok" : j.fit === "Long shot" ? "tag--warn" : ""}" title="${esc((j.fit_why || []).join(", "))}">${esc(j.fit || "Not rated")}</span>${j.unscored ? `<span class="type-meta">Not scored yet</span>` : (j.terms || 0) >= 8 ? `<span class="meter meter--sm"><span class="meter__fill" style="width:${j.match}%"></span></span><span class="num">${j.estimate ? "~" : ""}${j.match}%</span>` : `<span class="type-meta" title="Too few specific skills named for a percentage to mean much">few skills named</span>`}</div>
+        <span class="tag ${j.fit === "Strong" ? "tag--ok" : j.fit === "Long shot" ? "tag--warn" : ""}" title="${esc((j.fit_why || []).join(", "))}">${esc(j.fit || "Not rated")}</span>${j.review ? `<span class="tag ${REVIEW_TAGS[j.review.verdict][0]}" title="${esc(j.review.why)}">${REVIEW_TAGS[j.review.verdict][1]}</span>` : ""}${j.unscored ? `<span class="type-meta">Not scored yet</span>` : (j.terms || 0) >= 8 ? `<span class="meter meter--sm"><span class="meter__fill" style="width:${j.match}%"></span></span><span class="num">${j.estimate ? "~" : ""}${j.match}%</span>` : `<span class="type-meta" title="Too few specific skills named for a percentage to mean much">few skills named</span>`}</div>
+      ${j.review && j.review.why ? `<div class="job-card__review">${esc(j.review.why)}${isSkip(j) ? ` <button class="btn btn--sm btn--ghost job-card__keep" title="The review got this wrong: list it with the others">Not a skip</button>` : ""}</div>` : ""}
       <div class="job-card__why" title="${esc((j.reasons || []).join(", "))}">${esc((j.reasons || []).join(", "))}, via ${esc(j.source)}</div>
     </div>`;
   };
@@ -1147,8 +1152,19 @@ async function loadFound() {
       <span class="disclosure__sub num">${unscored.length} job${unscored.length === 1 ? "" : "s"}</span><span class="disclosure__aside">titled like your roles, no description to measure</span></summary>
       <p class="type-meta">These boards list the title but not the job description, so there's no match yet. Opening one in Tailor reads the posting and scores it.</p>
       <div class="card-grid">${unscored.map(card).join("")}</div></details>`);
+  if (skipped.length) $("#foundList").insertAdjacentHTML("beforeend", `<details class="disclosure disclosure--lg day"><summary><span>Skipped after reading them against your CV</span>
+      <span class="disclosure__sub num">${skipped.length} job${skipped.length === 1 ? "" : "s"}</span><span class="disclosure__aside">a hard requirement your CV doesn't meet</span></summary>
+      <p class="type-meta">Each one passed your filters, then a read of the full posting found a requirement your CV doesn't show. If the review got one wrong, press Not a skip.</p>
+      <div class="card-grid">${skipped.map(card).join("")}</div></details>`);
   $$(".job-card").forEach((el) => {
     $(".job-card__pass", el).onclick = (e) => { e.stopPropagation(); passOn(el); };
+    const keep = $(".job-card__keep", el);
+    if (keep) keep.onclick = async (e) => {
+      e.stopPropagation();
+      await api(`/api/found/${el.dataset.id}/review`, { method: "POST", body: { verdict: "apply" } });
+      toast("Listed with the others. The review won't skip it again.");
+      loadFound();
+    };
     el.onclick = (e) => {
       if (e.target.closest("a, button") || el.classList.contains("job-card--passed")) return;
       const id = el.dataset.id;
@@ -1168,6 +1184,9 @@ async function loadFound() {
   markTailoring();
   watchRescore();
 }
+
+// The review's verdict after reading the posting against your CV (review.py); the reason is in the title.
+const REVIEW_TAGS = { apply: ["tag--ok", "Read: apply"], stretch: ["tag--warn", "Read: stretch"], skip: ["tag--bad", "Read: skip"] };
 
 // A Discover card shows what became of its CV once you press Tailor: queued, being written, written, or stopped
 // before writing (the reason is in the tag's title; Pipeline has the card with Tailor anyway).

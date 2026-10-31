@@ -174,6 +174,8 @@
 .job-card__match .meter { flex: 1; }
 .job-card__match .num { font-weight: 800; font-size: 15px; color: var(--tone); }
 .job-card__why { font-size: 12px; line-height: 1.5; color: var(--text-3); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.job-card__review { font-size: 12.5px; line-height: 1.45; color: var(--text-2); }
+.job-card__review .btn { margin-left: 4px; vertical-align: middle; }
 .job-card__top { min-width: 0; }
 .job-card__top .tag { flex: none; }
 .job-card__top > :is(input, .logo, .icon-btn) { flex: none; }
