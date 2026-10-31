@@ -649,7 +649,7 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 32
+RANK_VERSION = 33
 MID, SENIOR = 2, 3     # strategy.LEVEL_WORDS ranks: "SDE II", "Senior"
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "places", "pay_floor_home_lpa", "pay_floor_remote_lpa", "pay_floor_abroad_eur", "pay_tiers")
@@ -989,7 +989,9 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     from .fitlabel import compute as fit_label
     from .outcomes import penalty
     from .tracker import _company
-    fit = fit_label(job, target=target, held_titles=prefs.get("_held", []), level=level["verdict"],
+    # A title above your level is not one you've held, whatever its words ("Principal Software Engineer").
+    held = prefs.get("_held", []) if named is None or named <= mine else []
+    fit = fit_label(job, target=target, held_titles=held, level=level["verdict"],
                     at_level=named is not None and floor <= named <= mine, must=must, terms=terms,
                     match=score if not unscored else 0, pay=pv, open_state=o["state"],
                     warm=(warm := _company(job.get("company")) in prefs.get("_warm", ())),

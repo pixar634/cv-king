@@ -6,6 +6,9 @@ candidate's own level (from their strategy). A keyword match says nothing about 
 import re
 
 PM_TITLE = re.compile(r"product (manager|owner|lead)|\bapm\b", re.I)
+# A posting that wants the level already held: "operating at Staff level", "experience as a Principal Engineer".
+PRIOR_LEVEL = re.compile(r"\b(?:operat\w*|working|worked|experience|served|serving|proven)\s+(?:at|as)\s+(?:an?\s+)?"
+                         r"(staff|principal)[\s-]+(?:level|engineer|software engineer|developer)", re.I)
 NUM = r"(\d{1,2})\s*\+?\s*(?:(?:-|–|to)\s*(\d{1,2})\s*\+?\s*)?"
 YEARS = re.compile(NUM + r"(?:years?|yrs?)\b(?:\s+of)?(?P<after>[^.\n;]{0,70})", re.I)
 LEADING = re.compile(r"(\d{1,2})\s*\+?\s*(?:years?\s+|yrs?\s+)?(?:of\s+)?(?:experience\s+)?(?:in\s+)?"
@@ -99,21 +102,33 @@ def level_check(title: str, text: str, candidate_years: int, strong: set[str] | 
     if req["scope"]:
         verdict = "above"
         reasons.append(f"manages managers or a large org (\"{req['scope'][:50]}\")")
+    from .outcomes import kind
+    manager = kind(title or "") == "people manager"
     if req["leading_years"] is not None and req["leading_years"] >= 2 and not lv.get("people_manager"):
         # For a manager's title the people are the job, not a plus: no direct reports screens you out at once.
-        from .outcomes import kind
-        manager = kind(title or "") == "people manager"
         verdict = raise_to("above" if req["leading_years"] >= 5 or manager else "stretch")
         reasons.append(f"asks for {req['leading_years']}+ years managing people (your CV shows no direct reports)")
+    elif manager and not lv.get("people_manager") and not any(kind(t) == "people manager" for t in held):
+        verdict = raise_to("stretch")
+        reasons.append("a people manager's role (your CV shows no direct reports)")
     if req["pm_years"] is not None and req["pm_years"] >= 3 and not any(PM_TITLE.search(t) for t in held):
         verdict = raise_to("above" if req["pm_years"] >= 8 else "stretch")
         reasons.append(f"asks for {req['pm_years']}+ years as a product manager (your CV shows no PM title)")
-    # The seniority the title names, against the candidate's own level: two steps up is a stretch, three is above.
+    # The seniority the title names, against the candidate's level as a product company reads it (a services firm's
+    # Lead is a Senior there): two steps up is a stretch, three is above.
     named = strategy.title_level(title or "", company=company)
-    if named is not None and named - lv["rank"] >= 3:
+    mine = strategy.calibrated_rank(profile)
+    yours = lv["label"] if mine == lv["rank"] else f"{lv['label']} at a services firm, which reads as {strategy.LEVELS[mine]}"
+    if named is not None and named - mine >= 3:
         verdict = "above"
-        reasons.append(f"title is three or more levels above yours ({lv['label']})")
-    elif named is not None and named - lv["rank"] >= 2:
-        verdict = raise_to("stretch")
-        reasons.append(f"title is two levels above yours ({lv['label']})")
+        reasons.append(f"title is three or more levels above yours ({yours})")
+    elif named is not None and named - mine >= 2:
+        # Two levels up and more years than you have: two gaps at once is a no, not a stretch.
+        short = req["years"] is not None and req["years"] > candidate_years
+        verdict = raise_to("above" if short else "stretch")
+        reasons.append(f"title is two levels above yours ({yours})" + (", and it asks for more years" if short else ""))
+    # "Operating at Staff level", "experience as a Principal engineer": the level itself is a must-have.
+    if (m := PRIOR_LEVEL.search(text or "")) and not any((strategy.title_level(t) or 0) >= 5 for t in held):
+        verdict = "above"
+        reasons.append(f"asks for experience at {m.group(1).title()} level, a level your CV doesn't show")
     return {"verdict": verdict, "reasons": reasons, **{k: v for k, v in req.items() if k != "fields"}}
