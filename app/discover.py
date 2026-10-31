@@ -628,6 +628,12 @@ def home_country_pattern() -> re.Pattern:
     return strategy.any_of([h["country"], *h["city_names"]]) or INDIA
 
 
+# A US state and ZIP code ("Brooklyn Park, MN 55445"), as Workday gives a head office address. Case-sensitive, and an
+# Indian PIN code has six digits, so "Pune, IN 411001" stays out.
+US_ZIP = re.compile(r"\b(?:A[KLRZ]|C[AOT]|D[CE]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|N[CDEHJMVY]|O[HKR]|PA|RI|S[CD]|"
+                    r"T[NX]|UT|V[AT]|W[AIVY])\s+\d{5}(?:-\d{4})?(?!\d)")
+
+
 def region(job: dict) -> str:
     """home (the candidate's country) | remote | abroad (a target country) | us | other | unknown, from the location field."""
     where = (job.get("location") or "").strip()
@@ -635,7 +641,7 @@ def region(job: dict) -> str:
         return "unknown"
     if home_country_pattern().search(where):
         return "home"
-    if US_ONLY.search(where):
+    if US_ONLY.search(where) or US_ZIP.search(where):
         return "us"
     if ABROAD_OK.search(where):
         return "abroad"
@@ -649,7 +655,7 @@ def region(job: dict) -> str:
     return "other"
 
 
-RANK_VERSION = 33
+RANK_VERSION = 34
 MID, SENIOR = 2, 3     # strategy.LEVEL_WORDS ranks: "SDE II", "Senior"
 RANK_KEYS = ("tracks", "exclude_skills", "include_senior", "include_above", "candidate_years", "max_years_asked",
              "offices", "places", "pay_floor_home_lpa", "pay_floor_remote_lpa", "pay_floor_abroad_eur", "pay_tiers")
@@ -755,7 +761,7 @@ OTHER_FIELD = re.compile(
     r"\b(security|cyber\s*security|compliance|devops|dev\s*ops|devsecops|site reliability|sre|network(ing)?|"
     r"virtuali[sz]ation|infrastructure|ux|hardware|mechanical|electrical|civil|chemical|manufacturing|quality|"
     r"validation|verification|firmware|rf|asic|fpga|silicon|test|systems? admin\w*|it support|help\s*desk|"
-    r"database admin\w*|dba|release|build)\b", re.I)
+    r"database admin\w*|dba|release|build|cloud\s+(?:engineer\w*|security|infrastructure|operations|ops))\b", re.I)
 GENERIC = {"Communication", "Problem solving", "Ownership", "Product thinking", "Clean code", "Mentoring",
            "Stakeholder management", "Scalability", "Technical documentation", "Agile", "Requirements gathering",
            "Data visualisation", "Enterprise software", "Startup experience", "Technical leadership", "Code review",
@@ -831,8 +837,11 @@ def _rank(job: dict, evidence: set[str], prefs: dict) -> dict:
     if strategy.parked_only(title):
         return job | {"match": 0, "reasons": ["a parked track: for a referral, not a cold application"], "excluded": True}
     # "Engineer" alone lets in every kind of engineering: one that names another field is a different job,
-    # unless one of your own tracks covers it.
-    if (m := OTHER_FIELD.search(title)) and not strategy.matching_tracks(title, tracks):
+    # unless one of your own tracks names that field. A track matching the rest of the title doesn't count:
+    # "Lead Engineer - Cloud Security" matches a "lead engineer" track and is still a security job.
+    if (m := OTHER_FIELD.search(title)) and not any(
+            (p := strategy.track_pattern(t, wide=True)) and m.group(0).lower() in p.pattern.lower()
+            for t in strategy.matching_tracks(title, tracks)):
         return job | {"match": 0, "reasons": [f"another kind of engineering ({m.group(0)})"], "excluded": True}
     # A research or scientist role screens for research (papers, experiments, model training), which an engineer's
     # keywords don't show: only for someone who has held such a title, or one of whose tracks is research itself
