@@ -12,6 +12,12 @@ JobMagnet's own code is under the [MIT License](LICENSE). It ships these third-p
 | [CodeMirror](https://codemirror.net/5/) | 5.65.16 | MIT, © Marijn Haverbeke and others |
 | [GSAP](https://gsap.com) | 3.12.5 | GreenSock "Standard" no-charge license, **not MIT**: see [gsap.com/standard-license](https://gsap.com/standard-license). Free to use here; if you reuse GSAP elsewhere, read its terms. |
 
+## Writing guides (`knowledge/`)
+
+| Guide | Version | License |
+|---|---|---|
+| [humanizer](https://github.com/blader/humanizer) (`humanizer.md`), used by the Spoken flair cover-letter voice | 3.1.0 | MIT, © 2025 Siqi Chen: `humanizer-LICENSE.txt` |
+
 ## Fonts (`app/static/fonts/`)
 
 All under the SIL Open Font License 1.1. The license texts sit next to the fonts.
