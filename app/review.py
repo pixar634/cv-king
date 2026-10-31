@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from .engines import EngineError, get_engine, light_engine, parse_json_reply
 from .untrusted import fence
 
-VERSION = 1
+VERSION = 2     # a change to the brief reads every posting again
 VERDICTS = ("apply", "stretch", "skip")
 MAX_PER_RUN = 40
 WORKERS = 3
@@ -33,6 +33,10 @@ costs the candidate a slot, while a skipped job costs nothing.
   never held ("operating at Staff level"), managing people when the CV shows no direct reports, a different
   specialism (a dedicated cloud, security, data science, research or ML training role for someone who builds
   products), or a must-have skill or domain absent from the CV.
+
+Not hard requirements, so never the reason for a skip: lines an employer puts in every posting (a bank's "knowledge
+of the financial services industry", "formal training in software engineering concepts"), tools listed as preferred
+or a plus, and one tool from a list of alternatives when the CV shows another of them.
 
 Judge level as a product company would: {level_note}
 Kinds of role that have brought this candidate no callback so far: {history}.
