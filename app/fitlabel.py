@@ -11,6 +11,7 @@ import re
 LEVEL = re.compile(r"(?i)(?<![a-z])(junior|jr\.?|associate|senior|sr\.?|lead|principal|staff|head of|i{1,3}|iv|[1-4])(?![a-z])")
 ATS = re.compile(r"greenhouse|lever|ashby|smartrecruiters|workable|personio|recruitee|careers page|company site", re.I)
 STRONG, POSSIBLE = 6, 3
+THIN_TERMS = 8   # specific skills a posting must name before its keyword match says much
 
 
 def core(title: str) -> str:
@@ -36,8 +37,11 @@ def days_old(job: dict) -> int | None:
 
 
 def compute(job: dict, *, target: bool, held_titles: list[str], level: str, at_level: bool, must: tuple[int, int],
-            terms: int, match: int, pay: dict, open_state: str, warm: bool = False, inbound: bool = False) -> dict:
-    """{"label", "points", "why"}: points from what predicts a callback; why lists the ones that counted."""
+            terms: int, match: int, pay: dict, open_state: str, warm: bool = False, inbound: bool = False,
+            history: tuple[int, str] = (0, "")) -> dict:
+    """{"label", "points", "why"}: points from what predicts a callback; why lists the ones that counted.
+    match is 0 for a posting not scored yet. history: (points, why) off for a kind of role that has never brought
+    you a callback (outcomes.penalty)."""
     pts, why = 0, []
 
     def add(n, reason):
@@ -58,12 +62,19 @@ def compute(job: dict, *, target: bool, held_titles: list[str], level: str, at_l
     elif at_level:
         add(1, "at your level")
     covered, required = must
-    if required >= 3:
+    if match and terms < THIN_TERMS:
+        # A handful of generic skills (Python, LLMs) covers almost anyone: a high share proves little, a low one still counts.
+        add(-1, f"names only {terms} skills to measure")
+        if required >= 3 and covered / required < .4:
+            add(-2, f"{covered} of {required} must-haves")
+    elif required >= 3:
         share = covered / required
         add(2 if share >= .8 else 1 if share >= .6 else -2 if share < .4 else 0,
             f"{covered} of {required} must-haves")
-    elif terms >= 8:
+    elif terms >= THIN_TERMS:
         add(1 if match >= 80 else -1 if match < 55 else 0, f"{match}% of its skills")
+    if history[0]:
+        add(-history[0], history[1])
     age = days_old(job)
     if age is not None and age <= 3:
         add(1, "posted in the last 3 days")

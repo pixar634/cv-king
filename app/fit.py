@@ -100,7 +100,10 @@ def level_check(title: str, text: str, candidate_years: int, strong: set[str] | 
         verdict = "above"
         reasons.append(f"manages managers or a large org (\"{req['scope'][:50]}\")")
     if req["leading_years"] is not None and req["leading_years"] >= 2 and not lv.get("people_manager"):
-        verdict = raise_to("above" if req["leading_years"] >= 5 else "stretch")
+        # For a manager's title the people are the job, not a plus: no direct reports screens you out at once.
+        from .outcomes import kind
+        manager = kind(title or "") == "people manager"
+        verdict = raise_to("above" if req["leading_years"] >= 5 or manager else "stretch")
         reasons.append(f"asks for {req['leading_years']}+ years managing people (your CV shows no direct reports)")
     if req["pm_years"] is not None and req["pm_years"] >= 3 and not any(PM_TITLE.search(t) for t in held):
         verdict = raise_to("above" if req["pm_years"] >= 8 else "stretch")
